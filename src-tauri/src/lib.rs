@@ -1,5 +1,6 @@
 mod credentials;
 mod error;
+mod gallery;
 mod history;
 mod models;
 mod naming;
@@ -9,7 +10,8 @@ mod state;
 
 use error::AppResult;
 use models::{
-    AppSettings, CompressImageRequest, CompressImageResult, ImageInspection, InspectImageRequest,
+    AppSettings, CompressImageRequest, CompressImageResult, DeleteObjectRequest, GalleryObject,
+    ImageInspection, InspectImageRequest, ListObjectsRequest,
 };
 use tauri::Manager;
 
@@ -28,6 +30,18 @@ fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageResul
     optimizer::compress_image(request)
 }
 
+#[tauri::command]
+async fn list_gallery_objects(request: ListObjectsRequest) -> AppResult<Vec<GalleryObject>> {
+    let _ = request;
+    Ok(Vec::new())
+}
+
+#[tauri::command]
+async fn delete_gallery_object(request: DeleteObjectRequest) -> AppResult<()> {
+    let _ = request;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -40,7 +54,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_default_settings,
             inspect_image,
-            compress_image
+            compress_image,
+            list_gallery_objects,
+            delete_gallery_object
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -151,3 +151,27 @@ pub struct CompressImageResult {
     pub target_format: ImageFormat,
     pub warning: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GalleryObject {
+    pub key: String,
+    pub size: u64,
+    pub last_modified: Option<String>,
+    pub public_url: Option<String>,
+    pub is_image: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ListObjectsRequest {
+    pub profile: S3Profile,
+    pub prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteObjectRequest {
+    pub profile: S3Profile,
+    pub key: String,
+}
