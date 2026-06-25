@@ -39,3 +39,34 @@ export const galleryApi = {
   listObjects: (request: ListGalleryObjectsRequest) =>
     invoke<GalleryObject[]>("list_gallery_objects", { request }),
 };
+
+export interface AppSettings {
+  profiles: S3ProfileSummary[];
+  presets: Array<{
+    id: string;
+    name: string;
+    targetFormat: string;
+    quality: number;
+    maxWidth: number;
+    maxHeight: number;
+    allowUpscale: boolean;
+    removeGps: boolean;
+  }>;
+  namingTemplate: string;
+  defaultOutputDir?: string;
+  defaultProfileId?: string;
+}
+
+export interface SaveS3SecretRequest {
+  profileId: string;
+  secretAccessKey: string;
+  allowInsecureFallback: boolean;
+}
+
+export const settingsApi = {
+  loadSettings: () => invoke<AppSettings>("load_app_settings"),
+  saveSettings: (settings: AppSettings) =>
+    invoke<void>("save_app_settings", { request: { settings } }),
+  saveS3Secret: (request: SaveS3SecretRequest) =>
+    invoke<{ credentialRef: string; insecureFallbackUsed: boolean }>("save_s3_secret", { request }),
+};

@@ -1,10 +1,17 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
+import type { AppSettings } from "../../api/tauri";
+
+const defaultSettings: AppSettings = {
+  profiles: [],
+  presets: [],
+  namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+};
 
 describe("OptimizePage", () => {
   it("shows per-image size feedback and lets quality change", () => {
-    render(<OptimizePage />);
+    render(<OptimizePage settings={defaultSettings} />);
 
     expect(screen.getByText(/photo-01.jpg/)).toBeInTheDocument();
     expect(screen.getByText(/4.2 MB => 720 KB/)).toBeInTheDocument();
@@ -17,7 +24,7 @@ describe("OptimizePage", () => {
 
   it("shows per-image size feedback and then compression result actions", async () => {
     const user = userEvent.setup();
-    render(<OptimizePage />);
+    render(<OptimizePage settings={defaultSettings} />);
 
     expect(screen.getByText(/photo-01.jpg/)).toBeInTheDocument();
     expect(screen.getByText(/4.2 MB => 720 KB/)).toBeInTheDocument();

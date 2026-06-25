@@ -1,4 +1,10 @@
-import type { GalleryObject } from "../../types";
+import type { GalleryObject, S3ProfileSummary } from "../../types";
+import type { GalleryFocus } from "../../state/appState";
+
+interface S3GalleryPageProps {
+  galleryFocus: GalleryFocus;
+  profiles: S3ProfileSummary[];
+}
 
 const SAMPLE_OBJECTS: GalleryObject[] = [
   {
@@ -9,7 +15,7 @@ const SAMPLE_OBJECTS: GalleryObject[] = [
   },
 ];
 
-export function S3GalleryPage() {
+export function S3GalleryPage(_props: S3GalleryPageProps) {
   return (
     <div className="page-stack">
       <header className="page-header">

@@ -1,5 +1,13 @@
 import { useState } from "react";
-import type { OptimizeItem } from "../../types";
+import type { OptimizeItem, S3ProfileSummary } from "../../types";
+import type { AppSettings } from "../../api/tauri";
+import type { GalleryFocus } from "../../state/appState";
+
+interface OptimizePageProps {
+  settings: AppSettings;
+  profile?: S3ProfileSummary;
+  onUploadedToS3?: (focus: GalleryFocus) => void;
+}
 
 const DEFAULT_SETTINGS = {
   targetFormat: "webp" as const,
@@ -23,7 +31,7 @@ const SAMPLE_ITEMS: OptimizeItem[] = [
   },
 ];
 
-export function OptimizePage() {
+export function OptimizePage(_props: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>(SAMPLE_ITEMS);
   const [mode, setMode] = useState<"edit" | "results">("edit");
 

@@ -184,3 +184,9 @@ pub struct UploadObjectRequest {
     pub object_key: String,
     pub content_type: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveSettingsRequest {
+    pub settings: AppSettings,
+}

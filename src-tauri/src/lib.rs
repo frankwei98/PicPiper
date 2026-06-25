@@ -11,7 +11,8 @@ mod state;
 use error::AppResult;
 use models::{
     AppSettings, CompressImageRequest, CompressImageResult, DeleteObjectRequest, GalleryObject,
-    ImageInspection, InspectImageRequest, ListObjectsRequest, UploadObjectRequest,
+    ImageInspection, InspectImageRequest, ListObjectsRequest, SaveCredentialRequest,
+    SaveCredentialResponse, SaveSettingsRequest, UploadObjectRequest,
 };
 use state::AppPaths;
 use tauri::{Manager, State};
@@ -58,6 +59,24 @@ async fn upload_gallery_object(
     gallery::upload_object(request, secret).await
 }
 
+#[tauri::command]
+fn load_app_settings(paths: State<'_, AppPaths>) -> AppResult<AppSettings> {
+    settings::load_settings(&paths.settings_path)
+}
+
+#[tauri::command]
+fn save_app_settings(paths: State<'_, AppPaths>, request: SaveSettingsRequest) -> AppResult<()> {
+    settings::save_settings(&paths.settings_path, &request.settings)
+}
+
+#[tauri::command]
+fn save_s3_secret(
+    paths: State<'_, AppPaths>,
+    request: SaveCredentialRequest,
+) -> AppResult<SaveCredentialResponse> {
+    credentials::save_secret(&paths.credential_fallback_dir, request)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -73,7 +92,10 @@ pub fn run() {
             compress_image,
             list_gallery_objects,
             delete_gallery_object,
-            upload_gallery_object
+            upload_gallery_object,
+            load_app_settings,
+            save_app_settings,
+            save_s3_secret
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
