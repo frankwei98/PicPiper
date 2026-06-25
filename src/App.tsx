@@ -1,49 +1,39 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+type View = "optimize" | "gallery" | "settings";
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+const NAV_ITEMS: Array<{ id: View; label: string }> = [
+  { id: "optimize", label: "Optimize" },
+  { id: "gallery", label: "S3 Gallery" },
+  { id: "settings", label: "Settings" },
+];
+
+function App() {
+  const [view, setView] = useState<View>("optimize");
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+    <main className="app-shell">
+      <aside className="sidebar">
+        <h1>Pic Piper</h1>
+        <nav aria-label="Main navigation">
+          {NAV_ITEMS.map((item) => (
+            <button
+              className={view === item.id ? "nav-button active" : "nav-button"}
+              key={item.id}
+              onClick={() => setView(item.id)}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </aside>
+      <section className="workspace">
+        {view === "optimize" && <h2>Optimize</h2>}
+        {view === "gallery" && <h2>S3 Gallery</h2>}
+        {view === "settings" && <h2>Settings</h2>}
+      </section>
     </main>
   );
 }
