@@ -84,3 +84,18 @@ pub struct UploadHistoryEntry {
     pub uploaded_bytes: u64,
     pub target_format: ImageFormat,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveCredentialRequest {
+    pub profile_id: String,
+    pub secret_access_key: String,
+    pub allow_insecure_fallback: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveCredentialResponse {
+    pub credential_ref: String,
+    pub insecure_fallback_used: bool,
+}
