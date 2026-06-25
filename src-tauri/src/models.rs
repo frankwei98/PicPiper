@@ -99,3 +99,55 @@ pub struct SaveCredentialResponse {
     pub credential_ref: String,
     pub insecure_fallback_used: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressionSettings {
+    pub target_format: ImageFormat,
+    pub quality: u8,
+    pub max_width: u32,
+    pub max_height: u32,
+    pub allow_upscale: bool,
+    pub remove_gps: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectImageRequest {
+    pub path: String,
+    pub settings: CompressionSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageInspection {
+    pub path: String,
+    pub file_name: String,
+    pub source_format: Option<ImageFormat>,
+    pub original_bytes: u64,
+    pub width: u32,
+    pub height: u32,
+    pub estimated_bytes: Option<u64>,
+    pub warning: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressImageRequest {
+    pub source_path: String,
+    pub output_dir: String,
+    pub output_file_name: String,
+    pub settings: CompressionSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressImageResult {
+    pub source_path: String,
+    pub output_path: String,
+    pub output_file_name: String,
+    pub original_bytes: u64,
+    pub output_bytes: u64,
+    pub target_format: ImageFormat,
+    pub warning: Option<String>,
+}
