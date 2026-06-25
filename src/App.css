@@ -161,3 +161,15 @@ select {
   border-radius: 6px;
   padding: 8px 10px;
 }
+
+.result-summary {
+  background: #ffffff;
+  border: 1px solid #d7dee7;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.result-actions {
+  display: flex;
+  gap: 8px;
+}

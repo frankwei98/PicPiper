@@ -25,6 +25,7 @@ const SAMPLE_ITEMS: OptimizeItem[] = [
 
 export function OptimizePage() {
   const [items, setItems] = useState<OptimizeItem[]>(SAMPLE_ITEMS);
+  const [mode, setMode] = useState<"edit" | "results">("edit");
 
   const updateQuality = (id: string, quality: number) => {
     setItems((current) =>
@@ -40,6 +41,49 @@ export function OptimizePage() {
     );
   };
 
+  const handleCompress = () => {
+    setMode("results");
+  };
+
+  if (mode === "results") {
+    const compressedItems = items.map((item) => ({
+      ...item,
+      status: "compressed" as const,
+      outputBytes: item.estimatedBytes ?? item.originalBytes,
+      outputFileName: item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`),
+    }));
+
+    return (
+      <div className="page-stack">
+        <header className="page-header">
+          <div>
+            <h2>Compression results</h2>
+            <p>Review compressed output before saving.</p>
+          </div>
+        </header>
+
+        <section className="result-summary" aria-label="Compression results">
+          {compressedItems.map((item) => (
+            <article className="image-row" key={item.id}>
+              <div>
+                <strong>{item.outputFileName}</strong>
+                <p>
+                  {formatBytes(item.originalBytes)} =&gt; {formatBytes(item.outputBytes ?? 0)}
+                </p>
+              </div>
+            </article>
+          ))}
+        </section>
+
+        <div className="result-actions">
+          <button type="button">Save to local folder</button>
+          <button type="button">Upload to S3</button>
+          <button type="button" onClick={() => setMode("edit")}>Back to edit settings</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -49,7 +93,7 @@ export function OptimizePage() {
         </div>
         <div className="header-actions">
           <button type="button">Apply preset</button>
-          <button type="button">Compress</button>
+          <button type="button" onClick={handleCompress}>Compress</button>
         </div>
       </header>
 
