@@ -15,7 +15,9 @@ const SAMPLE_OBJECTS: GalleryObject[] = [
   },
 ];
 
-export function S3GalleryPage(_props: S3GalleryPageProps) {
+export function S3GalleryPage({ galleryFocus }: S3GalleryPageProps) {
+  const highlightedKeys = new Set(galleryFocus.highlightedKeys);
+
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -34,7 +36,10 @@ export function S3GalleryPage(_props: S3GalleryPageProps) {
       </section>
       <section className="gallery-grid">
         {SAMPLE_OBJECTS.map((obj) => (
-          <article key={obj.key} className="object-card">
+          <article
+            key={obj.key}
+            className={`object-card${highlightedKeys.has(obj.key) ? " highlighted" : ""}`}
+          >
             <div className="object-thumb">
               {obj.isImage ? "Image" : "File"}
             </div>

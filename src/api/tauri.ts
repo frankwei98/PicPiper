@@ -40,6 +40,18 @@ export const galleryApi = {
     invoke<GalleryObject[]>("list_gallery_objects", { request }),
 };
 
+export interface UploadObjectRequest {
+  profile: S3ProfileSummary;
+  sourcePath: string;
+  objectKey: string;
+  contentType?: string;
+}
+
+export const uploadApi = {
+  uploadObject: (request: UploadObjectRequest) =>
+    invoke<GalleryObject>("upload_gallery_object", { request }),
+};
+
 export interface AppSettings {
   profiles: S3ProfileSummary[];
   presets: Array<{

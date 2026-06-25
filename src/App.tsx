@@ -32,8 +32,8 @@ function App() {
     >
       {navigation.view === "optimize" && (
         <OptimizePage
-          settings={settings}
-          profile={selectedProfile}
+          activeProfile={selectedProfile}
+          namingTemplate={settings.namingTemplate}
           onUploadedToS3={openGallery}
         />
       )}

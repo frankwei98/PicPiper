@@ -1,12 +1,14 @@
 import { useState } from "react";
 import type { OptimizeItem, S3ProfileSummary } from "../../types";
-import type { AppSettings } from "../../api/tauri";
-import type { GalleryFocus } from "../../state/appState";
+import { uploadApi } from "../../api/tauri";
 
 interface OptimizePageProps {
-  settings: AppSettings;
-  profile?: S3ProfileSummary;
-  onUploadedToS3?: (focus: GalleryFocus) => void;
+  onUploadedToS3?: (focus: {
+    prefix: string;
+    highlightedKeys: string[];
+  }) => void;
+  activeProfile?: S3ProfileSummary;
+  namingTemplate: string;
 }
 
 const DEFAULT_SETTINGS = {
@@ -31,9 +33,27 @@ const SAMPLE_ITEMS: OptimizeItem[] = [
   },
 ];
 
-export function OptimizePage(_props: OptimizePageProps) {
+function contentTypeFor(format: string) {
+  switch (format) {
+    case "jpg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
+    case "avif":
+      return "image/avif";
+    case "heif":
+      return "image/heif";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>(SAMPLE_ITEMS);
   const [mode, setMode] = useState<"edit" | "results">("edit");
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const updateQuality = (id: string, quality: number) => {
     setItems((current) =>
@@ -51,6 +71,37 @@ export function OptimizePage(_props: OptimizePageProps) {
 
   const handleCompress = () => {
     setMode("results");
+  };
+
+  const uploadToS3 = async () => {
+    if (!activeProfile) {
+      setUploadError("Configure and select an S3 profile before uploading.");
+      return;
+    }
+    setUploadError(null);
+    const prefix = activeProfile.defaultPrefix || "images";
+    const compressedItems = items.map((item) => ({
+      ...item,
+      status: "compressed" as const,
+      outputBytes: item.estimatedBytes ?? item.originalBytes,
+      outputFileName: item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`),
+    }));
+    const uploaded = await Promise.all(
+      compressedItems.map((item) => {
+        const outputFileName = item.outputFileName ?? "image.webp";
+        const objectKey = `${prefix.replace(/\/$/, "")}/${outputFileName}`;
+        return uploadApi.uploadObject({
+          profile: activeProfile,
+          sourcePath: item.outputPath ?? item.sourcePath,
+          objectKey,
+          contentType: contentTypeFor(item.settings.targetFormat),
+        });
+      }),
+    );
+    onUploadedToS3?.({
+      prefix,
+      highlightedKeys: uploaded.map((object) => object.key),
+    });
   };
 
   if (mode === "results") {
@@ -83,9 +134,11 @@ export function OptimizePage(_props: OptimizePageProps) {
           ))}
         </section>
 
+        {uploadError && <p className="upload-error">{uploadError}</p>}
+
         <div className="result-actions">
           <button type="button">Save to local folder</button>
-          <button type="button">Upload to S3</button>
+          <button type="button" onClick={uploadToS3}>Upload to S3</button>
           <button type="button" onClick={() => setMode("edit")}>Back to edit settings</button>
         </div>
       </div>

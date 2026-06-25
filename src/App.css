@@ -204,3 +204,8 @@ select {
   gap: 6px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+
+.object-card.highlighted {
+  border-color: #1f7a4d;
+  box-shadow: 0 0 0 2px rgba(31, 122, 77, 0.15);
+}
