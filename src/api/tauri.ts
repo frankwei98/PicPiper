@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CompressionSettings, OptimizeItem } from "../types";
+import type { CompressionSettings, GalleryObject, OptimizeItem, S3ProfileSummary } from "../types";
 
 export interface InspectImageRequest {
   path: string;
@@ -28,4 +28,14 @@ export const tauriApi = {
     invoke<OptimizeItem>("inspect_image", { request }),
   compressImage: (request: CompressImageRequest) =>
     invoke<CompressImageResult>("compress_image", { request }),
+};
+
+export interface ListGalleryObjectsRequest {
+  profile: S3ProfileSummary;
+  prefix: string;
+}
+
+export const galleryApi = {
+  listObjects: (request: ListGalleryObjectsRequest) =>
+    invoke<GalleryObject[]>("list_gallery_objects", { request }),
 };

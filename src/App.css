@@ -173,3 +173,34 @@ select {
   display: flex;
   gap: 8px;
 }
+
+.gallery-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+
+.object-card {
+  background: #ffffff;
+  border: 1px solid #d7dee7;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.object-thumb {
+  align-items: center;
+  aspect-ratio: 4 / 3;
+  background: #e9eef4;
+  border-radius: 6px;
+  color: #62748a;
+  display: flex;
+  justify-content: center;
+}
+
+.object-actions {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
