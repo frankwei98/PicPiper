@@ -11,9 +11,10 @@ mod state;
 use error::AppResult;
 use models::{
     AppSettings, CompressImageRequest, CompressImageResult, DeleteObjectRequest, GalleryObject,
-    ImageInspection, InspectImageRequest, ListObjectsRequest,
+    ImageInspection, InspectImageRequest, ListObjectsRequest, UploadObjectRequest,
 };
-use tauri::Manager;
+use state::AppPaths;
+use tauri::{Manager, State};
 
 #[tauri::command]
 fn get_default_settings() -> AppSettings {
@@ -31,15 +32,30 @@ fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageResul
 }
 
 #[tauri::command]
-async fn list_gallery_objects(request: ListObjectsRequest) -> AppResult<Vec<GalleryObject>> {
-    let _ = request;
-    Ok(Vec::new())
+async fn list_gallery_objects(
+    paths: State<'_, AppPaths>,
+    request: ListObjectsRequest,
+) -> AppResult<Vec<GalleryObject>> {
+    let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
+    gallery::list_objects(request, secret).await
 }
 
 #[tauri::command]
-async fn delete_gallery_object(request: DeleteObjectRequest) -> AppResult<()> {
-    let _ = request;
-    Ok(())
+async fn delete_gallery_object(
+    paths: State<'_, AppPaths>,
+    request: DeleteObjectRequest,
+) -> AppResult<()> {
+    let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
+    gallery::delete_object(request, secret).await
+}
+
+#[tauri::command]
+async fn upload_gallery_object(
+    paths: State<'_, AppPaths>,
+    request: UploadObjectRequest,
+) -> AppResult<GalleryObject> {
+    let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
+    gallery::upload_object(request, secret).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -56,7 +72,8 @@ pub fn run() {
             inspect_image,
             compress_image,
             list_gallery_objects,
-            delete_gallery_object
+            delete_gallery_object,
+            upload_gallery_object
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

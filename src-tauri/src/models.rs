@@ -175,3 +175,12 @@ pub struct DeleteObjectRequest {
     pub profile: S3Profile,
     pub key: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadObjectRequest {
+    pub profile: S3Profile,
+    pub source_path: String,
+    pub object_key: String,
+    pub content_type: Option<String>,
+}
