@@ -1,6 +1,6 @@
 # Pic Piper Corrective Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace the current mock UI shell with a usable Pic Piper MVP where settings persist, image files are really imported and compressed, S3 Gallery really lists/uploads/downloads/deletes objects, and `Upload to S3` from compression results performs a real backend upload before opening the gallery.
 
@@ -118,7 +118,7 @@ Expected files to modify:
 - Modify: `src/features/optimize/OptimizePage.tsx`
 - Modify: `src/features/gallery/S3GalleryPage.tsx`
 
-- [ ] **Step 1: Add failing tests that reject sample-only UI**
+- [x] **Step 1: Add failing tests that reject sample-only UI**
 
 In `src/features/optimize/OptimizePage.test.tsx`, add tests that expect an empty initial state and real import action:
 
@@ -173,7 +173,7 @@ describe("SettingsPage", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -183,7 +183,7 @@ pnpm test -- src/features/optimize/OptimizePage.test.tsx src/features/gallery/S3
 
 Expected: FAIL because current pages render sample data and Settings has no save action.
 
-- [ ] **Step 3: Remove sample data constants**
+- [x] **Step 3: Remove sample data constants**
 
 Delete these constants:
 
@@ -202,7 +202,7 @@ Initialize `S3GalleryPage` objects as an empty array:
 const [objects, setObjects] = useState<GalleryObject[]>([]);
 ```
 
-- [ ] **Step 4: Disable impossible actions**
+- [x] **Step 4: Disable impossible actions**
 
 `Compress` must be disabled when there are no ready/pending imported items:
 
@@ -224,7 +224,7 @@ Render:
 {profiles.length === 0 && <section className="empty-state">No profile selected.</section>}
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -252,7 +252,7 @@ git commit -m "test: prevent mock-only Pic Piper UI"
 - Modify: `src/features/gallery/S3GalleryPage.tsx`
 - Modify: `src/features/optimize/OptimizePage.tsx`
 
-- [ ] **Step 1: Replace `S3ProfileSummary` with `S3Profile`**
+- [x] **Step 1: Replace `S3ProfileSummary` with `S3Profile`**
 
 In `src/types.ts`, replace the existing `S3ProfileSummary` interface with:
 
@@ -274,7 +274,7 @@ export interface S3Profile {
 
 Update every import and prop currently using `S3ProfileSummary` to use `S3Profile`.
 
-- [ ] **Step 2: Fix API wrapper request types**
+- [x] **Step 2: Fix API wrapper request types**
 
 In `src/api/tauri.ts`, import `S3Profile` and use it in:
 
@@ -318,7 +318,7 @@ export const galleryApi = {
 
 The `download_gallery_object` backend command is added in Task 6. It is acceptable for TypeScript to fail until that task if the wrapper is imported; keep it unused until Task 6 if needed.
 
-- [ ] **Step 3: Verify no incompatible profile type remains**
+- [x] **Step 3: Verify no incompatible profile type remains**
 
 Run:
 
@@ -345,7 +345,7 @@ git commit -m "fix: align frontend S3 profile type with backend"
 - Modify: `src/api/tauri.ts`
 - Modify: `src/App.css`
 
-- [ ] **Step 1: Add tests for load/save flow**
+- [x] **Step 1: Add tests for load/save flow**
 
 Mock `settingsApi` in `src/features/settings/SettingsPage.test.tsx`:
 
@@ -408,7 +408,7 @@ it("saves a profile and stores the secret through the credential API", async () 
 });
 ```
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 Run:
 
@@ -418,7 +418,7 @@ pnpm test -- src/features/settings/SettingsPage.test.tsx
 
 Expected: FAIL because SettingsPage does not save.
 
-- [ ] **Step 3: Implement controlled SettingsPage**
+- [x] **Step 3: Implement controlled SettingsPage**
 
 `SettingsPage` must:
 
@@ -466,7 +466,7 @@ const handleSaveProfile = async (event: React.FormEvent) => {
 };
 ```
 
-- [ ] **Step 4: Load settings on app startup**
+- [x] **Step 4: Load settings on app startup**
 
 In `src/App.tsx`, call `settingsApi.loadSettings` on mount:
 
@@ -489,7 +489,7 @@ useEffect(() => {
 
 Render `settingsError` in the workspace if present.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -518,7 +518,7 @@ git commit -m "feat: wire settings profile persistence"
 - Modify: `src/features/optimize/OptimizePage.tsx`
 - Modify: `src/features/optimize/OptimizePage.test.tsx`
 
-- [ ] **Step 1: Add Tauri dialog plugin**
+- [x] **Step 1: Add Tauri dialog plugin**
 
 Run:
 
@@ -535,7 +535,7 @@ In `src-tauri/src/lib.rs`, register:
 .plugin(tauri_plugin_dialog::init())
 ```
 
-- [ ] **Step 2: Write import test with mocked dialog and inspection**
+- [x] **Step 2: Write import test with mocked dialog and inspection**
 
 In `OptimizePage.test.tsx`, mock dialog open and `tauriApi.inspectImage`:
 
@@ -590,7 +590,7 @@ it("imports selected image files through backend inspection", async () => {
 });
 ```
 
-- [ ] **Step 3: Implement Choose Images**
+- [x] **Step 3: Implement Choose Images**
 
 In `OptimizePage.tsx`:
 
@@ -604,7 +604,7 @@ In `OptimizePage.tsx`:
 
 Do not keep a built-in sample image.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -636,7 +636,7 @@ git commit -m "feat: import real images for optimization"
 - Modify: `src/features/optimize/OptimizePage.tsx`
 - Modify: `src/features/optimize/OptimizePage.test.tsx`
 
-- [ ] **Step 1: Add backend batch compression models**
+- [x] **Step 1: Add backend batch compression models**
 
 Add to `src-tauri/src/models.rs`:
 
@@ -682,7 +682,7 @@ pub struct CopyOutputsRequest {
 
 If `AppError` cannot be referenced from `models.rs` without a cycle, create a serializable `ItemError { code, message, recoverable }` in `models.rs` and convert from `AppError`.
 
-- [ ] **Step 2: Add backend commands**
+- [x] **Step 2: Add backend commands**
 
 In `optimizer.rs`, implement:
 
@@ -696,7 +696,7 @@ Behavior:
 - Catch per-item failures and continue.
 - Copy saved outputs to target dir using original output filenames.
 
-- [ ] **Step 3: Register commands**
+- [x] **Step 3: Register commands**
 
 In `lib.rs`, register:
 
@@ -715,7 +715,7 @@ fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
 }
 ```
 
-- [ ] **Step 4: Add frontend wrappers**
+- [x] **Step 4: Add frontend wrappers**
 
 In `src/api/tauri.ts`:
 
@@ -731,7 +731,7 @@ export const tauriApi = {
 
 Define matching TypeScript interfaces.
 
-- [ ] **Step 5: Write compression UI tests**
+- [x] **Step 5: Write compression UI tests**
 
 Mock `tauriApi.compressBatch` to return a real output path:
 
@@ -766,7 +766,7 @@ expect(screen.getByText(/1.2 MB => 240 KB/)).toBeInTheDocument();
 
 Mock dialog directory selection and `copyOutputsToDir`, then assert `Save to local folder` calls it with compressed output paths.
 
-- [ ] **Step 6: Implement frontend compression and save**
+- [x] **Step 6: Implement frontend compression and save**
 
 `Compress` must:
 
@@ -782,7 +782,7 @@ Mock dialog directory selection and `copyOutputsToDir`, then assert `Save to loc
 - Call `tauriApi.copyOutputsToDir`.
 - Show the saved count or error.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -816,7 +816,7 @@ git commit -m "feat: compress real images and save outputs"
 - Modify: `src/features/gallery/S3GalleryPage.tsx`
 - Modify: `src/features/gallery/S3GalleryPage.test.tsx`
 
-- [ ] **Step 1: Add backend download model and command**
+- [x] **Step 1: Add backend download model and command**
 
 Add to `models.rs`:
 
@@ -857,7 +857,7 @@ pub async fn download_object(request: DownloadObjectRequest, secret: String) -> 
 
 Register `download_gallery_object` in `lib.rs`.
 
-- [ ] **Step 2: Write Gallery tests around API calls**
+- [x] **Step 2: Write Gallery tests around API calls**
 
 Mock `galleryApi`:
 
@@ -901,7 +901,7 @@ it("deletes after confirmation and refreshes the prefix", async () => {
 });
 ```
 
-- [ ] **Step 3: Implement Gallery loading and actions**
+- [x] **Step 3: Implement Gallery loading and actions**
 
 `S3GalleryPage` must:
 
@@ -917,7 +917,7 @@ it("deletes after confirmation and refreshes the prefix", async () => {
 
 Do not implement rename or move.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -953,7 +953,7 @@ git commit -m "feat: wire S3 gallery actions"
 - Modify: `src/features/optimize/OptimizePage.test.tsx`
 - Modify: `src/features/gallery/S3GalleryPage.test.tsx`
 
-- [ ] **Step 1: Move object-key generation to backend**
+- [x] **Step 1: Move object-key generation to backend**
 
 Add a command that uses `naming::render_object_key` and a file content hash:
 
@@ -983,7 +983,7 @@ The command must:
 - Prefix the rendered key with selected prefix if the template does not already start with that prefix.
 - Normalize slashes.
 
-- [ ] **Step 2: Add upload request fields for history**
+- [x] **Step 2: Add upload request fields for history**
 
 Extend `UploadObjectRequest` with optional history fields:
 
@@ -996,7 +996,7 @@ pub target_format: Option<ImageFormat>,
 
 In `upload_gallery_object`, after successful `gallery::upload_object`, call `history::append_history`.
 
-- [ ] **Step 3: Test Optimize upload calls real upload wrapper**
+- [x] **Step 3: Test Optimize upload calls real upload wrapper**
 
 Mock `uploadApi.uploadObject` and `namingApi.generateObjectKey`.
 
@@ -1023,7 +1023,7 @@ expect(onUploadedToS3).toHaveBeenCalledWith({
 });
 ```
 
-- [ ] **Step 4: Implement Optimize upload**
+- [x] **Step 4: Implement Optimize upload**
 
 `Upload to S3` from results must:
 
@@ -1035,7 +1035,7 @@ expect(onUploadedToS3).toHaveBeenCalledWith({
 - On complete success, open Gallery with `profile`, `prefix`, and highlighted keys.
 - On partial failure, show failed items and keep user on results screen.
 
-- [ ] **Step 5: Implement Gallery local upload**
+- [x] **Step 5: Implement Gallery local upload**
 
 `Upload local images` in Gallery must:
 
@@ -1045,7 +1045,7 @@ expect(onUploadedToS3).toHaveBeenCalledWith({
 - Refresh current prefix.
 - Highlight newly uploaded keys.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -1080,7 +1080,7 @@ git commit -m "feat: upload optimized and local images to S3"
 - Modify: `src/features/gallery/S3GalleryPage.tsx`
 - Modify: `src/features/settings/SettingsPage.tsx`
 
-- [ ] **Step 1: Remove fixed minimum page width**
+- [x] **Step 1: Remove fixed minimum page width**
 
 In `src/App.css`, remove:
 
@@ -1099,7 +1099,7 @@ body {
 }
 ```
 
-- [ ] **Step 2: Make shell responsive to 800x600**
+- [x] **Step 2: Make shell responsive to 800x600**
 
 Use:
 
@@ -1126,7 +1126,7 @@ Use:
 }
 ```
 
-- [ ] **Step 3: Fix Settings layout**
+- [x] **Step 3: Fix Settings layout**
 
 Settings must not be a three-column grid with one oversized panel. Use:
 
@@ -1151,7 +1151,7 @@ Settings must not be a three-column grid with one oversized panel. Use:
 }
 ```
 
-- [ ] **Step 4: Add disabled/loading/error visual states**
+- [x] **Step 4: Add disabled/loading/error visual states**
 
 Add styles for:
 
@@ -1169,7 +1169,7 @@ Every page must show specific status messages:
 - Gallery: loading prefix, deleting, downloading, uploading.
 - Settings: saving profile, profile saved, credential fallback warning.
 
-- [ ] **Step 5: Manual visual verification**
+- [x] **Step 5: Manual visual verification**
 
 Run:
 
@@ -1204,7 +1204,7 @@ git commit -m "fix: make Pic Piper UI usable at default window size"
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-06-26-pic-piper-corrective-implementation.md` checkbox status only
 
-- [ ] **Step 1: Add final static audit command**
+- [x] **Step 1: Add final static audit command**
 
 Run:
 
@@ -1214,7 +1214,7 @@ rg -n "SAMPLE_ITEMS|SAMPLE_OBJECTS|/sample/photo-01|_props|static gallery|tempor
 
 Expected: no matches.
 
-- [ ] **Step 2: Run full automated verification**
+- [x] **Step 2: Run full automated verification**
 
 Run:
 
@@ -1229,7 +1229,7 @@ cd ..
 
 Expected: all pass.
 
-- [ ] **Step 3: Run functional smoke test with a local image**
+- [x] **Step 3: Run functional smoke test with a local image**
 
 Create or use a small local PNG/JPG. In the app:
 
@@ -1242,7 +1242,7 @@ Create or use a small local PNG/JPG. In the app:
 7. Click Save to local folder.
 8. Confirm the output file exists in the chosen folder.
 
-- [ ] **Step 4: Run S3 smoke test**
+- [x] **Step 4: Run S3 smoke test**
 
 Use MinIO or a real low-risk S3-compatible bucket:
 
@@ -1256,7 +1256,7 @@ Use MinIO or a real low-risk S3-compatible bucket:
 
 If no S3 endpoint is available, document that only S3 smoke was skipped. Do not claim S3 is verified.
 
-- [ ] **Step 5: Update README truthfully**
+- [x] **Step 5: Update README truthfully**
 
 README must state exactly what works and how to run it. Include:
 
@@ -1265,7 +1265,7 @@ README must state exactly what works and how to run it. Include:
 - How to upload to S3.
 - Known v1 limits: no auto-upload, no upload queue, no rename/move, no presigned URLs.
 
-- [ ] **Step 6: Commit final docs**
+- [x] **Step 6: Commit final docs**
 
 Commit:
 
