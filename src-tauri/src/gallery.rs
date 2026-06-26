@@ -23,7 +23,7 @@ async fn client_for(profile: &S3Profile, secret: String) -> Client {
     let base = aws_config::defaults(BehaviorVersion::latest())
         .region(Region::new(profile.region.clone()))
         .credentials_provider(SharedCredentialsProvider::new(credentials))
-        .endpoint_url(profile.endpoint.clone())
+        .endpoint_url(endpoint_url(profile))
         .load()
         .await;
     let mut builder = aws_sdk_s3::config::Builder::from(&base);
@@ -31,6 +31,19 @@ async fn client_for(profile: &S3Profile, secret: String) -> Client {
         builder = builder.force_path_style(true);
     }
     Client::from_conf(builder.build())
+}
+
+fn endpoint_url(profile: &S3Profile) -> String {
+    let endpoint = profile.endpoint.trim_end_matches('/');
+    let bucket = profile.bucket.trim_matches('/');
+    if bucket.is_empty() {
+        return endpoint.to_string();
+    }
+
+    endpoint
+        .strip_suffix(&format!("/{bucket}"))
+        .unwrap_or(endpoint)
+        .to_string()
 }
 
 pub fn public_url(profile: &S3Profile, key: &str) -> AppResult<String> {
@@ -231,5 +244,18 @@ mod tests {
         assert!(!is_supported_image_key("photo.gif"));
         assert!(!is_supported_image_key("photo.bmp"));
         assert!(!is_supported_image_key("readme.txt"));
+    }
+
+    #[test]
+    fn endpoint_url_strips_bucket_suffix_for_path_style_profiles() {
+        let mut p = profile(Some("https://cdn.example.com"));
+        p.endpoint = "https://account.r2.cloudflarestorage.com/images/".to_string();
+        p.bucket = "images".to_string();
+        p.path_style = true;
+
+        assert_eq!(
+            endpoint_url(&p),
+            "https://account.r2.cloudflarestorage.com".to_string()
+        );
     }
 }
