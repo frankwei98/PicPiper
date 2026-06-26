@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -172,6 +172,96 @@ describe("OptimizePage", () => {
       outputPaths: ["/tmp/pic-piper/run-1/real-photo.webp"],
       targetDir: "/tmp/saved",
     });
+  });
+
+  it("Apply preset applies preset settings and compressBatch includes them", async () => {
+    const preset = {
+      id: "preset-1",
+      name: "High Quality",
+      targetFormat: "avif",
+      quality: 85,
+      maxWidth: 2000,
+      maxHeight: 2000,
+      allowUpscale: false,
+      removeGps: true,
+    };
+    const user = userEvent.setup();
+    render(
+      <OptimizePage
+        namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}"
+        presets={[preset]}
+      />,
+    );
+
+    // Import an image
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText("real-photo.jpg");
+
+    // Change per-image quality away from default
+    const qualitySlider = screen.getByRole("slider");
+    fireEvent.change(qualitySlider, { target: { value: "50" } });
+
+    // Select the preset in the dropdown and click Apply preset
+    const presetSelect = screen.getByLabelText(/preset/i);
+    await user.selectOptions(presetSelect, "preset-1");
+    await user.click(screen.getByRole("button", { name: /apply preset/i }));
+
+    // Verify the item's settings were updated to the preset values
+    expect(screen.getByText(/AVIF/i)).toBeInTheDocument();
+
+    // Click Compress and verify preset settings are sent
+    await user.click(screen.getByRole("button", { name: "Compress" }));
+
+    expect(compressBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            id: "real-photo",
+            settings: expect.objectContaining({
+              targetFormat: "avif",
+              quality: 85,
+              maxWidth: 2000,
+              maxHeight: 2000,
+            }),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("Apply preset with no presets configured applies DEFAULT_SETTINGS", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Import an image
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText("real-photo.jpg");
+
+    // Change per-image quality away from default
+    const qualitySlider = screen.getByRole("slider");
+    fireEvent.change(qualitySlider, { target: { value: "30" } });
+
+    // Click Apply preset (no presets prop, so DEFAULT_SETTINGS should be used)
+    await user.click(screen.getByRole("button", { name: /apply preset/i }));
+
+    // Click Compress and verify default settings are restored
+    await user.click(screen.getByRole("button", { name: "Compress" }));
+
+    expect(compressBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            id: "real-photo",
+            settings: expect.objectContaining({
+              targetFormat: "webp",
+              quality: 68,
+              maxWidth: 1600,
+              maxHeight: 1600,
+            }),
+          }),
+        ]),
+      }),
+    );
   });
 
   it("Upload to S3 calls generateObjectKey and uploadObject with correct params", async () => {

@@ -12,6 +12,17 @@ const DEFAULT_SETTINGS: CompressionSettings = {
   removeGps: true,
 };
 
+type Preset = {
+  id: string;
+  name: string;
+  targetFormat: string;
+  quality: number;
+  maxWidth: number;
+  maxHeight: number;
+  allowUpscale: boolean;
+  removeGps: boolean;
+};
+
 interface OptimizePageProps {
   onUploadedToS3?: (focus: {
     profile: S3Profile;
@@ -20,6 +31,7 @@ interface OptimizePageProps {
   }) => void;
   activeProfile?: S3Profile;
   namingTemplate: string;
+  presets?: Preset[];
 }
 
 function contentTypeFor(format: string) {
@@ -39,13 +51,14 @@ function contentTypeFor(format: string) {
   }
 }
 
-export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
+export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, presets = [] }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [mode, setMode] = useState<"edit" | "results">("edit");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
 
   const canCompress = items.some((item) => item.status === "ready" || item.status === "pending");
 
@@ -60,6 +73,28 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
             }
           : item,
       ),
+    );
+  };
+
+  const handleApplyPreset = () => {
+    const preset = presets.find((p) => p.id === selectedPresetId);
+    const appliedSettings: CompressionSettings = preset
+      ? {
+          targetFormat: preset.targetFormat as CompressionSettings["targetFormat"],
+          quality: preset.quality,
+          maxWidth: preset.maxWidth,
+          maxHeight: preset.maxHeight,
+          allowUpscale: preset.allowUpscale,
+          removeGps: preset.removeGps,
+        }
+      : { ...DEFAULT_SETTINGS };
+
+    setItems((current) =>
+      current.map((item) => ({
+        ...item,
+        estimatedBytes: Math.round(item.originalBytes * (appliedSettings.quality / 100) * 0.25),
+        settings: { ...appliedSettings },
+      })),
     );
   };
 
@@ -329,7 +364,23 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           <p>Apply a preset, tune each image, then compress.</p>
         </div>
         <div className="header-actions">
-          <button type="button">Apply preset</button>
+          {presets.length > 0 && (
+            <label>
+              Preset
+              <select
+                value={selectedPresetId}
+                onChange={(e) => setSelectedPresetId(e.target.value)}
+              >
+                <option value="">Default</option>
+                {presets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button type="button" onClick={handleApplyPreset}>Apply preset</button>
           <button type="button" disabled={!canCompress} onClick={handleCompress}>Compress</button>
         </div>
       </header>

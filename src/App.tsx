@@ -57,6 +57,7 @@ function App() {
           activeProfile={selectedProfile}
           namingTemplate={settings.namingTemplate}
           onUploadedToS3={openGallery}
+          presets={settings.presets}
         />
       )}
       {navigation.view === "gallery" && (
