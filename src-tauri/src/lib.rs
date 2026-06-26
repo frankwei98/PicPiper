@@ -13,8 +13,9 @@ use models::{
     AppSettings, CompressBatchRequest, CompressBatchResponse, CompressImageRequest,
     CompressImageResult, CopyOutputsRequest, DeleteObjectRequest, DownloadObjectRequest,
     GalleryObject, GenerateObjectKeyRequest, GenerateObjectKeyResponse, ImageInspection,
-    InspectImageRequest, ListObjectsRequest, SaveCredentialRequest, SaveCredentialResponse,
-    SaveSettingsRequest, UploadHistoryEntry, UploadObjectRequest,
+    InspectImageRequest, ListObjectsRequest, ReadThumbnailRequest, ReadThumbnailResponse,
+    SaveCredentialRequest, SaveCredentialResponse, SaveSettingsRequest, UploadHistoryEntry,
+    UploadObjectRequest,
 };
 use sha2::{Digest, Sha256};
 use state::AppPaths;
@@ -179,6 +180,11 @@ fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
     optimizer::copy_outputs_to_dir(request)
 }
 
+#[tauri::command]
+fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailResponse> {
+    optimizer::read_thumbnail(request)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -195,6 +201,7 @@ pub fn run() {
             compress_image,
             compress_batch,
             copy_outputs_to_dir,
+            read_thumbnail,
             list_gallery_objects,
             delete_gallery_object,
             upload_gallery_object,

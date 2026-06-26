@@ -255,3 +255,16 @@ pub struct CopyOutputsRequest {
     pub output_paths: Vec<String>,
     pub target_dir: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadThumbnailRequest {
+    pub path: String,
+    pub max_size: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadThumbnailResponse {
+    pub data_url: String,
+}

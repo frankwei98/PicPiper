@@ -57,6 +57,15 @@ export interface CopyOutputsRequest {
   targetDir: string;
 }
 
+export interface ReadThumbnailRequest {
+  path: string;
+  maxSize?: number;
+}
+
+export interface ReadThumbnailResponse {
+  dataUrl: string;
+}
+
 export const tauriApi = {
   inspectImage: (request: InspectImageRequest) =>
     invoke<OptimizeItem>("inspect_image", { request }),
@@ -66,6 +75,8 @@ export const tauriApi = {
     invoke<CompressBatchResponse>("compress_batch", { request }),
   copyOutputsToDir: (request: CopyOutputsRequest) =>
     invoke<string[]>("copy_outputs_to_dir", { request }),
+  readThumbnail: (request: ReadThumbnailRequest) =>
+    invoke<ReadThumbnailResponse>("read_thumbnail", { request }),
 };
 
 export interface ListGalleryObjectsRequest {

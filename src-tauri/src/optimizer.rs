@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use image::{
     codecs::{avif::AvifEncoder, jpeg::JpegEncoder},
     DynamicImage, ImageEncoder, ImageFormat as CodecFormat,
@@ -13,7 +14,7 @@ use crate::{
     models::{
         CompressBatchItemResult, CompressBatchRequest, CompressBatchResponse, CompressImageRequest,
         CompressImageResult, CopyOutputsRequest, ImageFormat, ImageInspection, InspectImageRequest,
-        ItemError,
+        ItemError, ReadThumbnailRequest, ReadThumbnailResponse,
     },
 };
 
@@ -168,6 +169,44 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
     }
 
     Ok(copied)
+}
+
+pub fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailResponse> {
+    let path = PathBuf::from(&request.path);
+    let max_size = request.max_size.unwrap_or(256).clamp(16, 1024);
+
+    let reader = image::ImageReader::open(&path)
+        .map_err(|err| AppError::new("imageOpenFailed", err.to_string()))?
+        .with_guessed_format()
+        .map_err(|err| AppError::new("imageFormatFailed", err.to_string()))?;
+
+    let img = reader
+        .decode()
+        .map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
+
+    let thumb = img.resize(max_size, max_size, image::imageops::FilterType::Lanczos3);
+
+    // Encode to JPEG for small size; fallback to PNG for formats with alpha
+    let has_alpha = thumb.color().has_alpha();
+    let (bytes, mime) = if has_alpha {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        thumb
+            .write_to(&mut buf, image::ImageFormat::Png)
+            .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?;
+        (buf.into_inner(), "image/png")
+    } else {
+        let mut buf = std::io::Cursor::new(Vec::new());
+        let mut encoder = JpegEncoder::new_with_quality(&mut buf, 80);
+        encoder
+            .encode_image(&thumb)
+            .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?;
+        (buf.into_inner(), "image/jpeg")
+    };
+
+    let encoded = BASE64_STANDARD.encode(&bytes);
+    let data_url = format!("data:{};base64,{}", mime, encoded);
+
+    Ok(ReadThumbnailResponse { data_url })
 }
 
 fn estimate_bytes(original_bytes: u64, quality: u8) -> u64 {

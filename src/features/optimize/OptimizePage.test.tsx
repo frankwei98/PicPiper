@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen, mockOnDragDropEvent, uploadObject, generateObjectKey } = vi.hoisted(() => {
+const { inspectImage, compressBatch, copyOutputsToDir, readThumbnail, mockDialogOpen, mockOnDragDropEvent, uploadObject, generateObjectKey } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async (..._args: unknown[]) => ["/tmp/real-photo.jpg"]);
   return {
     inspectImage: vi.fn(async () => ({
@@ -38,6 +38,7 @@ const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen, mockOnDra
       ],
     })),
     copyOutputsToDir: vi.fn(async () => ["/tmp/saved/real-photo.webp"]),
+    readThumbnail: vi.fn(async () => ({ dataUrl: "data:image/jpeg;base64,AAAA" })),
     mockDialogOpen,
     mockOnDragDropEvent: vi.fn(async () => vi.fn()),
     uploadObject: vi.fn(async () => ({
@@ -67,6 +68,7 @@ vi.mock("../../api/tauri", async () => ({
     inspectImage,
     compressBatch,
     copyOutputsToDir,
+    readThumbnail,
   },
   uploadApi: {
     uploadObject,
@@ -282,6 +284,21 @@ describe("OptimizePage", () => {
     );
   });
 
+  it("removes an image from the queue when the X button is clicked", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText("real-photo.jpg");
+
+    const removeBtn = screen.getByRole("button", {
+      name: /Remove real-photo\.jpg from queue/i,
+    });
+    await user.click(removeBtn);
+
+    expect(screen.queryByText("real-photo.jpg")).not.toBeInTheDocument();
+  });
+
   it("Upload to S3 calls generateObjectKey and uploadObject with correct params", async () => {
     const profile = {
       id: "p1",
@@ -336,8 +353,7 @@ describe("OptimizePage", () => {
     });
   });
 
-  it("dropping file with usable path calls inspectImage", async () => {
-    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+  it("dropping file with usable path calls inspectImage", async () => {    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     const dropZone = document.querySelector(".drop-zone")!;
     const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });

@@ -48,8 +48,27 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
 
   const canCompress = items.some((item) => item.status === "ready" || item.status === "pending");
+
+  const removeItem = (id: string) => {
+    setItems((current) => current.filter((item) => item.id !== id));
+    setThumbnails((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const loadThumbnail = useCallback(async (id: string, path: string) => {
+    try {
+      const res = await tauriApi.readThumbnail({ path, maxSize: 256 });
+      setThumbnails((current) => ({ ...current, [id]: res.dataUrl }));
+    } catch {
+      // Thumbnails are best-effort; failures leave the placeholder.
+    }
+  }, []);
 
   const updateQuality = (id: string, quality: number) => {
     setItems((current) =>
@@ -124,7 +143,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
 
     setItems((current) => [...current, ...newItems]);
     setImporting(false);
-  }, []);
+
+    for (const item of newItems) {
+      if (item.status !== "failed" && item.sourcePath) {
+        void loadThumbnail(item.id, item.sourcePath);
+      }
+    }
+  }, [loadThumbnail]);
 
   const handleChooseImages = async () => {
     const selected = await open({
@@ -474,7 +499,22 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
       <section className="item-list" aria-label="Images to optimize">
         {items.map((item) => (
           <article className="image-row" key={item.id}>
-            <div>
+            <button
+              type="button"
+              className="image-row__remove"
+              aria-label={`Remove ${item.fileName} from queue`}
+              onClick={() => removeItem(item.id)}
+            >
+              ×
+            </button>
+            <div className="image-row__thumb">
+              {thumbnails[item.id] ? (
+                <img src={thumbnails[item.id]} alt="" loading="lazy" />
+              ) : (
+                <span className="image-row__thumb-placeholder" aria-hidden="true" />
+              )}
+            </div>
+            <div className="image-row__meta">
               <strong>{item.fileName}</strong>
               {item.error ? (
                 <p className="item-error">{item.error}</p>
@@ -485,19 +525,19 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
                 </p>
               )}
               {item.warning && <p className="item-warning">{item.warning}</p>}
+              {!item.error && (
+                <label>
+                  Quality {item.settings.quality}%
+                  <input
+                    max={100}
+                    min={1}
+                    onChange={(event) => updateQuality(item.id, Number(event.currentTarget.value))}
+                    type="range"
+                    value={item.settings.quality}
+                  />
+                </label>
+              )}
             </div>
-            {!item.error && (
-              <label>
-                Quality {item.settings.quality}%
-                <input
-                  max={100}
-                  min={1}
-                  onChange={(event) => updateQuality(item.id, Number(event.currentTarget.value))}
-                  type="range"
-                  value={item.settings.quality}
-                />
-              </label>
-            )}
           </article>
         ))}
       </section>
