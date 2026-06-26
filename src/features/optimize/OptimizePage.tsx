@@ -78,6 +78,61 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     setItems((current) => current.filter((item) => item.id !== id));
   };
 
+  const inspectSingleItem = useCallback(async (itemId: string, sourcePath: string) => {
+    setItems((current) =>
+      current.map((ci) => (ci.id === itemId ? { ...ci, status: "inspecting" as const, error: undefined } : ci)),
+    );
+
+    try {
+      const raw = (await tauriApi.inspectImage({
+        path: sourcePath,
+        settings: { ...DEFAULT_SETTINGS, quality, removeGps },
+      })) as unknown as Record<string, unknown>;
+
+      const fileName = (raw.fileName as string) ?? (raw.file_name as string) ?? sourcePath.split("/").pop() ?? "unknown";
+      const sourceFormat = (raw.sourceFormat as OptimizeItem["sourceFormat"]) ?? (raw.source_format as OptimizeItem["sourceFormat"]) ?? "unknown";
+      const originalBytes = (raw.originalBytes as number) ?? (raw.original_bytes as number) ?? 0;
+      const estimatedBytes = (raw.estimatedBytes as number) ?? (raw.estimated_bytes as number) ?? 0;
+      const targetFormat = defaultTargetFormat(sourceFormat);
+
+      setItems((current) =>
+        current.map((ci) =>
+          ci.id === itemId
+            ? {
+                ...ci,
+                fileName,
+                sourceFormat,
+                originalBytes,
+                estimatedBytes,
+                warning: raw.warning as string | undefined,
+                status: "queued" as const,
+                settings: { targetFormat, quality, removeGps },
+              }
+            : ci,
+        ),
+      );
+
+      try {
+        const thumb = await tauriApi.readThumbnail({ path: sourcePath, maxSize: 512 });
+        setItems((current) =>
+          current.map((ci) =>
+            ci.id === itemId ? { ...ci, originalPreviewUrl: thumb.dataUrl } : ci,
+          ),
+        );
+      } catch {
+        // Thumbnails are best-effort
+      }
+    } catch (err) {
+      setItems((current) =>
+        current.map((ci) =>
+          ci.id === itemId
+            ? { ...ci, status: "failed" as const, error: err instanceof Error ? err.message : "Inspection failed" }
+            : ci,
+        ),
+      );
+    }
+  }, [quality, removeGps]);
+
   const importImages = useCallback(async (paths: string[]) => {
     setImporting(true);
     setDropError(null);
@@ -96,50 +151,11 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     setItems((current) => [...current, ...pendingItems]);
 
     for (const item of pendingItems) {
-      try {
-        const raw = (await tauriApi.inspectImage({
-          path: item.sourcePath,
-          settings: { ...DEFAULT_SETTINGS, quality, removeGps },
-        })) as unknown as Record<string, unknown>;
-
-        const fileName = (raw.fileName as string) ?? (raw.file_name as string) ?? item.sourcePath.split("/").pop() ?? "unknown";
-        const sourceFormat = (raw.sourceFormat as OptimizeItem["sourceFormat"]) ?? (raw.source_format as OptimizeItem["sourceFormat"]) ?? "unknown";
-        const originalBytes = (raw.originalBytes as number) ?? (raw.original_bytes as number) ?? 0;
-        const estimatedBytes = (raw.estimatedBytes as number) ?? (raw.estimated_bytes as number) ?? 0;
-        const targetFormat = defaultTargetFormat(sourceFormat);
-
-        item.fileName = fileName;
-        item.sourceFormat = sourceFormat;
-        item.originalBytes = originalBytes;
-        item.estimatedBytes = estimatedBytes;
-        item.warning = raw.warning as string | undefined;
-        item.status = "queued";
-        item.settings = { targetFormat, quality, removeGps };
-
-        setItems((current) =>
-          current.map((ci) => (ci.id === item.id ? { ...item } : ci)),
-        );
-
-        try {
-          const thumb = await tauriApi.readThumbnail({ path: item.sourcePath, maxSize: 512 });
-          item.originalPreviewUrl = thumb.dataUrl;
-          setItems((current) =>
-            current.map((ci) => (ci.id === item.id ? { ...item } : ci)),
-          );
-        } catch {
-          // Thumbnails are best-effort
-        }
-      } catch (err) {
-        item.status = "failed";
-        item.error = err instanceof Error ? err.message : "Inspection failed";
-        setItems((current) =>
-          current.map((ci) => (ci.id === item.id ? { ...item } : ci)),
-        );
-      }
+      await inspectSingleItem(item.id, item.sourcePath);
     }
 
     setImporting(false);
-  }, [quality, removeGps]);
+  }, [quality, removeGps, inspectSingleItem]);
 
   const handleChooseImages = async () => {
     const selected = await open({
@@ -396,20 +412,25 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const retryItem = (id: string) => {
-    setItems((current) =>
-      current.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              status: item.originalBytes > 0 ? "queued" : "inspecting",
-              error: undefined,
-              cancelling: false,
-              taskVersion: (item.taskVersion ?? 0) + 1,
-              settings: { ...item.settings, quality, removeGps },
-            }
-          : item,
-      ),
-    );
+    const item = items.find((i) => i.id === id);
+    if (item && item.originalBytes === 0) {
+      inspectSingleItem(id, item.sourcePath);
+    } else {
+      setItems((current) =>
+        current.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                status: "queued" as const,
+                error: undefined,
+                cancelling: false,
+                taskVersion: (item.taskVersion ?? 0) + 1,
+                settings: { ...item.settings, quality, removeGps },
+              }
+            : item,
+        ),
+      );
+    }
   };
 
   // --- Save and upload ---
@@ -666,6 +687,11 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           onOpenChange={(open) => { if (!open) setCompareItemId(null); }}
           title={`Compare ${compareItem.fileName}`}
         >
+          <div className="flex flex-col gap-xs mb-lg text-caption text-on-surface-variant">
+            <p>Quality: {compareItem.settings.quality}</p>
+            <p>Remove GPS: {compareItem.settings.removeGps ? "On" : "Off"}</p>
+            <p>Output format: {compareItem.settings.targetFormat}</p>
+          </div>
           <div className="grid grid-cols-2 gap-lg">
             <div>
               <p className="text-footnote font-medium text-on-surface-variant mb-sm">Original</p>
