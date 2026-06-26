@@ -1,6 +1,16 @@
 import { useState } from "react";
-import type { OptimizeItem, S3Profile } from "../../types";
-import { uploadApi } from "../../api/tauri";
+import { open } from "@tauri-apps/plugin-dialog";
+import type { CompressionSettings, OptimizeItem, S3Profile } from "../../types";
+import { tauriApi, uploadApi } from "../../api/tauri";
+
+const DEFAULT_SETTINGS: CompressionSettings = {
+  targetFormat: "webp",
+  quality: 68,
+  maxWidth: 1600,
+  maxHeight: 1600,
+  allowUpscale: false,
+  removeGps: true,
+};
 
 interface OptimizePageProps {
   onUploadedToS3?: (focus: {
@@ -47,6 +57,58 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
           : item,
       ),
     );
+  };
+
+  const handleChooseImages = async () => {
+    const selected = await open({
+      multiple: true,
+      filters: [
+        {
+          name: "Images",
+          extensions: ["jpg", "jpeg", "png", "webp", "avif", "heif", "heic"],
+        },
+      ],
+    });
+
+    if (!selected) return;
+
+    const paths = Array.isArray(selected) ? selected : [selected];
+
+    const results = await Promise.allSettled(
+      paths.map((path) =>
+        tauriApi.inspectImage({ path, settings: DEFAULT_SETTINGS }),
+      ),
+    );
+
+    const newItems: OptimizeItem[] = results.map((result, index) => {
+      if (result.status === "fulfilled") {
+        const raw = result.value as unknown as Record<string, unknown>;
+        const settings = (raw.settings as CompressionSettings) ?? DEFAULT_SETTINGS;
+        return {
+          id: (raw.id as string) ?? crypto.randomUUID(),
+          sourcePath: (raw.sourcePath as string) ?? (raw.path as string) ?? paths[index],
+          fileName: (raw.fileName as string) ?? (raw.file_name as string) ?? paths[index].split("/").pop() ?? "unknown",
+          sourceFormat: (raw.sourceFormat as OptimizeItem["sourceFormat"]) ?? (raw.source_format as OptimizeItem["sourceFormat"]) ?? "unknown",
+          originalBytes: (raw.originalBytes as number) ?? (raw.original_bytes as number) ?? 0,
+          estimatedBytes: (raw.estimatedBytes as number) ?? (raw.estimated_bytes as number) ?? 0,
+          status: (raw.status as OptimizeItem["status"]) ?? "ready",
+          warning: raw.warning as string | undefined,
+          settings,
+        };
+      }
+      return {
+        id: crypto.randomUUID(),
+        sourcePath: paths[index],
+        fileName: paths[index].split("/").pop() ?? "unknown",
+        sourceFormat: "unknown" as const,
+        originalBytes: 0,
+        status: "failed" as const,
+        error: result.reason instanceof Error ? result.reason.message : "Inspection failed",
+        settings: { ...DEFAULT_SETTINGS },
+      };
+    });
+
+    setItems((current) => [...current, ...newItems]);
   };
 
   const handleCompress = () => {
@@ -138,28 +200,40 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
         </div>
       </header>
 
-      <section className="drop-zone">Drop images here or choose images</section>
+      <section className="drop-zone">
+        Drop images here or{" "}
+        <button type="button" onClick={handleChooseImages}>
+          Choose images
+        </button>
+      </section>
 
       <section className="item-list" aria-label="Images to optimize">
         {items.map((item) => (
           <article className="image-row" key={item.id}>
             <div>
               <strong>{item.fileName}</strong>
-              <p>
-                {item.sourceFormat.toUpperCase()} -&gt; {item.settings.targetFormat.toUpperCase()} |{" "}
-                {formatBytes(item.originalBytes)} =&gt; {formatBytes(item.estimatedBytes ?? 0)}
-              </p>
+              {item.error ? (
+                <p className="item-error">{item.error}</p>
+              ) : (
+                <p>
+                  {item.sourceFormat.toUpperCase()} -&gt; {item.settings.targetFormat.toUpperCase()} |{" "}
+                  {formatBytes(item.originalBytes)} =&gt; {formatBytes(item.estimatedBytes ?? 0)}
+                </p>
+              )}
+              {item.warning && <p className="item-warning">{item.warning}</p>}
             </div>
-            <label>
-              Quality {item.settings.quality}%
-              <input
-                max={100}
-                min={1}
-                onChange={(event) => updateQuality(item.id, Number(event.currentTarget.value))}
-                type="range"
-                value={item.settings.quality}
-              />
-            </label>
+            {!item.error && (
+              <label>
+                Quality {item.settings.quality}%
+                <input
+                  max={100}
+                  min={1}
+                  onChange={(event) => updateQuality(item.id, Number(event.currentTarget.value))}
+                  type="range"
+                  value={item.settings.quality}
+                />
+              </label>
+            )}
           </article>
         ))}
       </section>
