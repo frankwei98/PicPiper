@@ -23,17 +23,28 @@ pub fn save_secret(
     fallback_dir: &Path,
     request: SaveCredentialRequest,
 ) -> AppResult<SaveCredentialResponse> {
+    save_secret_with_keyring(fallback_dir, request, |key_ref, secret| {
+        let entry = keyring::Entry::new(SERVICE_NAME, key_ref);
+        if let Ok(entry) = entry {
+            return entry.set_password(secret).is_ok();
+        }
+        false
+    })
+}
+
+fn save_secret_with_keyring(
+    fallback_dir: &Path,
+    request: SaveCredentialRequest,
+    try_save_keyring: impl FnOnce(&str, &str) -> bool,
+) -> AppResult<SaveCredentialResponse> {
     let key_ref = credential_ref(&request.profile_id);
 
     if !keyring_disabled() {
-        let entry = keyring::Entry::new(SERVICE_NAME, &key_ref);
-        if let Ok(entry) = entry {
-            if entry.set_password(&request.secret_access_key).is_ok() {
-                return Ok(SaveCredentialResponse {
-                    credential_ref: key_ref,
-                    insecure_fallback_used: false,
-                });
-            }
+        if try_save_keyring(&key_ref, &request.secret_access_key) {
+            return Ok(SaveCredentialResponse {
+                credential_ref: key_ref,
+                insecure_fallback_used: false,
+            });
         }
         if !request.allow_insecure_fallback {
             return Err(AppError::new(
@@ -120,25 +131,46 @@ mod tests {
     fn fallback_requires_explicit_permission_without_env() {
         let _guard = ENV_MUTEX.lock().unwrap();
         // Without the env var, if keyring fails and allow_insecure_fallback is false,
-        // save_secret should return an error.
-        // (In CI the keyring backend is typically unavailable.)
+        // save_secret should return an error without touching the real OS keyring.
         let dir = tempfile::tempdir().unwrap();
         unsafe {
             env::remove_var("PIC_PIPER_NO_KEYCHAIN");
         }
-        let result = save_secret(
+        let result = save_secret_with_keyring(
             dir.path(),
             SaveCredentialRequest {
                 profile_id: "example".to_string(),
                 secret_access_key: "secret".to_string(),
                 allow_insecure_fallback: false,
             },
+            |_key_ref, _secret| false,
         );
 
-        // If keyring backend is available in the test env this will succeed;
-        // if unavailable (typical CI) it should error with the right code.
-        if let Err(err) = result {
-            assert_eq!(err.code, "secureCredentialUnavailable");
+        let err = result.expect_err("fallback should require explicit permission");
+        assert_eq!(err.code, "secureCredentialUnavailable");
+    }
+
+    #[test]
+    fn no_keychain_env_does_not_attempt_keyring() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        unsafe {
+            env::set_var("PIC_PIPER_NO_KEYCHAIN", "1");
         }
+        let result = save_secret_with_keyring(
+            dir.path(),
+            SaveCredentialRequest {
+                profile_id: "example".to_string(),
+                secret_access_key: "secret".to_string(),
+                allow_insecure_fallback: false,
+            },
+            |_key_ref, _secret| panic!("keyring should be skipped when PIC_PIPER_NO_KEYCHAIN=1"),
+        );
+        unsafe {
+            env::remove_var("PIC_PIPER_NO_KEYCHAIN");
+        }
+
+        let resp = result.expect("save_secret should use file fallback");
+        assert!(resp.insecure_fallback_used);
     }
 }
