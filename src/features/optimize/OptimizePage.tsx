@@ -596,6 +596,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
               <strong className="text-callout font-semibold text-on-surface overflow-hidden text-ellipsis whitespace-nowrap">{item.fileName}</strong>
               {item.error ? (
                 <p className="text-error text-caption mt-0.5">{item.error}</p>
+              ) : item.status === "cancelled" ? (
+                <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty">Cancelled</p>
               ) : item.status === "compressing" || item.status === "loadingPreview" ? (
                 <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty tabular-nums">Compressing...</p>
               ) : item.status === "compressed" ? (
@@ -632,7 +634,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                 <p className="text-on-surface-variant text-caption mt-0.5">Uploading...</p>
               )}
               {(item.status === "inspecting" || item.status === "queued" || item.status === "compressing" || item.status === "loadingPreview") && (
-                <button className={btnTertiary} type="button" onClick={() => cancelItem(item.id)}>Cancel</button>
+                <button className={btnTertiary} type="button" aria-label={`Cancel ${item.fileName}`} onClick={() => cancelItem(item.id)}>Cancel</button>
               )}
               {(item.status === "failed" || item.status === "cancelled") && (
                 <button className={btnTertiary} type="button" onClick={() => retryItem(item.id)}>Retry</button>

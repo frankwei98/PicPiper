@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -78,6 +78,7 @@ vi.mock("../../api/tauri", async () => ({
 
 describe("OptimizePage", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     // Reset dialog mock to default behavior
     mockDialogOpen.mockImplementation(async (...args: unknown[]) => {
@@ -136,6 +137,74 @@ describe("OptimizePage", () => {
     expect(screen.getByRole("dialog", { name: /compare real-photo\.jpg/i })).toBeInTheDocument();
     expect(screen.getByText(/original/i)).toBeInTheDocument();
     expect(screen.getByText(/compressed/i)).toBeInTheDocument();
+  });
+
+  it("recompresses existing items after global quality changes", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Import and wait for initial compression with real timers
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText(/1.2 MB.*240 KB/);
+    compressImage.mockClear();
+
+    // Change quality via slider and wait for debounce (400ms) + scheduler
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+
+    await waitFor(() => {
+      expect(compressImage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ quality: 60 }),
+        }),
+      );
+    });
+  });
+
+  it("changing one card format recompresses only that item", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText(/1.2 MB.*240 KB/);
+    compressImage.mockClear();
+
+    await user.selectOptions(screen.getByLabelText(/format for real-photo\.jpg/i), "webp");
+
+    expect(compressImage).toHaveBeenCalledTimes(1);
+    expect(compressImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputFileName: "real-photo.webp",
+        settings: expect.objectContaining({ targetFormat: "webp" }),
+      }),
+    );
+  });
+
+  it("does not apply late compression results after cancellation", async () => {
+    let resolveCompression!: (value: Awaited<ReturnType<typeof compressImage>>) => void;
+    compressImage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCompression = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText(/compressing/i);
+    await user.click(screen.getByRole("button", { name: /cancel real-photo\.jpg/i }));
+
+    resolveCompression({
+      sourcePath: "/tmp/real-photo.jpg",
+      outputPath: "/tmp/pic-piper/run-1/real-photo.jpg",
+      outputFileName: "real-photo.jpg",
+      originalBytes: 1_200_000,
+      outputBytes: 240_000,
+      targetFormat: "jpg",
+    });
+
+    expect(await screen.findByText(/cancelled/i)).toBeInTheDocument();
+    expect(screen.queryByText(/1.2 MB.*240 KB/)).not.toBeInTheDocument();
   });
 
   it("Save to local folder opens directory picker and copies files", async () => {
