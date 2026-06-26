@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { settingsApi } from "../../api/tauri";
 import type { AppSettings } from "../../api/tauri";
 import type { CompressionPreset, ImageFormat, S3Profile } from "../../types";
+import { AlertDialog } from "../../components/AlertDialog";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -51,13 +52,36 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [isAddingPreset, setIsAddingPreset] = useState(false);
   const [presetForm, setPresetForm] = useState<Omit<CompressionPreset, "id">>({ ...EMPTY_PRESET });
 
+  const [deleteTarget, setDeleteTarget] = useState<CompressionPreset | null>(null);
+  const presetDialogRef = useRef<HTMLDivElement>(null);
+
   const isPresetDialogOpen = isAddingPreset || editingPreset !== null;
 
-  const closePresetDialog = () => {
+  const closePresetDialog = useCallback(() => {
     setEditingPreset(null);
     setIsAddingPreset(false);
     setPresetForm({ ...EMPTY_PRESET });
-  };
+  }, []);
+
+  // Escape key closes the preset dialog
+  useEffect(() => {
+    if (!isPresetDialogOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePresetDialog();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isPresetDialogOpen, closePresetDialog]);
+
+  // Focus trap for preset dialog
+  useEffect(() => {
+    if (!isPresetDialogOpen || !presetDialogRef.current) return;
+    const dialog = presetDialogRef.current;
+    dialog.focus();
+  }, [isPresetDialogOpen]);
 
   const openAddPreset = () => {
     setEditingPreset(null);
@@ -93,18 +117,24 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     closePresetDialog();
   };
 
-  const handleDeletePreset = async (presetId: string) => {
+  const handleDeletePresetRequest = (preset: CompressionPreset) => {
+    setDeleteTarget(preset);
+  };
+
+  const handleDeletePresetConfirm = async () => {
+    if (!deleteTarget) return;
     const nextSettings: AppSettings = {
       ...settings,
-      presets: settings.presets.filter((p) => p.id !== presetId),
+      presets: settings.presets.filter((p) => p.id !== deleteTarget.id),
     };
     await settingsApi.saveSettings(nextSettings);
     onSettingsChange(nextSettings);
-    if (editingPreset?.id === presetId) {
+    if (editingPreset?.id === deleteTarget.id) {
       setEditingPreset(null);
       setIsAddingPreset(false);
       setPresetForm({ ...EMPTY_PRESET });
     }
+    setDeleteTarget(null);
   };
 
   const handleSaveProfile = async (event: React.FormEvent) => {
@@ -281,7 +311,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
                   </span>
                   <div className="preset-item-actions">
                     <button className="btn-secondary btn-sm" type="button" onClick={() => openEditPreset(preset)}>Edit</button>
-                    <button className="btn-danger btn-sm" type="button" onClick={() => handleDeletePreset(preset.id)}>Delete</button>
+                    <button className="btn-danger btn-sm" type="button" onClick={() => handleDeletePresetRequest(preset)}>Delete</button>
                   </div>
                 </li>
               ))}
@@ -293,10 +323,12 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       {isPresetDialogOpen && (
         <div className="modal-backdrop" onClick={closePresetDialog}>
           <section
+            ref={presetDialogRef}
             className="modal-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="preset-dialog-title"
+            tabIndex={-1}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="modal-header">
@@ -354,6 +386,15 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
           </section>
         </div>
       )}
+      <AlertDialog
+        open={deleteTarget !== null}
+        title={`Delete preset "${deleteTarget?.name ?? ""}"?`}
+        description="This preset will be permanently removed. This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={handleDeletePresetConfirm}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

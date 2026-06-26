@@ -511,7 +511,19 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
       </section>
 
       {dropError && <p className="error-text" role="alert">{dropError}</p>}
-      {importing && <p className="status-line">Importing images...</p>}
+      {importing && (
+        <section className="item-list" aria-label="Importing images">
+          {Array.from({ length: 3 }, (_, i) => (
+            <article key={i} className="image-row">
+              <div className="image-row__thumb" style={{ background: "var(--surface-container-high)" }} />
+              <div className="image-row__meta">
+                <strong style={{ height: "var(--fs-callout)", background: "var(--surface-container-high)", borderRadius: "var(--radius-sm)" }}>&nbsp;</strong>
+                <p style={{ height: "var(--fs-footnote)", background: "var(--surface-container-high)", borderRadius: "var(--radius-sm)", marginTop: "4px" }}>&nbsp;</p>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
       {compressing && <p className="status-line">Compressing images...</p>}
       {compressError && <p className="error-text">{compressError}</p>}
 

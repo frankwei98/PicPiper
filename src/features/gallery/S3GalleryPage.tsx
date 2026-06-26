@@ -2,14 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
+import type { AppView } from "../../types";
 import { galleryApi, namingApi, settingsApi, uploadApi } from "../../api/tauri";
+import { AlertDialog } from "../../components/AlertDialog";
 
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
   profiles: S3Profile[];
+  onNavigate?: (view: AppView) => void;
 }
 
-export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
+export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryPageProps) {
   const [selectedProfileId, setSelectedProfileId] = useState(
     galleryFocus.profile?.id ?? profiles[0]?.id ?? "",
   );
@@ -30,6 +33,7 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [highlightedKeysState, setHighlightedKeysState] = useState<string[]>(galleryFocus.highlightedKeys);
+  const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
 
   const loadObjects = useCallback(async () => {
     if (!selectedProfile) return;
@@ -161,12 +165,16 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
     }
   };
 
-  const handleDelete = async (obj: GalleryObject) => {
-    if (!selectedProfile) return;
-    if (!window.confirm(`Delete ${obj.key}?`)) return;
-    setDeletingKey(obj.key);
+  const handleDeleteRequest = (obj: GalleryObject) => {
+    setDeleteTarget(obj);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedProfile || !deleteTarget) return;
+    setDeletingKey(deleteTarget.key);
+    setDeleteTarget(null);
     try {
-      await galleryApi.deleteObject({ profile: selectedProfile, key: obj.key });
+      await galleryApi.deleteObject({ profile: selectedProfile, key: deleteTarget.key });
       await loadObjects();
     } finally {
       setDeletingKey(null);
@@ -182,7 +190,14 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
             <p>Browse a profile and prefix, then copy URLs or manage images.</p>
           </div>
         </header>
-        <section className="empty-state">No profile selected.</section>
+        <section className="empty-state">
+          No profile selected.
+          {onNavigate && (
+            <button className="btn-primary" type="button" onClick={() => onNavigate("settings")} style={{ marginTop: "var(--space-md)" }}>
+              Add a profile in Settings
+            </button>
+          )}
+        </section>
       </div>
     );
   }
@@ -232,12 +247,26 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
       {uploadStatus && (
         <p className={uploadStatus.includes("failed") ? "error-text" : "success-text"} role="status">{uploadStatus}</p>
       )}
-      {loading && <p className="status-line">Loading prefix...</p>}
+      {loading && (
+        <section className="gallery-grid" aria-label="Loading">
+          {Array.from({ length: 6 }, (_, i) => (
+            <article key={i} className="object-card">
+              <div className="object-thumb" style={{ background: "var(--surface-container-high)" }} />
+              <p style={{ height: "var(--fs-caption)", background: "var(--surface-container-high)", borderRadius: "var(--radius-sm)" }}>&nbsp;</p>
+            </article>
+          ))}
+        </section>
+      )}
       {deletingKey && <p className="status-line">Deleting {deletingKey}...</p>}
       {downloadingKey && <p className="status-line">Downloading {downloadingKey}...</p>}
       {error && <p className="error-text">{error}</p>}
       {!loading && !error && filteredObjects.length === 0 && (
-        <section className="empty-state">No objects found.</section>
+        <section className="empty-state">
+          No objects found.
+          <button className="btn-primary" type="button" onClick={handleUploadLocal} style={{ marginTop: "var(--space-md)" }}>
+            Upload local images
+          </button>
+        </section>
       )}
       {!loading && !error && filteredObjects.length > 0 && (
         <section className="gallery-grid">
@@ -275,7 +304,7 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
                 <button className="btn-secondary btn-sm" type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
                   Download
                 </button>
-                <button className="btn-danger btn-sm" type="button" onClick={() => handleDelete(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
+                <button className="btn-danger btn-sm" type="button" onClick={() => handleDeleteRequest(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
                   Delete
                 </button>
               </div>
@@ -283,6 +312,15 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
           ))}
         </section>
       )}
+      <AlertDialog
+        open={deleteTarget !== null}
+        title={`Delete ${deleteTarget?.key ?? ""}?`}
+        description="This will permanently remove the object from S3. This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

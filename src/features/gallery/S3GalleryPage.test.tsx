@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { S3GalleryPage } from "./S3GalleryPage";
@@ -135,7 +135,7 @@ describe("S3GalleryPage", () => {
       />,
     );
 
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/loading/i)).toBeInTheDocument();
   });
 
   it("renders error state when listObjects fails", async () => {
@@ -163,7 +163,6 @@ describe("S3GalleryPage", () => {
   });
 
   it("deletes after confirmation and refreshes the prefix", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
     render(
       <S3GalleryPage
@@ -174,13 +173,16 @@ describe("S3GalleryPage", () => {
 
     await screen.findByText("images/photo.webp");
     await user.click(screen.getByRole("button", { name: /delete/i }));
+
+    // Confirm in the AlertDialog
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /delete/i }));
 
     expect(deleteObject).toHaveBeenCalledWith({ profile, key: "images/photo.webp" });
     expect(listObjects).toHaveBeenCalledTimes(2);
   });
 
   it("does not delete when confirmation is cancelled", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(false);
     const user = userEvent.setup();
     render(
       <S3GalleryPage
@@ -191,6 +193,10 @@ describe("S3GalleryPage", () => {
 
     await screen.findByText("images/photo.webp");
     await user.click(screen.getByRole("button", { name: /delete/i }));
+
+    // Cancel in the AlertDialog
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /cancel/i }));
 
     expect(deleteObject).not.toHaveBeenCalled();
     expect(listObjects).toHaveBeenCalledTimes(1);

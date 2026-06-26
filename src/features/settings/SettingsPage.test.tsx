@@ -278,6 +278,10 @@ describe("SettingsPage", () => {
     // Click "Delete" on the preset
     await user.click(screen.getByRole("button", { name: /delete/i }));
 
+    // Confirm in the AlertDialog
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /delete/i }));
+
     expect(saveSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         presets: [],
