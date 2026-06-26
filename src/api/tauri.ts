@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CompressionSettings, GalleryObject, OptimizeItem, S3Profile } from "../types";
+import type { CompressionPreset, CompressionSettings, GalleryObject, OptimizeItem, S3Profile } from "../types";
 
 export interface InspectImageRequest {
   path: string;
@@ -128,16 +128,7 @@ export const namingApi = {
 
 export interface AppSettings {
   profiles: S3Profile[];
-  presets: Array<{
-    id: string;
-    name: string;
-    targetFormat: string;
-    quality: number;
-    maxWidth: number;
-    maxHeight: number;
-    allowUpscale: boolean;
-    removeGps: boolean;
-  }>;
+  presets: CompressionPreset[];
   namingTemplate: string;
   defaultOutputDir?: string;
   defaultProfileId?: string;

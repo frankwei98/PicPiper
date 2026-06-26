@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { settingsApi } from "../../api/tauri";
 import type { AppSettings } from "../../api/tauri";
-import type { S3Profile } from "../../types";
+import type { CompressionPreset, ImageFormat, S3Profile } from "../../types";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -17,6 +17,16 @@ function upsertProfile(profiles: S3Profile[], profile: S3Profile): S3Profile[] {
   next[index] = profile;
   return next;
 }
+
+const EMPTY_PRESET: Omit<CompressionPreset, "id"> = {
+  name: "",
+  targetFormat: "webp",
+  quality: 85,
+  maxWidth: 1600,
+  maxHeight: 1600,
+  allowUpscale: false,
+  removeGps: true,
+};
 
 export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) {
   const profile = settings.profiles[0];
@@ -38,6 +48,59 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Preset management state
+  const [editingPreset, setEditingPreset] = useState<CompressionPreset | null>(null);
+  const [presetForm, setPresetForm] = useState<Omit<CompressionPreset, "id">>({ ...EMPTY_PRESET });
+
+  const openAddPreset = () => {
+    setEditingPreset(null);
+    setPresetForm({ ...EMPTY_PRESET });
+  };
+
+  const openEditPreset = (preset: CompressionPreset) => {
+    setEditingPreset(preset);
+    setPresetForm({
+      name: preset.name,
+      targetFormat: preset.targetFormat,
+      quality: preset.quality,
+      maxWidth: preset.maxWidth,
+      maxHeight: preset.maxHeight,
+      allowUpscale: preset.allowUpscale,
+      removeGps: preset.removeGps,
+    });
+  };
+
+  const handleSavePreset = async () => {
+    if (!presetForm.name.trim()) return;
+
+    const updatedPreset: CompressionPreset = editingPreset
+      ? { ...editingPreset, ...presetForm }
+      : { id: crypto.randomUUID(), ...presetForm };
+
+    const updatedPresets = editingPreset
+      ? settings.presets.map((p) => (p.id === editingPreset.id ? updatedPreset : p))
+      : [...settings.presets, updatedPreset];
+
+    const nextSettings: AppSettings = { ...settings, presets: updatedPresets };
+    await settingsApi.saveSettings(nextSettings);
+    onSettingsChange(nextSettings);
+    setEditingPreset(null);
+    setPresetForm({ ...EMPTY_PRESET });
+  };
+
+  const handleDeletePreset = async (presetId: string) => {
+    const nextSettings: AppSettings = {
+      ...settings,
+      presets: settings.presets.filter((p) => p.id !== presetId),
+    };
+    await settingsApi.saveSettings(nextSettings);
+    onSettingsChange(nextSettings);
+    if (editingPreset?.id === presetId) {
+      setEditingPreset(null);
+      setPresetForm({ ...EMPTY_PRESET });
+    }
+  };
 
   const handleSaveProfile = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -194,6 +257,111 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
             <p className="error-text">Warning: Credential fallback to local storage is enabled. Secrets may be stored insecurely.</p>
           )}
           <p>Secrets use system secure storage when available. Local fallback must be explicitly allowed.</p>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h3>Presets</h3>
+            <button type="button" onClick={openAddPreset}>Add preset</button>
+          </div>
+          {settings.presets.length === 0 && !editingPreset && (
+            <p className="status-line">No presets configured.</p>
+          )}
+          {settings.presets.length > 0 && (
+            <ul className="preset-list">
+              {settings.presets.map((preset) => (
+                <li key={preset.id} className="preset-item">
+                  <span>
+                    {preset.name} ({preset.targetFormat.toUpperCase()} {preset.quality}%)
+                  </span>
+                  <div className="preset-item-actions">
+                    <button type="button" onClick={() => openEditPreset(preset)}>Edit</button>
+                    <button type="button" onClick={() => handleDeletePreset(preset.id)}>Delete</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {(editingPreset !== null || settings.presets.length === 0) && (
+            <form
+              className="profile-form"
+              onSubmit={(e) => { e.preventDefault(); handleSavePreset(); }}
+            >
+              <label>
+                Preset name
+                <input
+                  value={presetForm.name}
+                  onChange={(e) => setPresetForm((f) => ({ ...f, name: e.target.value }))}
+                  required
+                />
+              </label>
+              <label>
+                Target format
+                <select
+                  value={presetForm.targetFormat}
+                  onChange={(e) => setPresetForm((f) => ({ ...f, targetFormat: e.target.value as ImageFormat }))}
+                >
+                  <option value="jpg">JPG</option>
+                  <option value="png">PNG</option>
+                  <option value="webp">WebP</option>
+                  <option value="avif">AVIF</option>
+                  <option value="heif">HEIF</option>
+                </select>
+              </label>
+              <label>
+                Quality (1-100)
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={presetForm.quality}
+                  onChange={(e) => setPresetForm((f) => ({ ...f, quality: Number(e.target.value) }))}
+                />
+              </label>
+              <label>
+                Max width (px)
+                <input
+                  type="number"
+                  min={1}
+                  value={presetForm.maxWidth}
+                  onChange={(e) => setPresetForm((f) => ({ ...f, maxWidth: Number(e.target.value) }))}
+                />
+              </label>
+              <label>
+                Max height (px)
+                <input
+                  type="number"
+                  min={1}
+                  value={presetForm.maxHeight}
+                  onChange={(e) => setPresetForm((f) => ({ ...f, maxHeight: Number(e.target.value) }))}
+                />
+              </label>
+              <label>
+                Allow upscale
+                <input
+                  type="checkbox"
+                  checked={presetForm.allowUpscale}
+                  onChange={(e) => setPresetForm((f) => ({ ...f, allowUpscale: e.target.checked }))}
+                />
+              </label>
+              <label>
+                Remove GPS
+                <input
+                  type="checkbox"
+                  checked={presetForm.removeGps}
+                  onChange={(e) => setPresetForm((f) => ({ ...f, removeGps: e.target.checked }))}
+                />
+              </label>
+              <div className="preset-form-actions">
+                <button type="submit">{editingPreset ? "Update preset" : "Save preset"}</button>
+                {editingPreset && (
+                  <button type="button" onClick={() => { setEditingPreset(null); setPresetForm({ ...EMPTY_PRESET }); }}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
         </article>
       </section>
     </div>

@@ -159,4 +159,132 @@ describe("SettingsPage", () => {
     );
     expect(onSettingsChange).toHaveBeenCalled();
   });
+
+  it("adds a new preset and saves it via saveSettings", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          presets: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    // Click "Add preset"
+    await user.click(screen.getByRole("button", { name: /add preset/i }));
+
+    // Fill out the preset form
+    await user.type(screen.getByLabelText(/preset name/i), "Thumbnail");
+    await user.selectOptions(screen.getByLabelText(/target format/i), "jpg");
+    await user.clear(screen.getByLabelText(/quality/i));
+    await user.type(screen.getByLabelText(/quality/i), "60");
+
+    // Save the preset
+    await user.click(screen.getByRole("button", { name: /save preset/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        presets: expect.arrayContaining([
+          expect.objectContaining({
+            name: "Thumbnail",
+            targetFormat: "jpg",
+            quality: 60,
+          }),
+        ]),
+      }),
+    );
+    expect(onSettingsChange).toHaveBeenCalled();
+  });
+
+  it("edits an existing preset and updates it via saveSettings", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          presets: [
+            {
+              id: "p1",
+              name: "Small web",
+              targetFormat: "webp",
+              quality: 85,
+              maxWidth: 1600,
+              maxHeight: 1600,
+              allowUpscale: false,
+              removeGps: true,
+            },
+          ],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    // Click "Edit" on the preset
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+
+    // Change the name
+    const nameInput = screen.getByLabelText(/preset name/i);
+    await user.clear(nameInput);
+    await user.type(nameInput, "Updated preset");
+
+    // Update the preset
+    await user.click(screen.getByRole("button", { name: /update preset/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        presets: expect.arrayContaining([
+          expect.objectContaining({
+            id: "p1",
+            name: "Updated preset",
+          }),
+        ]),
+      }),
+    );
+    expect(onSettingsChange).toHaveBeenCalled();
+  });
+
+  it("deletes a preset and saves via saveSettings", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          presets: [
+            {
+              id: "p1",
+              name: "To delete",
+              targetFormat: "webp",
+              quality: 85,
+              maxWidth: 1600,
+              maxHeight: 1600,
+              allowUpscale: false,
+              removeGps: true,
+            },
+          ],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    // Click "Delete" on the preset
+    await user.click(screen.getByRole("button", { name: /delete/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        presets: [],
+      }),
+    );
+    expect(onSettingsChange).toHaveBeenCalled();
+  });
 });

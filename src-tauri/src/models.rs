@@ -57,7 +57,7 @@ impl Default for AppSettings {
                 id: "small-web".to_string(),
                 name: "Small web image".to_string(),
                 target_format: ImageFormat::Webp,
-                quality: 68,
+                quality: 85,
                 max_width: 1600,
                 max_height: 1600,
                 allow_upscale: false,

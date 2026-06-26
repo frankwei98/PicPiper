@@ -49,6 +49,17 @@ export interface S3Profile {
   insecureSecretFallback: boolean;
 }
 
+export interface CompressionPreset {
+  id: string;
+  name: string;
+  targetFormat: ImageFormat;
+  quality: number;
+  maxWidth: number;
+  maxHeight: number;
+  allowUpscale: boolean;
+  removeGps: boolean;
+}
+
 export interface GalleryObject {
   key: string;
   size: number;
