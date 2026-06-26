@@ -22,9 +22,6 @@ const EMPTY_PRESET: Omit<CompressionPreset, "id"> = {
   name: "",
   targetFormat: "webp",
   quality: 85,
-  maxWidth: 1600,
-  maxHeight: 1600,
-  allowUpscale: false,
   removeGps: true,
 };
 
@@ -75,9 +72,6 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       name: preset.name,
       targetFormat: preset.targetFormat,
       quality: preset.quality,
-      maxWidth: preset.maxWidth,
-      maxHeight: preset.maxHeight,
-      allowUpscale: preset.allowUpscale,
       removeGps: preset.removeGps,
     });
   };
@@ -342,32 +336,6 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
                   max={100}
                   value={presetForm.quality}
                   onChange={(e) => setPresetForm((f) => ({ ...f, quality: Number(e.target.value) }))}
-                />
-              </label>
-              <label>
-                Max width (px)
-                <input
-                  type="number"
-                  min={1}
-                  value={presetForm.maxWidth}
-                  onChange={(e) => setPresetForm((f) => ({ ...f, maxWidth: Number(e.target.value) }))}
-                />
-              </label>
-              <label>
-                Max height (px)
-                <input
-                  type="number"
-                  min={1}
-                  value={presetForm.maxHeight}
-                  onChange={(e) => setPresetForm((f) => ({ ...f, maxHeight: Number(e.target.value) }))}
-                />
-              </label>
-              <label>
-                Allow upscale
-                <input
-                  type="checkbox"
-                  checked={presetForm.allowUpscale}
-                  onChange={(e) => setPresetForm((f) => ({ ...f, allowUpscale: e.target.checked }))}
                 />
               </label>
               <label>

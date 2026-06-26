@@ -1,14 +1,12 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { CompressionPreset, CompressionSettings, OptimizeItem, S3Profile } from "../../types";
 import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   targetFormat: "webp",
   quality: 85,
-  maxWidth: 1600,
-  maxHeight: 1600,
-  allowUpscale: false,
   removeGps: true,
 };
 
@@ -73,9 +71,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
       ? {
           targetFormat: preset.targetFormat as CompressionSettings["targetFormat"],
           quality: preset.quality,
-          maxWidth: preset.maxWidth,
-          maxHeight: preset.maxHeight,
-          allowUpscale: preset.allowUpscale,
           removeGps: preset.removeGps,
         }
       : { ...DEFAULT_SETTINGS };
@@ -179,6 +174,46 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
     event.preventDefault();
     setDragging(false);
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    try {
+      getCurrentWebview()
+        .onDragDropEvent(async (event) => {
+          if (event.payload.type === "over") {
+            setDragging(true);
+            return;
+          }
+
+          if (event.payload.type === "drop") {
+            setDragging(false);
+            await importImages(event.payload.paths);
+            return;
+          }
+
+          setDragging(false);
+        })
+        .then((cleanup) => {
+          if (disposed) {
+            cleanup();
+            return;
+          }
+          unlisten = cleanup;
+        })
+        .catch(() => {
+          // Browser-only preview cannot access the Tauri webview. DOM drag/drop remains as fallback.
+        });
+    } catch {
+      // Browser-only preview cannot access the Tauri webview. DOM drag/drop remains as fallback.
+    }
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [importImages]);
 
   const [compressError, setCompressError] = useState<string | null>(null);
 

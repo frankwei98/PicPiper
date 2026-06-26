@@ -5,7 +5,7 @@ use std::{
 
 use image::{
     codecs::{avif::AvifEncoder, jpeg::JpegEncoder},
-    DynamicImage, GenericImageView, ImageEncoder, ImageFormat as CodecFormat,
+    DynamicImage, ImageEncoder, ImageFormat as CodecFormat,
 };
 
 use crate::{
@@ -53,24 +53,18 @@ pub fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageR
         .len();
     let image =
         image::open(&source).map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
-    let resized = resize_if_needed(
-        image,
-        request.settings.max_width,
-        request.settings.max_height,
-        request.settings.allow_upscale,
-    );
 
     fs::create_dir_all(&request.output_dir)
         .map_err(|err| AppError::new("outputDirFailed", err.to_string()))?;
     let output_path = Path::new(&request.output_dir).join(&request.output_file_name);
 
     match request.settings.target_format {
-        ImageFormat::Jpg => write_jpeg(&resized, &output_path, request.settings.quality)?,
-        ImageFormat::Png => resized
+        ImageFormat::Jpg => write_jpeg(&image, &output_path, request.settings.quality)?,
+        ImageFormat::Png => image
             .save_with_format(&output_path, CodecFormat::Png)
             .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?,
-        ImageFormat::Webp => write_webp(&resized, &output_path, request.settings.quality)?,
-        ImageFormat::Avif => write_avif(&resized, &output_path, request.settings.quality)?,
+        ImageFormat::Webp => write_webp(&image, &output_path, request.settings.quality)?,
+        ImageFormat::Avif => write_avif(&image, &output_path, request.settings.quality)?,
         ImageFormat::Heif => {
             return Err(AppError::new(
                 "codecUnavailable",
@@ -183,19 +177,6 @@ fn estimate_bytes(original_bytes: u64, quality: u8) -> u64 {
         .round() as u64
 }
 
-fn resize_if_needed(
-    image: DynamicImage,
-    max_width: u32,
-    max_height: u32,
-    allow_upscale: bool,
-) -> DynamicImage {
-    let (width, height) = image.dimensions();
-    if !allow_upscale && width <= max_width && height <= max_height {
-        return image;
-    }
-    image.thumbnail(max_width, max_height)
-}
-
 fn write_jpeg(image: &DynamicImage, output_path: &Path, quality: u8) -> AppResult<()> {
     let file = fs::File::create(output_path)
         .map_err(|err| AppError::new("outputWriteFailed", err.to_string()))?;
@@ -258,6 +239,7 @@ fn quality_format_warning(target_format: &ImageFormat) -> Option<String> {
 mod tests {
     use super::*;
     use crate::models::CompressionSettings;
+    use image::GenericImageView;
 
     /// Create a test image with some visual complexity (gradient pattern)
     /// so lossy encoders actually have something to compress differently.
@@ -289,14 +271,33 @@ mod tests {
             settings: CompressionSettings {
                 target_format: ImageFormat::Heif,
                 quality: 70,
-                max_width: 20,
-                max_height: 20,
-                allow_upscale: false,
                 remove_gps: true,
             },
         });
 
         assert_eq!(result.unwrap_err().code, "codecUnavailable");
+    }
+
+    #[test]
+    fn compression_preserves_source_dimensions() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("source.png");
+        create_test_image(80, 40).save(&input).unwrap();
+
+        let result = compress_image(CompressImageRequest {
+            source_path: input.to_string_lossy().to_string(),
+            output_dir: dir.path().to_string_lossy().to_string(),
+            output_file_name: "output.jpg".to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Jpg,
+                quality: 75,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+
+        let output = image::open(result.output_path).unwrap();
+        assert_eq!(output.dimensions(), (80, 40));
     }
 
     #[test]
@@ -312,9 +313,6 @@ mod tests {
             settings: CompressionSettings {
                 target_format: ImageFormat::Webp,
                 quality: 10,
-                max_width: 64,
-                max_height: 64,
-                allow_upscale: false,
                 remove_gps: true,
             },
         })
@@ -327,9 +325,6 @@ mod tests {
             settings: CompressionSettings {
                 target_format: ImageFormat::Webp,
                 quality: 90,
-                max_width: 64,
-                max_height: 64,
-                allow_upscale: false,
                 remove_gps: true,
             },
         })
@@ -356,9 +351,6 @@ mod tests {
             settings: CompressionSettings {
                 target_format: ImageFormat::Avif,
                 quality: 10,
-                max_width: 64,
-                max_height: 64,
-                allow_upscale: false,
                 remove_gps: true,
             },
         })
@@ -371,9 +363,6 @@ mod tests {
             settings: CompressionSettings {
                 target_format: ImageFormat::Avif,
                 quality: 90,
-                max_width: 64,
-                max_height: 64,
-                allow_upscale: false,
                 remove_gps: true,
             },
         })

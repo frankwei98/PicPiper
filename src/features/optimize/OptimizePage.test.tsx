@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen, uploadObject, generateObjectKey } = vi.hoisted(() => {
+const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen, mockOnDragDropEvent, uploadObject, generateObjectKey } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async (..._args: unknown[]) => ["/tmp/real-photo.jpg"]);
   return {
     inspectImage: vi.fn(async () => ({
@@ -17,9 +17,6 @@ const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen, uploadObj
       settings: {
         targetFormat: "webp",
         quality: 85,
-        maxWidth: 1600,
-        maxHeight: 1600,
-        allowUpscale: false,
         removeGps: true,
       },
     })),
@@ -42,6 +39,7 @@ const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen, uploadObj
     })),
     copyOutputsToDir: vi.fn(async () => ["/tmp/saved/real-photo.webp"]),
     mockDialogOpen,
+    mockOnDragDropEvent: vi.fn(async () => vi.fn()),
     uploadObject: vi.fn(async () => ({
       key: "images/2026/06/real-photo-abcdef12.webp",
       size: 240_000,
@@ -56,6 +54,12 @@ const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen, uploadObj
 
 vi.mock("@tauri-apps/plugin-dialog", async () => ({
   open: mockDialogOpen,
+}));
+
+vi.mock("@tauri-apps/api/webview", async () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: mockOnDragDropEvent,
+  }),
 }));
 
 vi.mock("../../api/tauri", async () => ({
@@ -201,9 +205,6 @@ describe("OptimizePage", () => {
       name: "High Quality",
       targetFormat: "avif" as const,
       quality: 85,
-      maxWidth: 2000,
-      maxHeight: 2000,
-      allowUpscale: false,
       removeGps: true,
     };
     const user = userEvent.setup();
@@ -241,8 +242,6 @@ describe("OptimizePage", () => {
             settings: expect.objectContaining({
               targetFormat: "avif",
               quality: 85,
-              maxWidth: 2000,
-              maxHeight: 2000,
             }),
           }),
         ]),
@@ -276,8 +275,6 @@ describe("OptimizePage", () => {
             settings: expect.objectContaining({
               targetFormat: "webp",
               quality: 85,
-              maxWidth: 1600,
-              maxHeight: 1600,
             }),
           }),
         ]),
@@ -357,6 +354,28 @@ describe("OptimizePage", () => {
     expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
     expect(inspectImage).toHaveBeenCalledWith({
       path: "/tmp/dropped-photo.jpg",
+      settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
+    });
+  });
+
+  it("imports Tauri drag/drop paths from the current webview", async () => {
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    expect(mockOnDragDropEvent).toHaveBeenCalled();
+    const calls = mockOnDragDropEvent.mock.calls as unknown as Array<[(event: {
+      payload: { type: "drop"; paths: string[] };
+    }) => Promise<void>]>;
+    const handler = calls[0][0];
+    await handler({
+      payload: {
+        type: "drop",
+        paths: ["/tmp/tauri-dropped-photo.jpg"],
+      },
+    });
+
+    expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
+    expect(inspectImage).toHaveBeenCalledWith({
+      path: "/tmp/tauri-dropped-photo.jpg",
       settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
     });
   });

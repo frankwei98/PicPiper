@@ -23,9 +23,6 @@ pub struct CompressionPreset {
     pub name: String,
     pub target_format: ImageFormat,
     pub quality: u8,
-    pub max_width: u32,
-    pub max_height: u32,
-    pub allow_upscale: bool,
     pub remove_gps: bool,
 }
 
@@ -58,9 +55,6 @@ impl Default for AppSettings {
                 name: "Small web image".to_string(),
                 target_format: ImageFormat::Webp,
                 quality: 85,
-                max_width: 1600,
-                max_height: 1600,
-                allow_upscale: false,
                 remove_gps: true,
             }],
             naming_template: "{yyyy}/{mm}/{slug}-{hash}.{ext}".to_string(),
@@ -105,9 +99,6 @@ pub struct SaveCredentialResponse {
 pub struct CompressionSettings {
     pub target_format: ImageFormat,
     pub quality: u8,
-    pub max_width: u32,
-    pub max_height: u32,
-    pub allow_upscale: bool,
     pub remove_gps: bool,
 }
 

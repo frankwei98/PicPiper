@@ -7,9 +7,6 @@ export type ImageStatus = "pending" | "ready" | "compressing" | "compressed" | "
 export interface CompressionSettings {
   targetFormat: ImageFormat;
   quality: number;
-  maxWidth: number;
-  maxHeight: number;
-  allowUpscale: boolean;
   removeGps: boolean;
 }
 
@@ -54,9 +51,6 @@ export interface CompressionPreset {
   name: string;
   targetFormat: ImageFormat;
   quality: number;
-  maxWidth: number;
-  maxHeight: number;
-  allowUpscale: boolean;
   removeGps: boolean;
 }
 
