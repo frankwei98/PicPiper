@@ -1,11 +1,15 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { inspectImage, compressBatch, copyOutputsToDir, readThumbnail, mockDialogOpen, mockOnDragDropEvent, uploadObject, generateObjectKey } = vi.hoisted(() => {
+const { createOptimizerRun, inspectImage, compressImage, copyOutputsToDir, readThumbnail, mockDialogOpen, mockOnDragDropEvent, uploadObject, generateObjectKey } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async (..._args: unknown[]) => ["/tmp/real-photo.jpg"]);
   return {
+    createOptimizerRun: vi.fn(async () => ({
+      runId: "run-1",
+      outputDir: "/tmp/pic-piper/run-1",
+    })),
     inspectImage: vi.fn(async () => ({
       id: "real-photo",
       sourcePath: "/tmp/real-photo.jpg",
@@ -13,42 +17,35 @@ const { inspectImage, compressBatch, copyOutputsToDir, readThumbnail, mockDialog
       sourceFormat: "jpg",
       originalBytes: 1_200_000,
       estimatedBytes: 260_000,
-      status: "ready",
+      status: "queued",
       settings: {
-        targetFormat: "webp",
+        targetFormat: "jpg",
         quality: 85,
         removeGps: true,
       },
     })),
-    compressBatch: vi.fn(async () => ({
-      runId: "run-1",
-      outputDir: "/tmp/pic-piper/run-1",
-      items: [
-        {
-          id: "real-photo",
-          result: {
-            sourcePath: "/tmp/real-photo.jpg",
-            outputPath: "/tmp/pic-piper/run-1/real-photo.webp",
-            outputFileName: "real-photo.webp",
-            originalBytes: 1_200_000,
-            outputBytes: 240_000,
-            targetFormat: "webp",
-          },
-        },
-      ],
+    compressImage: vi.fn(async () => ({
+      sourcePath: "/tmp/real-photo.jpg",
+      outputPath: "/tmp/pic-piper/run-1/real-photo.jpg",
+      outputFileName: "real-photo.jpg",
+      originalBytes: 1_200_000,
+      outputBytes: 240_000,
+      targetFormat: "jpg",
     })),
-    copyOutputsToDir: vi.fn(async () => ["/tmp/saved/real-photo.webp"]),
-    readThumbnail: vi.fn(async () => ({ dataUrl: "data:image/jpeg;base64,AAAA" })),
+    copyOutputsToDir: vi.fn(async () => ["/tmp/saved/real-photo.jpg"]),
+    readThumbnail: vi.fn(async ({ path }: { path: string }) => ({
+      dataUrl: path.includes("pic-piper") ? "data:image/jpeg;base64,COMPRESSED" : "data:image/jpeg;base64,ORIGINAL",
+    })),
     mockDialogOpen,
     mockOnDragDropEvent: vi.fn(async () => vi.fn()),
     uploadObject: vi.fn(async () => ({
-      key: "images/2026/06/real-photo-abcdef12.webp",
+      key: "images/2026/06/real-photo-abcdef12.jpg",
       size: 240_000,
-      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.webp",
+      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.jpg",
       isImage: true,
     })),
     generateObjectKey: vi.fn(async () => ({
-      objectKey: "images/2026/06/real-photo-abcdef12.webp",
+      objectKey: "images/2026/06/real-photo-abcdef12.jpg",
     })),
   };
 });
@@ -65,8 +62,9 @@ vi.mock("@tauri-apps/api/webview", async () => ({
 
 vi.mock("../../api/tauri", async () => ({
   tauriApi: {
+    createOptimizerRun,
     inspectImage,
-    compressBatch,
+    compressImage,
     copyOutputsToDir,
     readThumbnail,
   },
@@ -97,13 +95,16 @@ describe("OptimizePage", () => {
     expect(screen.queryByText("/sample/photo-01.jpg")).not.toBeInTheDocument();
   });
 
-  it("keeps Compress disabled until at least one image is inspected", () => {
+  it("does not render preset controls or a manual Compress button", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    expect(screen.getByRole("button", { name: "Compress" })).toBeDisabled();
+    expect(screen.queryByLabelText(/preset/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^compress$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /remove gps/i })).toBeChecked();
+    expect(screen.getByRole("slider", { name: /quality/i })).toBeInTheDocument();
   });
 
-  it("imports selected image files through backend inspection", async () => {
+  it("imports selected images and starts single-image compression automatically", async () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
@@ -111,71 +112,46 @@ describe("OptimizePage", () => {
 
     expect(inspectImage).toHaveBeenCalledWith({
       path: "/tmp/real-photo.jpg",
-      settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
+      settings: expect.objectContaining({ targetFormat: "webp", quality: 85, removeGps: true }),
     });
     expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Compress" })).toBeEnabled();
-  });
-
-  it("calls compressBatch and shows real compression results", async () => {
-    const user = userEvent.setup();
-    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
-
-    // Import an image
-    await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText("real-photo.jpg");
-
-    // Click Compress
-    await user.click(screen.getByRole("button", { name: "Compress" }));
-
-    expect(compressBatch).toHaveBeenCalled();
-
-    // Should show results with real output filename and sizes
-    expect(await screen.findByText("real-photo.webp")).toBeInTheDocument();
-    expect(screen.getByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
-  });
-
-  it("sends imported image in compressBatch items (not an empty array)", async () => {
-    const user = userEvent.setup();
-    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
-
-    // Import an image
-    await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText("real-photo.jpg");
-
-    // Click Compress
-    await user.click(screen.getByRole("button", { name: "Compress" }));
-
-    expect(compressBatch).toHaveBeenCalledWith(
+    expect(compressImage).toHaveBeenCalledWith(
       expect.objectContaining({
-        items: expect.arrayContaining([
-          expect.objectContaining({
-            id: "real-photo",
-            sourcePath: "/tmp/real-photo.jpg",
-            outputFileName: "real-photo.webp",
-            settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
-          }),
-        ]),
+        sourcePath: "/tmp/real-photo.jpg",
+        outputFileName: "real-photo.jpg",
+        settings: expect.objectContaining({ targetFormat: "jpg", quality: 85, removeGps: true }),
       }),
     );
+    expect(await screen.findByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
+  });
+
+  it("opens a comparison dialog from a compressed preview", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    const previewButton = await screen.findByRole("button", { name: /compare real-photo\.jpg/i });
+    await user.click(previewButton);
+
+    expect(screen.getByRole("dialog", { name: /compare real-photo\.jpg/i })).toBeInTheDocument();
+    expect(screen.getByText(/original/i)).toBeInTheDocument();
+    expect(screen.getByText(/compressed/i)).toBeInTheDocument();
   });
 
   it("Save to local folder opens directory picker and copies files", async () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    // Import and compress
+    // Import and wait for automatic compression
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText("real-photo.jpg");
-    await user.click(screen.getByRole("button", { name: "Compress" }));
-    await screen.findByText("real-photo.webp");
+    await screen.findByText(/1.2 MB.*240 KB/);
 
     // Click Save to local folder
     await user.click(screen.getByRole("button", { name: "Save to local folder" }));
 
     expect(mockDialogOpen).toHaveBeenCalledWith({ directory: true });
     expect(copyOutputsToDir).toHaveBeenCalledWith({
-      outputPaths: ["/tmp/pic-piper/run-1/real-photo.webp"],
+      outputPaths: ["/tmp/pic-piper/run-1/real-photo.jpg"],
       targetDir: "/tmp/saved",
     });
   });
@@ -185,11 +161,9 @@ describe("OptimizePage", () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    // Import and compress
+    // Import and wait for automatic compression
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText("real-photo.jpg");
-    await user.click(screen.getByRole("button", { name: "Compress" }));
-    await screen.findByText("real-photo.webp");
+    await screen.findByText(/1.2 MB.*240 KB/);
 
     // Save to local folder
     await user.click(screen.getByRole("button", { name: "Save to local folder" }));
@@ -199,39 +173,6 @@ describe("OptimizePage", () => {
     // Should NOT call window.alert
     expect(alertSpy).not.toHaveBeenCalled();
     alertSpy.mockRestore();
-  });
-
-  it("Reset to defaults applies DEFAULT_SETTINGS", async () => {
-    const user = userEvent.setup();
-    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
-
-    // Import an image
-    await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText("real-photo.jpg");
-
-    // Change per-image quality away from default
-    const qualitySlider = screen.getByRole("slider");
-    fireEvent.change(qualitySlider, { target: { value: "30" } });
-
-    // Click Reset to defaults (should restore DEFAULT_SETTINGS)
-    await user.click(screen.getByRole("button", { name: /reset to defaults/i }));
-
-    // Click Compress and verify default settings are restored
-    await user.click(screen.getByRole("button", { name: "Compress" }));
-
-    expect(compressBatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        items: expect.arrayContaining([
-          expect.objectContaining({
-            id: "real-photo",
-            settings: expect.objectContaining({
-              targetFormat: "webp",
-              quality: 85,
-            }),
-          }),
-        ]),
-      }),
-    );
   });
 
   it("removes an image from the queue when the X button is clicked", async () => {
@@ -272,18 +213,16 @@ describe("OptimizePage", () => {
       />,
     );
 
-    // Import and compress
+    // Import and wait for automatic compression
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText("real-photo.jpg");
-    await user.click(screen.getByRole("button", { name: "Compress" }));
-    await screen.findByText("real-photo.webp");
+    await screen.findByText(/1.2 MB.*240 KB/);
 
     // Click Upload to S3
     await user.click(screen.getByRole("button", { name: "Upload to S3" }));
 
     expect(generateObjectKey).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourcePath: "/tmp/pic-piper/run-1/real-photo.webp",
+        sourcePath: "/tmp/pic-piper/run-1/real-photo.jpg",
         prefix: "images/2026/06",
         namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
       }),
@@ -291,19 +230,20 @@ describe("OptimizePage", () => {
     expect(uploadObject).toHaveBeenCalledWith(
       expect.objectContaining({
         profile,
-        sourcePath: "/tmp/pic-piper/run-1/real-photo.webp",
-        objectKey: "images/2026/06/real-photo-abcdef12.webp",
-        contentType: "image/webp",
+        sourcePath: "/tmp/pic-piper/run-1/real-photo.jpg",
+        objectKey: "images/2026/06/real-photo-abcdef12.jpg",
+        contentType: "image/jpeg",
       }),
     );
     expect(onUploadedToS3).toHaveBeenCalledWith({
       profile,
       prefix: "images/2026/06",
-      highlightedKeys: ["images/2026/06/real-photo-abcdef12.webp"],
+      highlightedKeys: ["images/2026/06/real-photo-abcdef12.jpg"],
     });
   });
 
-  it("dropping file with usable path calls inspectImage", async () => {    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+  it("dropping file with usable path calls inspectImage", async () => {
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     const dropZone = document.querySelector("[data-testid='drop-zone']")!;
     const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });

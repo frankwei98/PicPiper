@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import type { CompressionSettings, OptimizeItem, S3Profile } from "../../types";
+import type { CompressionSettings, ImageFormat, OptimizeItem, S3Profile } from "../../types";
 import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 import { cn } from "../../utils/cn";
 import { Slider } from "../../components/ui/Slider";
+import { Dialog } from "../../components/ui/Dialog";
+import {
+  AVAILABLE_OUTPUT_FORMATS,
+  defaultTargetFormat,
+  formatBytes,
+  getCompressionConcurrency,
+  makeUniqueOutputFileNames,
+  savingsPercent,
+  shouldRequeueForGlobalSettings,
+} from "./optimizeQueue";
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   targetFormat: "webp",
@@ -43,127 +53,93 @@ const btnBase = "border-none rounded-md cursor-pointer text-callout font-medium 
 const btnPrimary = cn(btnBase, "bg-primary-container text-on-primary-container font-semibold hover:shadow-[0_1px_3px_rgba(0,0,0,0.3)] hover:brightness-110");
 const btnSecondary = cn(btnBase, "bg-white/5 border border-outline-variant text-on-surface hover:bg-white/10 hover:border-outline");
 const btnTertiary = cn(btnBase, "bg-transparent text-primary px-3 hover:bg-[rgba(255,189,127,0.1)]");
+
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
-  const [mode, setMode] = useState<"edit" | "results">("edit");
+  const [quality, setQuality] = useState(DEFAULT_SETTINGS.quality);
+  const [removeGps, setRemoveGps] = useState(DEFAULT_SETTINGS.removeGps);
+  const [compareItemId, setCompareItemId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
-  const [compressing, setCompressing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
-  const thumbnailQueue = useRef<Array<{ id: string; path: string }>>([]);
-  const activeThumbnails = useRef(0);
-  const maxConcurrentThumbnails = 3;
+  const activeTasks = useRef(new Set<string>());
+  const optimizerRun = useRef<{ runId: string; outputDir: string } | null>(null);
+  const debounceRef = useRef<number | undefined>(undefined);
 
-  const canCompress = items.some((item) => item.status === "ready" || item.status === "pending");
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   const removeItem = (id: string) => {
     setItems((current) => current.filter((item) => item.id !== id));
-    setThumbnails((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
-  };
-
-  const loadThumbnail = useCallback(async (id: string, path: string) => {
-    try {
-      const res = await tauriApi.readThumbnail({ path, maxSize: 256 });
-      setThumbnails((current) => ({ ...current, [id]: res.dataUrl }));
-    } catch {
-      // Thumbnails are best-effort; failures leave the placeholder.
-    } finally {
-      activeThumbnails.current -= 1;
-      drainThumbnailQueue();
-    }
-  }, []);
-
-  const drainThumbnailQueue = useCallback(() => {
-    while (activeThumbnails.current < maxConcurrentThumbnails && thumbnailQueue.current.length > 0) {
-      const next = thumbnailQueue.current.shift()!;
-      activeThumbnails.current += 1;
-      void loadThumbnail(next.id, next.path);
-    }
-  }, [loadThumbnail]);
-
-  const enqueueThumbnail = useCallback((id: string, path: string) => {
-    thumbnailQueue.current.push({ id, path });
-    drainThumbnailQueue();
-  }, [drainThumbnailQueue]);
-
-  const updateQuality = (id: string, quality: number) => {
-    setItems((current) =>
-      current.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              estimatedBytes: Math.round(item.originalBytes * (quality / 100) * 0.25),
-              settings: { ...item.settings, quality },
-            }
-          : item,
-      ),
-    );
-  };
-
-  const handleApplyDefaults = () => {
-    setItems((current) =>
-      current.map((item) => ({
-        ...item,
-        estimatedBytes: Math.round(item.originalBytes * (DEFAULT_SETTINGS.quality / 100) * 0.25),
-        settings: { ...DEFAULT_SETTINGS },
-      })),
-    );
   };
 
   const importImages = useCallback(async (paths: string[]) => {
     setImporting(true);
     setDropError(null);
 
-    const results = await Promise.allSettled(
-      paths.map((path) =>
-        tauriApi.inspectImage({ path, settings: DEFAULT_SETTINGS }),
-      ),
-    );
+    const pendingItems: OptimizeItem[] = paths.map((path) => ({
+      id: crypto.randomUUID(),
+      sourcePath: path,
+      fileName: path.split("/").pop() ?? "unknown",
+      sourceFormat: "unknown" as const,
+      originalBytes: 0,
+      status: "inspecting" as const,
+      settings: { ...DEFAULT_SETTINGS, quality, removeGps },
+      taskVersion: 0,
+    }));
 
-    const newItems: OptimizeItem[] = results.map((result, index) => {
-      if (result.status === "fulfilled") {
-        const raw = result.value as unknown as Record<string, unknown>;
-        const settings = (raw.settings as CompressionSettings) ?? DEFAULT_SETTINGS;
-        return {
-          id: (raw.id as string) ?? crypto.randomUUID(),
-          sourcePath: (raw.sourcePath as string) ?? (raw.path as string) ?? paths[index],
-          fileName: (raw.fileName as string) ?? (raw.file_name as string) ?? paths[index].split("/").pop() ?? "unknown",
-          sourceFormat: (raw.sourceFormat as OptimizeItem["sourceFormat"]) ?? (raw.source_format as OptimizeItem["sourceFormat"]) ?? "unknown",
-          originalBytes: (raw.originalBytes as number) ?? (raw.original_bytes as number) ?? 0,
-          estimatedBytes: (raw.estimatedBytes as number) ?? (raw.estimated_bytes as number) ?? 0,
-          status: (raw.status as OptimizeItem["status"]) ?? "ready",
-          warning: raw.warning as string | undefined,
-          settings,
-        };
-      }
-      return {
-        id: crypto.randomUUID(),
-        sourcePath: paths[index],
-        fileName: paths[index].split("/").pop() ?? "unknown",
-        sourceFormat: "unknown" as const,
-        originalBytes: 0,
-        status: "failed" as const,
-        error: result.reason instanceof Error ? result.reason.message : "Inspection failed",
-        settings: { ...DEFAULT_SETTINGS },
-      };
-    });
+    setItems((current) => [...current, ...pendingItems]);
 
-    setItems((current) => [...current, ...newItems]);
-    setImporting(false);
+    for (const item of pendingItems) {
+      try {
+        const raw = (await tauriApi.inspectImage({
+          path: item.sourcePath,
+          settings: { ...DEFAULT_SETTINGS, quality, removeGps },
+        })) as unknown as Record<string, unknown>;
 
-    for (const item of newItems) {
-      if (item.status !== "failed" && item.sourcePath) {
-        enqueueThumbnail(item.id, item.sourcePath);
+        const fileName = (raw.fileName as string) ?? (raw.file_name as string) ?? item.sourcePath.split("/").pop() ?? "unknown";
+        const sourceFormat = (raw.sourceFormat as OptimizeItem["sourceFormat"]) ?? (raw.source_format as OptimizeItem["sourceFormat"]) ?? "unknown";
+        const originalBytes = (raw.originalBytes as number) ?? (raw.original_bytes as number) ?? 0;
+        const estimatedBytes = (raw.estimatedBytes as number) ?? (raw.estimated_bytes as number) ?? 0;
+        const targetFormat = defaultTargetFormat(sourceFormat);
+
+        item.fileName = fileName;
+        item.sourceFormat = sourceFormat;
+        item.originalBytes = originalBytes;
+        item.estimatedBytes = estimatedBytes;
+        item.warning = raw.warning as string | undefined;
+        item.status = "queued";
+        item.settings = { targetFormat, quality, removeGps };
+
+        setItems((current) =>
+          current.map((ci) => (ci.id === item.id ? { ...item } : ci)),
+        );
+
+        try {
+          const thumb = await tauriApi.readThumbnail({ path: item.sourcePath, maxSize: 512 });
+          item.originalPreviewUrl = thumb.dataUrl;
+          setItems((current) =>
+            current.map((ci) => (ci.id === item.id ? { ...item } : ci)),
+          );
+        } catch {
+          // Thumbnails are best-effort
+        }
+      } catch (err) {
+        item.status = "failed";
+        item.error = err instanceof Error ? err.message : "Inspection failed";
+        setItems((current) =>
+          current.map((ci) => (ci.id === item.id ? { ...item } : ci)),
+        );
       }
     }
-  }, [enqueueThumbnail]);
+
+    setImporting(false);
+  }, [quality, removeGps]);
 
   const handleChooseImages = async () => {
     const selected = await open({
@@ -250,68 +226,193 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     };
   }, [importImages]);
 
-  const [compressError, setCompressError] = useState<string | null>(null);
+  // --- Bounded compression scheduler ---
+  const runCompressionTask = useCallback(async (item: OptimizeItem, outputFileName: string) => {
+    const itemId = item.id;
+    const capturedVersion = item.taskVersion ?? 0;
 
-  const handleCompress = async () => {
-    setCompressError(null);
-    setCompressing(true);
+    const getOutputDir = async () => {
+      if (!optimizerRun.current) {
+        optimizerRun.current = await tauriApi.createOptimizerRun();
+      }
+      return optimizerRun.current.outputDir;
+    };
 
-    const batchItems = items
-      .filter((item) => item.status === "ready" || item.status === "pending")
-      .map((item) => ({
-        id: item.id,
-        sourcePath: item.sourcePath,
-        outputFileName: item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`),
-        settings: item.settings,
-      }));
+    const setItem = (updater: (item: OptimizeItem) => OptimizeItem) => {
+      setItems((current) =>
+        current.map((ci) => (ci.id === itemId ? updater(ci) : ci)),
+      );
+    };
 
-    setItems((current) =>
-      current.map((item) =>
-        item.status === "ready" || item.status === "pending"
-          ? { ...item, status: "compressing" as const }
-          : item,
-      ),
-    );
+    setItem((ci) => ({ ...ci, status: "compressing" }));
 
     try {
+      const outputDir = await getOutputDir();
+      const result = await tauriApi.compressImage({
+        sourcePath: item.sourcePath,
+        outputDir,
+        outputFileName,
+        settings: item.settings,
+      });
 
-      const response = await tauriApi.compressBatch({ items: batchItems });
+      // Ignore stale results
+      setItem((ci) => {
+        if (ci.cancelling || (ci.taskVersion ?? 0) !== capturedVersion) return ci;
+        return {
+          ...ci,
+          status: "loadingPreview",
+          outputBytes: result.outputBytes,
+          outputPath: result.outputPath,
+          outputFileName: result.outputFileName,
+        };
+      });
 
-      setItems((current) =>
-        current.map((item) => {
-          const batchResult = response.items.find((r) => r.id === item.id);
-          if (!batchResult) return item;
-          if (batchResult.error) {
-            return { ...item, status: "failed" as const, error: batchResult.error.message };
-          }
-          if (batchResult.result) {
-            return {
-              ...item,
-              status: "compressed" as const,
-              outputBytes: batchResult.result.outputBytes,
-              outputPath: batchResult.result.outputPath,
-              outputFileName: batchResult.result.outputFileName,
-            };
-          }
-          return item;
-        }),
-      );
-
-      setMode("results");
+      // Load compressed preview
+      try {
+        const thumb = await tauriApi.readThumbnail({ path: result.outputPath, maxSize: 512 });
+        setItem((ci) => {
+          if (ci.cancelling || (ci.taskVersion ?? 0) !== capturedVersion) return ci;
+          return {
+            ...ci,
+            status: "compressed",
+            compressedPreviewUrl: thumb.dataUrl,
+          };
+        });
+      } catch {
+        setItem((ci) => {
+          if (ci.cancelling || (ci.taskVersion ?? 0) !== capturedVersion) return ci;
+          return { ...ci, status: "compressed" };
+        });
+      }
     } catch (err) {
-      setCompressError(err instanceof Error ? err.message : "Compression failed");
+      setItem((ci) => {
+        if ((ci.taskVersion ?? 0) !== capturedVersion) return ci;
+        return {
+          ...ci,
+          status: "failed",
+          error: err instanceof Error ? err.message : "Compression failed",
+        };
+      });
+    } finally {
+      activeTasks.current.delete(itemId);
+    }
+  }, []);
+
+  useEffect(() => {
+    const concurrency = getCompressionConcurrency(navigator.hardwareConcurrency);
+    const availableSlots = concurrency - activeTasks.current.size;
+    if (availableSlots <= 0) return;
+
+    const outputNames = makeUniqueOutputFileNames(
+      items
+        .filter((item) => item.status === "queued")
+        .map((item) => ({
+          id: item.id,
+          fileName: item.fileName,
+          targetFormat: item.settings.targetFormat,
+        })),
+    );
+
+    const nextItems = items.filter((item) => item.status === "queued").slice(0, availableSlots);
+    for (const item of nextItems) {
+      activeTasks.current.add(item.id);
+      void runCompressionTask(item, outputNames[item.id]);
+    }
+  }, [items, quality, removeGps, runCompressionTask]);
+
+  // --- Global settings requeue with debounce ---
+  const scheduleGlobalRequeue = (nextQuality: number, nextRemoveGps: boolean) => {
+    window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
       setItems((current) =>
         current.map((item) =>
-          item.status === "compressing"
-            ? { ...item, status: "ready" as const }
+          shouldRequeueForGlobalSettings(item)
+            ? {
+                ...item,
+                status: "queued",
+                outputBytes: undefined,
+                outputPath: undefined,
+                outputFileName: undefined,
+                compressedPreviewUrl: undefined,
+                error: undefined,
+                cancelling: false,
+                taskVersion: (item.taskVersion ?? 0) + 1,
+                settings: {
+                  ...item.settings,
+                  quality: nextQuality,
+                  removeGps: nextRemoveGps,
+                },
+              }
             : item,
         ),
       );
-    } finally {
-      setCompressing(false);
-    }
+    }, 400);
   };
 
+  const handleQualityChange = (nextQuality: number) => {
+    setQuality(nextQuality);
+    scheduleGlobalRequeue(nextQuality, removeGps);
+  };
+
+  const handleRemoveGpsChange = (checked: boolean) => {
+    setRemoveGps(checked);
+    scheduleGlobalRequeue(quality, checked);
+  };
+
+  // --- Per-item actions ---
+  const updateFormat = (id: string, targetFormat: ImageFormat) => {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === id && item.status !== "cancelled"
+          ? {
+              ...item,
+              status: "queued",
+              outputBytes: undefined,
+              outputPath: undefined,
+              outputFileName: undefined,
+              compressedPreviewUrl: undefined,
+              error: undefined,
+              taskVersion: (item.taskVersion ?? 0) + 1,
+              settings: { ...item.settings, targetFormat, quality, removeGps },
+            }
+          : item,
+      ),
+    );
+  };
+
+  const cancelItem = (id: string) => {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              status: "cancelled",
+              cancelling: item.status === "compressing",
+              taskVersion: (item.taskVersion ?? 0) + 1,
+            }
+          : item,
+      ),
+    );
+  };
+
+  const retryItem = (id: string) => {
+    setItems((current) =>
+      current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              status: item.originalBytes > 0 ? "queued" : "inspecting",
+              error: undefined,
+              cancelling: false,
+              taskVersion: (item.taskVersion ?? 0) + 1,
+              settings: { ...item.settings, quality, removeGps },
+            }
+          : item,
+      ),
+    );
+  };
+
+  // --- Save and upload ---
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
@@ -332,6 +433,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
       if (outputPaths.length === 0) {
         setSaveError("No compressed outputs to save.");
+        setSaving(false);
         return;
       }
 
@@ -411,62 +513,24 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
   };
 
-  if (mode === "results") {
-    return (
-      <div className="grid gap-lg max-w-page">
-        <header className="flex justify-between items-start gap-lg">
-          <div>
-            <h2 className="text-large-title font-bold text-on-surface text-balance">Compression results</h2>
-            <p className="text-on-surface-variant mt-xs text-body text-pretty">Review compressed output before saving.</p>
-          </div>
-        </header>
-
-        <section className="bg-surface-container border border-outline-variant rounded-md p-lg" aria-label="Compression results">
-          {items.map((item) => (
-            <article className="relative bg-surface-container border border-outline-variant rounded-md flex flex-col gap-sm p-md transition-[border-color,background-color] duration-150 ease-out hover:border-outline hover:bg-surface-container-high" key={item.id}>
-              <div>
-                <strong className="text-callout font-semibold text-on-surface truncate">{item.outputFileName ?? item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`)}</strong>
-                {item.error ? (
-                  <p className="text-error text-caption mt-0.5">{item.error}</p>
-                ) : (
-                  <p className="text-on-surface-variant mt-0.5 text-footnote tabular-nums">
-                    {formatBytes(item.originalBytes)} → {formatBytes(item.outputBytes ?? item.estimatedBytes ?? 0)}
-                  </p>
-                )}
-                {uploadingItems.has(item.id) && <p className="text-on-surface-variant text-caption mt-0.5">Uploading...</p>}
-                {uploadFailedItems.has(item.id) && (
-                  <p className="text-error text-caption mt-0.5">{uploadFailedItems.get(item.id)}</p>
-                )}
-              </div>
-            </article>
-          ))}
-        </section>
-
-        {saving && <p className="text-on-surface-variant text-footnote">Saving files...</p>}
-        {uploadingItems.size > 0 && <p className="text-on-surface-variant text-footnote">Uploading {uploadingItems.size} image(s)...</p>}
-        {uploadError && <p className="text-error text-footnote">{uploadError}</p>}
-        {saveError && <p className="text-error text-footnote">{saveError}</p>}
-        {saveSuccess && <p className="text-on-surface-variant text-footnote">{saveSuccess}</p>}
-
-        <div className="flex gap-sm flex-wrap">
-          <button className={btnPrimary} type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>
-          <button className={btnPrimary} type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
-          <button className={btnSecondary} type="button" onClick={() => setMode("edit")}>Back to edit settings</button>
-        </div>
-      </div>
-    );
-  }
+  const compareItem = compareItemId ? items.find((i) => i.id === compareItemId) : undefined;
 
   return (
     <div className="grid gap-lg max-w-page">
       <header className="flex justify-between items-start gap-lg">
         <div>
           <h2 className="text-large-title font-bold text-on-surface text-balance">Optimize</h2>
-          <p className="text-on-surface-variant mt-xs text-body text-pretty">Tune each image, then compress.</p>
+          <p className="text-on-surface-variant mt-xs text-body text-pretty">Drop images to compress automatically.</p>
         </div>
-        <div className="flex gap-sm items-end flex-wrap">
-          <button className={btnSecondary} type="button" onClick={handleApplyDefaults}>Reset to defaults</button>
-          <button className={btnPrimary} type="button" disabled={!canCompress} onClick={handleCompress}>Compress</button>
+        <div className="flex gap-md items-end flex-wrap">
+          <label className="flex items-center gap-sm text-footnote font-medium text-on-surface-variant">
+            <input type="checkbox" checked={removeGps} onChange={(e) => handleRemoveGpsChange(e.target.checked)} />
+            Remove GPS
+          </label>
+          <label className="grid gap-xs min-w-[220px] text-footnote font-medium text-on-surface-variant">
+            Quality {quality}%
+            <Slider aria-label="Quality" value={quality} onValueChange={handleQualityChange} min={1} max={100} />
+          </label>
         </div>
       </header>
 
@@ -505,23 +569,25 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           ))}
         </section>
       )}
-      {compressing && <p className="text-on-surface-variant text-footnote">Compressing images...</p>}
-      {compressError && <p className="text-error text-footnote">{compressError}</p>}
 
       <section className="grid gap-sm grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Images to optimize">
         {items.map((item) => (
-          <article className="relative bg-surface-container border border-outline-variant rounded-md flex flex-col gap-sm p-md transition-[border-color,background-color] duration-150 ease-out hover:border-outline hover:bg-surface-container-high" key={item.id}>
+          <article className="group relative bg-surface-container border border-outline-variant rounded-md flex flex-col gap-sm p-md transition-[border-color,background-color] duration-150 ease-out hover:border-outline hover:bg-surface-container-high" key={item.id}>
             <button
               type="button"
               className="absolute top-1 right-1 size-[22px] border-none rounded-full bg-surface-container-high text-on-surface-variant text-base leading-none p-0 cursor-pointer flex items-center justify-center opacity-0 transition-[opacity,background] duration-150 group-hover:opacity-100 focus-within:opacity-100 hover:bg-outline hover:text-on-surface"
               aria-label={`Remove ${item.fileName} from queue`}
               onClick={() => removeItem(item.id)}
             >
-              ×
+              x
             </button>
             <div className="w-full aspect-square rounded-[calc(var(--radius-md)-2px)] overflow-hidden bg-surface-container-low flex items-center justify-center">
-              {thumbnails[item.id] ? (
-                <img src={thumbnails[item.id]} alt="" loading="lazy" className="w-full h-full object-cover block" />
+              {item.status === "compressed" && item.compressedPreviewUrl ? (
+                <button type="button" aria-label={`Compare ${item.fileName}`} onClick={() => setCompareItemId(item.id)}>
+                  <img src={item.compressedPreviewUrl} alt="" loading="lazy" className="w-full h-full object-cover block" />
+                </button>
+              ) : item.originalPreviewUrl ? (
+                <img src={item.originalPreviewUrl} alt="" loading="lazy" className="w-full h-full object-cover block" />
               ) : (
                 <span className="w-full h-full bg-surface-container-high" aria-hidden="true" />
               )}
@@ -530,33 +596,93 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
               <strong className="text-callout font-semibold text-on-surface overflow-hidden text-ellipsis whitespace-nowrap">{item.fileName}</strong>
               {item.error ? (
                 <p className="text-error text-caption mt-0.5">{item.error}</p>
-              ) : (
+              ) : item.status === "compressing" || item.status === "loadingPreview" ? (
+                <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty tabular-nums">Compressing...</p>
+              ) : item.status === "compressed" ? (
                 <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty tabular-nums">
-                  {item.sourceFormat.toUpperCase()} → {item.settings.targetFormat.toUpperCase()} |{" "}
-                  {formatBytes(item.originalBytes)} → {formatBytes(item.estimatedBytes ?? 0)}
+                  {formatBytes(item.originalBytes)} {String.fromCodePoint(0x2192)} {formatBytes(item.outputBytes ?? 0)}{" "}
+                  ({savingsPercent(item.originalBytes, item.outputBytes ?? 0)}% saved)
                 </p>
-              )}
+              ) : item.originalBytes > 0 ? (
+                <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty tabular-nums">
+                  {item.sourceFormat.toUpperCase()} {String.fromCodePoint(0x2192)} {item.settings.targetFormat.toUpperCase()} |{" "}
+                  {formatBytes(item.originalBytes)}
+                </p>
+              ) : null}
               {item.warning && <p className="text-on-tertiary text-caption mt-0.5">{item.warning}</p>}
-              {!item.error && (
+              {item.status !== "inspecting" && item.status !== "cancelled" && !item.error && (
                 <label className="flex flex-col mt-xs text-footnote text-on-surface-variant">
-                  Quality {item.settings.quality}%
-                  <Slider
-                    value={item.settings.quality}
-                    onValueChange={(v) => updateQuality(item.id, v)}
-                    min={1}
-                    max={100}
-                  />
+                  <select
+                    aria-label={`Format for ${item.fileName}`}
+                    value={item.settings.targetFormat}
+                    onChange={(event) => updateFormat(item.id, event.target.value as ImageFormat)}
+                  >
+                    {AVAILABLE_OUTPUT_FORMATS.map((format) => (
+                      <option key={format} value={format}>
+                        {format.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
                 </label>
+              )}
+              {uploadFailedItems.has(item.id) && (
+                <p className="text-error text-caption mt-0.5">{uploadFailedItems.get(item.id)}</p>
+              )}
+              {uploadingItems.has(item.id) && (
+                <p className="text-on-surface-variant text-caption mt-0.5">Uploading...</p>
+              )}
+              {(item.status === "inspecting" || item.status === "queued" || item.status === "compressing" || item.status === "loadingPreview") && (
+                <button className={btnTertiary} type="button" onClick={() => cancelItem(item.id)}>Cancel</button>
+              )}
+              {(item.status === "failed" || item.status === "cancelled") && (
+                <button className={btnTertiary} type="button" onClick={() => retryItem(item.id)}>Retry</button>
+              )}
+              {(item.status === "compressed" || item.status === "failed" || item.status === "cancelled") && (
+                <button className={btnTertiary} type="button" onClick={() => removeItem(item.id)}>Remove</button>
               )}
             </div>
           </article>
         ))}
       </section>
+
+      {saving && <p className="text-on-surface-variant text-footnote">Saving files...</p>}
+      {uploadingItems.size > 0 && <p className="text-on-surface-variant text-footnote">Uploading {uploadingItems.size} image(s)...</p>}
+      {uploadError && <p className="text-error text-footnote">{uploadError}</p>}
+      {saveError && <p className="text-error text-footnote">{saveError}</p>}
+      {saveSuccess && <p className="text-on-surface-variant text-footnote">{saveSuccess}</p>}
+
+      {items.some((item) => item.status === "compressed") && (
+        <div className="flex gap-sm flex-wrap">
+          <button className={btnPrimary} type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>
+          <button className={btnPrimary} type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
+        </div>
+      )}
+
+      {compareItem && (
+        <Dialog
+          open
+          onOpenChange={(open) => { if (!open) setCompareItemId(null); }}
+          title={`Compare ${compareItem.fileName}`}
+        >
+          <div className="grid grid-cols-2 gap-lg">
+            <div>
+              <p className="text-footnote font-medium text-on-surface-variant mb-sm">Original</p>
+              {compareItem.originalPreviewUrl && (
+                <img src={compareItem.originalPreviewUrl} alt="" className="w-full rounded-md" />
+              )}
+              <p className="text-caption text-on-surface-variant mt-xs">{formatBytes(compareItem.originalBytes)}</p>
+            </div>
+            <div>
+              <p className="text-footnote font-medium text-on-surface-variant mb-sm">Compressed</p>
+              {compareItem.compressedPreviewUrl && (
+                <img src={compareItem.compressedPreviewUrl} alt="" className="w-full rounded-md" />
+              )}
+              <p className="text-caption text-on-surface-variant mt-xs">{formatBytes(compareItem.outputBytes ?? 0)}</p>
+            </div>
+          </div>
+          <Dialog.Close className={cn(btnSecondary, "mt-lg")}>Close</Dialog.Close>
+        </Dialog>
+      )}
     </div>
   );
-}
-
-function formatBytes(bytes: number) {
-  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
-  return `${Math.round(bytes / 1_000)} KB`;
 }
