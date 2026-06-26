@@ -247,7 +247,22 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
               className={`object-card${highlightedKeys.has(obj.key) ? " highlighted" : ""}`}
             >
               <div className="object-thumb">
-                {obj.isImage ? "Image" : "File"}
+                {obj.isImage && obj.publicUrl ? (
+                  <img
+                    className="object-thumb-img"
+                    src={obj.publicUrl}
+                    alt={obj.key}
+                    loading="lazy"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                      const fallback = (e.target as HTMLImageElement).parentElement?.querySelector(".thumb-fallback");
+                      if (fallback) fallback.textContent = "Image";
+                    }}
+                  />
+                ) : null}
+                <span className="thumb-fallback">
+                  {obj.isImage && !obj.publicUrl ? "Image" : !obj.isImage ? "File" : ""}
+                </span>
               </div>
               <p>{obj.key}</p>
               <div className="object-actions">

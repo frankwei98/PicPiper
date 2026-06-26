@@ -91,6 +91,41 @@ describe("S3GalleryPage", () => {
     expect(listObjects).toHaveBeenCalledWith({ profile, prefix: "images" });
   });
 
+  it("renders img thumbnail for image objects with publicUrl", async () => {
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    const img = screen.getByRole("img", { name: "images/photo.webp" });
+    expect(img).toHaveAttribute("src", "https://cdn.example.com/images/photo.webp");
+    expect(img).toHaveAttribute("alt", "images/photo.webp");
+  });
+
+  it("falls back to placeholder text when publicUrl is missing", async () => {
+    listObjects.mockResolvedValue([
+      {
+        key: "images/no-url.webp",
+        size: 50_000,
+        publicUrl: undefined as unknown as string,
+        isImage: true,
+      },
+    ]);
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/no-url.webp");
+    expect(screen.queryByRole("img", { name: "images/no-url.webp" })).not.toBeInTheDocument();
+    expect(screen.getByText("Image")).toBeInTheDocument();
+  });
+
   it("renders loading state while fetching objects", async () => {
     listObjects.mockImplementation(() => new Promise(() => {}));
     render(
