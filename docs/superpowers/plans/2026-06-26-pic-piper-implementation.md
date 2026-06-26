@@ -1,6 +1,6 @@
 # Pic Piper Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build the first GUI version of Pic Piper: per-image optimization, direct S3 upload after compression, and a simplified S3 Gallery for viewing, copying URLs, uploading, downloading, and deleting images.
 
@@ -98,7 +98,7 @@ pnpm add -D vitest @testing-library/react @testing-library/jest-dom @testing-lib
 - Modify: `src/App.tsx`
 - Modify: `src/App.css`
 
-- [ ] **Step 1: Add frontend test dependencies**
+- [x] **Step 1: Add frontend test dependencies**
 
 Run:
 
@@ -108,7 +108,7 @@ pnpm add -D vitest @testing-library/react @testing-library/jest-dom @testing-lib
 
 Expected: `package.json` and `pnpm-lock.yaml` update successfully.
 
-- [ ] **Step 2: Add scripts to `package.json`**
+- [x] **Step 2: Add scripts to `package.json`**
 
 Change the scripts block to:
 
@@ -123,7 +123,7 @@ Change the scripts block to:
 }
 ```
 
-- [ ] **Step 3: Ignore local brainstorming artifacts**
+- [x] **Step 3: Ignore local brainstorming artifacts**
 
 Append this to `.gitignore`:
 
@@ -133,7 +133,7 @@ Append this to `.gitignore`:
 .superpowers/
 ```
 
-- [ ] **Step 4: Create frontend test setup**
+- [x] **Step 4: Create frontend test setup**
 
 Create `src/test/setup.ts`:
 
@@ -141,7 +141,7 @@ Create `src/test/setup.ts`:
 import "@testing-library/jest-dom/vitest";
 ```
 
-- [ ] **Step 5: Configure Vitest in `vite.config.ts`**
+- [x] **Step 5: Configure Vitest in `vite.config.ts`**
 
 Add the `test` block and the reference comment:
 
@@ -179,7 +179,7 @@ export default defineConfig(async () => ({
 }));
 ```
 
-- [ ] **Step 6: Write a failing app shell test**
+- [x] **Step 6: Write a failing app shell test**
 
 Create `src/App.test.tsx`:
 
@@ -199,7 +199,7 @@ describe("App", () => {
 });
 ```
 
-- [ ] **Step 7: Run the test and verify it fails**
+- [x] **Step 7: Run the test and verify it fails**
 
 Run:
 
@@ -209,7 +209,7 @@ pnpm test -- src/App.test.tsx
 
 Expected: FAIL because the starter Tauri page does not render Pic Piper navigation.
 
-- [ ] **Step 8: Replace starter `src/App.tsx` with a minimal shell**
+- [x] **Step 8: Replace starter `src/App.tsx` with a minimal shell**
 
 Use:
 
@@ -257,7 +257,7 @@ function App() {
 export default App;
 ```
 
-- [ ] **Step 9: Replace `src/App.css` with base app styles**
+- [x] **Step 9: Replace `src/App.css` with base app styles**
 
 Use:
 
@@ -337,7 +337,7 @@ select {
 }
 ```
 
-- [ ] **Step 10: Verify and commit**
+- [x] **Step 10: Verify and commit**
 
 Run:
 
@@ -369,7 +369,7 @@ git commit -m "test: add frontend harness and app shell"
 - Modify: `src/App.tsx`
 - Modify: `src/App.css`
 
-- [ ] **Step 1: Create shared frontend types**
+- [x] **Step 1: Create shared frontend types**
 
 Create `src/types.ts`:
 
@@ -430,7 +430,7 @@ export interface GalleryObject {
 }
 ```
 
-- [ ] **Step 2: Create layout component**
+- [x] **Step 2: Create layout component**
 
 Create `src/components/Layout.tsx`:
 
@@ -473,7 +473,7 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
 }
 ```
 
-- [ ] **Step 3: Create Optimize skeleton**
+- [x] **Step 3: Create Optimize skeleton**
 
 Create `src/features/optimize/OptimizePage.tsx`:
 
@@ -568,7 +568,7 @@ function formatBytes(bytes: number) {
 }
 ```
 
-- [ ] **Step 4: Create S3 Gallery skeleton**
+- [x] **Step 4: Create S3 Gallery skeleton**
 
 Create `src/features/gallery/S3GalleryPage.tsx`:
 
@@ -596,7 +596,7 @@ export function S3GalleryPage() {
 }
 ```
 
-- [ ] **Step 5: Create Settings skeleton**
+- [x] **Step 5: Create Settings skeleton**
 
 Create `src/features/settings/SettingsPage.tsx`:
 
@@ -625,7 +625,7 @@ export function SettingsPage() {
 }
 ```
 
-- [ ] **Step 6: Update `src/App.tsx` to use pages**
+- [x] **Step 6: Update `src/App.tsx` to use pages**
 
 Use:
 
@@ -653,7 +653,7 @@ function App() {
 export default App;
 ```
 
-- [ ] **Step 7: Extend CSS for page skeletons**
+- [x] **Step 7: Extend CSS for page skeletons**
 
 Append to `src/App.css`:
 
@@ -749,7 +749,7 @@ Append to `src/App.css`:
 }
 ```
 
-- [ ] **Step 8: Test page skeleton behavior**
+- [x] **Step 8: Test page skeleton behavior**
 
 Create `src/features/optimize/OptimizePage.test.tsx`:
 
@@ -783,7 +783,7 @@ slider.focus();
 await user.keyboard("{ArrowLeft}{ArrowLeft}");
 ```
 
-- [ ] **Step 9: Verify and commit**
+- [x] **Step 9: Verify and commit**
 
 Run:
 
@@ -815,11 +815,11 @@ git commit -m "feat: add Pic Piper page skeletons"
 - Create: `src-tauri/src/state.rs`
 - Modify: `src-tauri/src/lib.rs`
 
-- [ ] **Step 1: Add Rust dependencies**
+- [x] **Step 1: Add Rust dependencies**
 
 Update `src-tauri/Cargo.toml` dependencies and dev-dependencies with the dependency block from this plan's Dependency Decisions section.
 
-- [ ] **Step 2: Create serializable error type**
+- [x] **Step 2: Create serializable error type**
 
 Create `src-tauri/src/error.rs`:
 
@@ -855,7 +855,7 @@ impl AppError {
 pub type AppResult<T> = Result<T, AppError>;
 ```
 
-- [ ] **Step 3: Create shared Rust models**
+- [x] **Step 3: Create shared Rust models**
 
 Create `src-tauri/src/models.rs`:
 
@@ -948,7 +948,7 @@ pub struct UploadHistoryEntry {
 }
 ```
 
-- [ ] **Step 4: Write naming tests first**
+- [x] **Step 4: Write naming tests first**
 
 Create `src-tauri/src/naming.rs` with tests and stubs:
 
@@ -1018,7 +1018,7 @@ pub fn render_object_key(
 }
 ```
 
-- [ ] **Step 5: Create settings persistence**
+- [x] **Step 5: Create settings persistence**
 
 Create `src-tauri/src/settings.rs`:
 
@@ -1066,7 +1066,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 6: Create upload history persistence**
+- [x] **Step 6: Create upload history persistence**
 
 Create `src-tauri/src/history.rs`:
 
@@ -1105,7 +1105,7 @@ pub fn append_history(path: &Path, entry: UploadHistoryEntry) -> AppResult<()> {
 }
 ```
 
-- [ ] **Step 7: Create app data path state**
+- [x] **Step 7: Create app data path state**
 
 Create `src-tauri/src/state.rs`:
 
@@ -1140,7 +1140,7 @@ impl AppPaths {
 }
 ```
 
-- [ ] **Step 8: Register modules in `src-tauri/src/lib.rs`**
+- [x] **Step 8: Register modules in `src-tauri/src/lib.rs`**
 
 Replace starter command wiring with:
 
@@ -1174,7 +1174,7 @@ pub fn run() {
 }
 ```
 
-- [ ] **Step 9: Verify and commit**
+- [x] **Step 9: Verify and commit**
 
 Run:
 
@@ -1205,7 +1205,7 @@ git commit -m "feat: add core settings and naming models"
 - Modify: `src-tauri/src/models.rs`
 - Create: `src-tauri/src/credentials_test.rs` only if unit tests become too large for `credentials.rs`
 
-- [ ] **Step 1: Add credential request/response models**
+- [x] **Step 1: Add credential request/response models**
 
 Append to `src-tauri/src/models.rs`:
 
@@ -1226,7 +1226,7 @@ pub struct SaveCredentialResponse {
 }
 ```
 
-- [ ] **Step 2: Write credential storage with fallback**
+- [x] **Step 2: Write credential storage with fallback**
 
 Create `src-tauri/src/credentials.rs`:
 
@@ -1321,7 +1321,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Register module**
+- [x] **Step 3: Register module**
 
 Add to `src-tauri/src/lib.rs`:
 
@@ -1329,7 +1329,7 @@ Add to `src-tauri/src/lib.rs`:
 mod credentials;
 ```
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -1358,7 +1358,7 @@ git commit -m "feat: add credential storage policy"
 - Modify: `src-tauri/src/models.rs`
 - Modify: `src-tauri/src/lib.rs`
 
-- [ ] **Step 1: Add optimizer request/response models**
+- [x] **Step 1: Add optimizer request/response models**
 
 Append to `src-tauri/src/models.rs`:
 
@@ -1416,7 +1416,7 @@ pub struct CompressImageResult {
 }
 ```
 
-- [ ] **Step 2: Create optimizer implementation**
+- [x] **Step 2: Create optimizer implementation**
 
 Create `src-tauri/src/optimizer.rs`:
 
@@ -1585,7 +1585,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Register optimizer commands**
+- [x] **Step 3: Register optimizer commands**
 
 Modify `src-tauri/src/lib.rs`:
 
@@ -1630,7 +1630,7 @@ pub fn run() {
 }
 ```
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -1663,7 +1663,7 @@ git commit -m "feat: add image optimizer commands"
 - Modify: `src/types.ts`
 - Modify: `src/App.css`
 
-- [ ] **Step 1: Create typed Tauri wrappers**
+- [x] **Step 1: Create typed Tauri wrappers**
 
 Create `src/api/tauri.ts`:
 
@@ -1701,7 +1701,7 @@ export const tauriApi = {
 };
 ```
 
-- [ ] **Step 2: Add result mode test**
+- [x] **Step 2: Add result mode test**
 
 Update `src/features/optimize/OptimizePage.test.tsx`:
 
@@ -1728,7 +1728,7 @@ describe("OptimizePage", () => {
 });
 ```
 
-- [ ] **Step 3: Implement result screen in `OptimizePage.tsx`**
+- [x] **Step 3: Implement result screen in `OptimizePage.tsx`**
 
 Replace `OptimizePage` with a component that keeps `mode: "edit" | "results"` and maps sample items to compressed output when `Compress` is clicked. Preserve the per-image quality controls from Task 2. The result screen must render:
 
@@ -1750,7 +1750,7 @@ const compressedItems = items.map((item) => ({
 }));
 ```
 
-- [ ] **Step 4: Add result styles**
+- [x] **Step 4: Add result styles**
 
 Append to `src/App.css`:
 
@@ -1768,7 +1768,7 @@ Append to `src/App.css`:
 }
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -1796,7 +1796,7 @@ git commit -m "feat: add optimizer result workflow"
 - Modify: `src-tauri/src/models.rs`
 - Modify: `src-tauri/src/lib.rs`
 
-- [ ] **Step 1: Add gallery models**
+- [x] **Step 1: Add gallery models**
 
 Append to `src-tauri/src/models.rs`:
 
@@ -1826,7 +1826,7 @@ pub struct DeleteObjectRequest {
 }
 ```
 
-- [ ] **Step 2: Create pure gallery helpers and tests**
+- [x] **Step 2: Create pure gallery helpers and tests**
 
 Create `src-tauri/src/gallery.rs`:
 
@@ -1901,7 +1901,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Register minimal gallery commands**
+- [x] **Step 3: Register minimal gallery commands**
 
 Add commands in `src-tauri/src/lib.rs`:
 
@@ -1923,7 +1923,7 @@ async fn delete_gallery_object(request: DeleteObjectRequest) -> AppResult<()> {
 
 Add these commands to `generate_handler!`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -1955,7 +1955,7 @@ git commit -m "feat: add gallery domain helpers"
 - Create: `src/features/gallery/S3GalleryPage.test.tsx`
 - Modify: `src/App.css`
 
-- [ ] **Step 1: Add gallery API wrappers**
+- [x] **Step 1: Add gallery API wrappers**
 
 Append to `src/api/tauri.ts`:
 
@@ -1975,7 +1975,7 @@ export const galleryApi = {
 
 If the duplicate import conflicts with the existing file, merge the imports at the top.
 
-- [ ] **Step 2: Write gallery UI test**
+- [x] **Step 2: Write gallery UI test**
 
 Create `src/features/gallery/S3GalleryPage.test.tsx`:
 
@@ -1996,7 +1996,7 @@ describe("S3GalleryPage", () => {
 });
 ```
 
-- [ ] **Step 3: Implement static gallery card grid**
+- [x] **Step 3: Implement static gallery card grid**
 
 Update `S3GalleryPage.tsx` so it includes a temporary sample object and the supported actions:
 
@@ -2022,7 +2022,7 @@ Delete
 
 Do not add Rename or Move controls.
 
-- [ ] **Step 4: Add gallery styles**
+- [x] **Step 4: Add gallery styles**
 
 Append to `src/App.css`:
 
@@ -2059,7 +2059,7 @@ Append to `src/App.css`:
 }
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -2087,7 +2087,7 @@ git commit -m "feat: add simplified S3 gallery UI"
 - Modify: `src-tauri/src/models.rs`
 - Modify: `src-tauri/src/lib.rs`
 
-- [ ] **Step 1: Add upload model**
+- [x] **Step 1: Add upload model**
 
 Append to `src-tauri/src/models.rs`:
 
@@ -2102,7 +2102,7 @@ pub struct UploadObjectRequest {
 }
 ```
 
-- [ ] **Step 2: Implement S3 client builder**
+- [x] **Step 2: Implement S3 client builder**
 
 Add to `src-tauri/src/gallery.rs`:
 
@@ -2135,7 +2135,7 @@ async fn client_for(profile: &S3Profile, secret: String) -> Client {
 }
 ```
 
-- [ ] **Step 3: Implement list/delete/upload functions**
+- [x] **Step 3: Implement list/delete/upload functions**
 
 Add functions in `gallery.rs`:
 
@@ -2203,7 +2203,7 @@ pub async fn upload_object(request: UploadObjectRequest, secret: String) -> AppR
 }
 ```
 
-- [ ] **Step 4: Wire commands with credential loading**
+- [x] **Step 4: Wire commands with credential loading**
 
 In `lib.rs`, command handlers should load the secret by profile id through `credentials::load_secret` and the managed `AppPaths`.
 
@@ -2226,7 +2226,7 @@ async fn list_gallery_objects(
 
 Repeat the same pattern for `delete_gallery_object` and `upload_gallery_object`.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -2259,7 +2259,7 @@ git commit -m "feat: add S3 gallery commands"
 - Modify: `src-tauri/src/lib.rs`
 - Modify: `src-tauri/src/models.rs`
 
-- [ ] **Step 1: Add backend settings command models**
+- [x] **Step 1: Add backend settings command models**
 
 Append to `src-tauri/src/models.rs`:
 
@@ -2271,7 +2271,7 @@ pub struct SaveSettingsRequest {
 }
 ```
 
-- [ ] **Step 2: Add backend settings commands**
+- [x] **Step 2: Add backend settings commands**
 
 Add to `src-tauri/src/lib.rs`:
 
@@ -2301,7 +2301,7 @@ fn save_s3_secret(
 
 Add `load_app_settings`, `save_app_settings`, and `save_s3_secret` to `generate_handler!`.
 
-- [ ] **Step 3: Add settings API wrappers**
+- [x] **Step 3: Add settings API wrappers**
 
 Append to `src/api/tauri.ts`:
 
@@ -2338,7 +2338,7 @@ export const settingsApi = {
 };
 ```
 
-- [ ] **Step 4: Create app state helper**
+- [x] **Step 4: Create app state helper**
 
 Create `src/state/appState.ts`:
 
@@ -2365,7 +2365,7 @@ export const initialNavigationState: AppNavigationState = {
 };
 ```
 
-- [ ] **Step 5: Update `App.tsx` to keep settings and gallery focus**
+- [x] **Step 5: Update `App.tsx` to keep settings and gallery focus**
 
 Replace simple `view` state with:
 
@@ -2386,7 +2386,7 @@ const openGallery = (focus: GalleryFocus) => {
 };
 ```
 
-- [ ] **Step 6: Make Settings edit one profile and core defaults**
+- [x] **Step 6: Make Settings edit one profile and core defaults**
 
 Update `SettingsPage.tsx` to render a form with these exact labels:
 
@@ -2439,7 +2439,7 @@ Add copy that says:
 <p>Secrets use system secure storage when available. Local fallback must be explicitly allowed.</p>
 ```
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -2475,7 +2475,7 @@ git commit -m "feat: add settings profiles and gallery focus state"
 - Modify: `src-tauri/src/lib.rs`
 - Modify: `src-tauri/src/models.rs`
 
-- [ ] **Step 1: Add upload callback types**
+- [x] **Step 1: Add upload callback types**
 
 Update `OptimizePage` props:
 
@@ -2490,7 +2490,7 @@ interface OptimizePageProps {
 }
 ```
 
-- [ ] **Step 2: Write transition test**
+- [x] **Step 2: Write transition test**
 
 Update `OptimizePage.test.tsx`:
 
@@ -2537,7 +2537,7 @@ it("notifies parent after explicit Upload to S3", async () => {
 });
 ```
 
-- [ ] **Step 3: Add upload API wrapper**
+- [x] **Step 3: Add upload API wrapper**
 
 Append to `src/api/tauri.ts`:
 
@@ -2555,7 +2555,7 @@ export const uploadApi = {
 };
 ```
 
-- [ ] **Step 4: Implement explicit real upload action**
+- [x] **Step 4: Implement explicit real upload action**
 
 In the result screen, make `Upload to S3` compute object keys from the active profile prefix and compressed output filenames, call `uploadApi.uploadObject` once per compressed item, then notify the parent with returned keys:
 
@@ -2606,7 +2606,7 @@ function contentTypeFor(format: string) {
 }
 ```
 
-- [ ] **Step 5: Make S3 Gallery highlight uploaded keys**
+- [x] **Step 5: Make S3 Gallery highlight uploaded keys**
 
 Update `S3GalleryPage` props:
 
@@ -2621,7 +2621,7 @@ interface S3GalleryPageProps {
 
 Render highlighted cards with class `highlighted`.
 
-- [ ] **Step 6: Add highlight style**
+- [x] **Step 6: Add highlight style**
 
 Append to `src/App.css`:
 
@@ -2632,7 +2632,7 @@ Append to `src/App.css`:
 }
 ```
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run:
 
@@ -2662,7 +2662,7 @@ git commit -m "feat: connect optimizer upload action to gallery"
 - Modify: `README.md`
 - Optional Modify: `docs/superpowers/plans/2026-06-26-pic-piper-implementation.md` checkbox statuses only during execution.
 
-- [ ] **Step 1: Update README**
+- [x] **Step 1: Update README**
 
 Replace starter README with:
 
@@ -2699,7 +2699,7 @@ cargo test
 ```
 ```
 
-- [ ] **Step 2: Run full frontend verification**
+- [x] **Step 2: Run full frontend verification**
 
 Run:
 
@@ -2710,7 +2710,7 @@ pnpm build
 
 Expected: frontend tests and TypeScript/Vite build pass.
 
-- [ ] **Step 3: Run full Rust verification**
+- [x] **Step 3: Run full Rust verification**
 
 Run:
 
@@ -2723,7 +2723,7 @@ cd ..
 
 Expected: Rust tests pass and formatting is clean.
 
-- [ ] **Step 4: Run Tauri dev smoke test**
+- [x] **Step 4: Run Tauri dev smoke test**
 
 Run:
 
@@ -2738,7 +2738,7 @@ Expected: desktop window opens with Pic Piper navigation. Manually verify:
 - No auto-upload control exists.
 - S3 Gallery has no rename or move controls.
 
-- [ ] **Step 5: Commit docs**
+- [x] **Step 5: Commit docs**
 
 Commit:
 
