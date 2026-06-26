@@ -21,6 +21,8 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const [namingTemplate, setNamingTemplate] = useState("{yyyy}/{mm}/{slug}-{hash}.{ext}");
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [highlightedKeysState, setHighlightedKeysState] = useState<string[]>(galleryFocus.highlightedKeys);
 
   const loadObjects = useCallback(async () => {
@@ -138,21 +140,31 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
 
   const handleDownload = async (obj: GalleryObject) => {
     if (!selectedProfile) return;
-    const dir = await open({ directory: true });
-    if (!dir) return;
-    const outputPath = `${dir}/${obj.key.split("/").pop()}`;
-    await galleryApi.downloadObject({
-      profile: selectedProfile,
-      key: obj.key,
-      outputPath,
-    });
+    setDownloadingKey(obj.key);
+    try {
+      const dir = await open({ directory: true });
+      if (!dir) return;
+      const outputPath = `${dir}/${obj.key.split("/").pop()}`;
+      await galleryApi.downloadObject({
+        profile: selectedProfile,
+        key: obj.key,
+        outputPath,
+      });
+    } finally {
+      setDownloadingKey(null);
+    }
   };
 
   const handleDelete = async (obj: GalleryObject) => {
     if (!selectedProfile) return;
     if (!window.confirm(`Delete ${obj.key}?`)) return;
-    await galleryApi.deleteObject({ profile: selectedProfile, key: obj.key });
-    await loadObjects();
+    setDeletingKey(obj.key);
+    try {
+      await galleryApi.deleteObject({ profile: selectedProfile, key: obj.key });
+      await loadObjects();
+    } finally {
+      setDeletingKey(null);
+    }
   };
 
   if (profiles.length === 0) {
@@ -200,17 +212,15 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
         />
       </section>
       {copyMessage && (
-        <section className="copy-message" role="status">
-          {copyMessage}
-        </section>
+        <p className="status-line" role="status">{copyMessage}</p>
       )}
       {uploadStatus && (
-        <section className="upload-status" role="status">
-          {uploadStatus}
-        </section>
+        <p className={uploadStatus.includes("failed") ? "error-text" : "success-text"} role="status">{uploadStatus}</p>
       )}
-      {loading && <section className="loading-state">Loading...</section>}
-      {error && <section className="error-state">{error}</section>}
+      {loading && <p className="status-line">Loading prefix...</p>}
+      {deletingKey && <p className="status-line">Deleting {deletingKey}...</p>}
+      {downloadingKey && <p className="status-line">Downloading {downloadingKey}...</p>}
+      {error && <p className="error-text">{error}</p>}
       {!loading && !error && filteredObjects.length === 0 && (
         <section className="empty-state">No objects found.</section>
       )}
@@ -232,10 +242,10 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
                 <button type="button" onClick={() => handleView(obj)}>
                   View
                 </button>
-                <button type="button" onClick={() => handleDownload(obj)}>
+                <button type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
                   Download
                 </button>
-                <button type="button" onClick={() => handleDelete(obj)}>
+                <button type="button" onClick={() => handleDelete(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
                   Delete
                 </button>
               </div>

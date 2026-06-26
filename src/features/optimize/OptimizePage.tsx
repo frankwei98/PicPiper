@@ -43,6 +43,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [mode, setMode] = useState<"edit" | "results">("edit");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [compressing, setCompressing] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const canCompress = items.some((item) => item.status === "ready" || item.status === "pending");
 
@@ -74,6 +77,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     if (!selected) return;
 
     const paths = Array.isArray(selected) ? selected : [selected];
+    setImporting(true);
 
     const results = await Promise.allSettled(
       paths.map((path) =>
@@ -110,12 +114,14 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     });
 
     setItems((current) => [...current, ...newItems]);
+    setImporting(false);
   };
 
   const [compressError, setCompressError] = useState<string | null>(null);
 
   const handleCompress = async () => {
     setCompressError(null);
+    setCompressing(true);
     setItems((current) =>
       current.map((item) =>
         item.status === "ready" || item.status === "pending"
@@ -166,6 +172,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
             : item,
         ),
       );
+    } finally {
+      setCompressing(false);
     }
   };
 
@@ -173,9 +181,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   const handleSaveToLocal = async () => {
     setSaveError(null);
+    setSaving(true);
     try {
       const targetDir = await open({ directory: true });
-      if (!targetDir) return;
+      if (!targetDir) {
+        setSaving(false);
+        return;
+      }
 
       const outputPaths = items
         .filter((item) => item.status === "compressed" && item.outputPath)
@@ -187,8 +199,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       }
 
       const copied = await tauriApi.copyOutputsToDir({ outputPaths, targetDir: targetDir as string });
+      setSaving(false);
       alert(`Saved ${copied.length} file(s) to ${targetDir}`);
     } catch (err) {
+      setSaving(false);
       setSaveError(err instanceof Error ? err.message : "Failed to save files");
     }
   };
@@ -291,12 +305,14 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           ))}
         </section>
 
-        {uploadError && <p className="upload-error">{uploadError}</p>}
-        {saveError && <p className="upload-error">{saveError}</p>}
+        {saving && <p className="status-line">Saving files...</p>}
+        {uploadingItems.size > 0 && <p className="status-line">Uploading {uploadingItems.size} image(s)...</p>}
+        {uploadError && <p className="error-text">{uploadError}</p>}
+        {saveError && <p className="error-text">{saveError}</p>}
 
         <div className="result-actions">
-          <button type="button" onClick={handleSaveToLocal}>Save to local folder</button>
-          <button type="button" onClick={uploadToS3}>Upload to S3</button>
+          <button type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>
+          <button type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
           <button type="button" onClick={() => setMode("edit")}>Back to edit settings</button>
         </div>
       </div>
@@ -318,12 +334,14 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
       <section className="drop-zone">
         Drop images here or{" "}
-        <button type="button" onClick={handleChooseImages}>
+        <button type="button" onClick={handleChooseImages} disabled={importing}>
           Choose images
         </button>
       </section>
 
-      {compressError && <p className="upload-error">{compressError}</p>}
+      {importing && <p className="status-line">Importing images...</p>}
+      {compressing && <p className="status-line">Compressing images...</p>}
+      {compressError && <p className="error-text">{compressError}</p>}
 
       <section className="item-list" aria-label="Images to optimize">
         {items.map((item) => (

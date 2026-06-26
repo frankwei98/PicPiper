@@ -37,11 +37,13 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const handleSaveProfile = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaveError(null);
     setSaveMessage(null);
+    setSaving(true);
 
     try {
       const profileId = profile?.id || crypto.randomUUID();
@@ -81,8 +83,10 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       await settingsApi.saveSettings(nextSettings);
       onSettingsChange(nextSettings);
       setSecretAccessKey("");
+      setSaving(false);
       setSaveMessage("Profile saved.");
     } catch (error) {
+      setSaving(false);
       setSaveError(error instanceof Error ? error.message : String(error));
     }
   };
@@ -175,10 +179,14 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
                 onChange={(e) => setDefaultPrefix(e.target.value)}
               />
             </label>
-            <button type="submit">Save profile</button>
+            <button type="submit" disabled={saving}>Save profile</button>
           </form>
-          {saveMessage && <p className="save-message" role="status">{saveMessage}</p>}
-          {saveError && <p className="save-error" role="alert">{saveError}</p>}
+          {saving && <p className="status-line">Saving profile...</p>}
+          {saveMessage && <p className="success-text" role="status">{saveMessage}</p>}
+          {saveError && <p className="error-text" role="alert">{saveError}</p>}
+          {allowInsecureFallback && (
+            <p className="error-text">Warning: Credential fallback to local storage is enabled. Secrets may be stored insecurely.</p>
+          )}
           <p>Secrets use system secure storage when available. Local fallback must be explicitly allowed.</p>
         </article>
       </section>
