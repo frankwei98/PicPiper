@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CompressionSettings, GalleryObject, OptimizeItem, S3ProfileSummary } from "../types";
+import type { CompressionSettings, GalleryObject, OptimizeItem, S3Profile } from "../types";
 
 export interface InspectImageRequest {
   path: string;
@@ -31,17 +31,32 @@ export const tauriApi = {
 };
 
 export interface ListGalleryObjectsRequest {
-  profile: S3ProfileSummary;
+  profile: S3Profile;
   prefix: string;
+}
+
+export interface DeleteObjectRequest {
+  profile: S3Profile;
+  key: string;
+}
+
+export interface DownloadObjectRequest {
+  profile: S3Profile;
+  key: string;
+  outputPath: string;
 }
 
 export const galleryApi = {
   listObjects: (request: ListGalleryObjectsRequest) =>
     invoke<GalleryObject[]>("list_gallery_objects", { request }),
+  deleteObject: (request: DeleteObjectRequest) =>
+    invoke<void>("delete_gallery_object", { request }),
+  downloadObject: (request: DownloadObjectRequest) =>
+    invoke<string>("download_gallery_object", { request }),
 };
 
 export interface UploadObjectRequest {
-  profile: S3ProfileSummary;
+  profile: S3Profile;
   sourcePath: string;
   objectKey: string;
   contentType?: string;
@@ -53,7 +68,7 @@ export const uploadApi = {
 };
 
 export interface AppSettings {
-  profiles: S3ProfileSummary[];
+  profiles: S3Profile[];
   presets: Array<{
     id: string;
     name: string;

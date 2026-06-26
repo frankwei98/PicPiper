@@ -35,14 +35,18 @@ export interface CompressionResult {
   totalOutputBytes: number;
 }
 
-export interface S3ProfileSummary {
+export interface S3Profile {
   id: string;
   name: string;
-  bucket: string;
   endpoint: string;
   region: string;
-  defaultPrefix: string;
+  bucket: string;
+  accessKeyId: string;
+  credentialRef?: string;
+  pathStyle: boolean;
   publicBaseUrl?: string;
+  defaultPrefix: string;
+  insecureSecretFallback: boolean;
 }
 
 export interface GalleryObject {

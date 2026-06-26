@@ -4,7 +4,7 @@ import { S3GalleryPage } from "./features/gallery/S3GalleryPage";
 import { OptimizePage } from "./features/optimize/OptimizePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import type { AppSettings } from "./api/tauri";
-import type { S3ProfileSummary } from "./types";
+import type { S3Profile } from "./types";
 import type { GalleryFocus } from "./state/appState";
 import { initialNavigationState } from "./state/appState";
 import type { AppNavigationState } from "./state/appState";
@@ -22,7 +22,7 @@ function App() {
     setNavigation({ view: "gallery", galleryFocus: focus });
   };
 
-  const selectedProfile: S3ProfileSummary | undefined = navigation.galleryFocus.profile
+  const selectedProfile: S3Profile | undefined = navigation.galleryFocus.profile
     ?? settings.profiles[0];
 
   return (

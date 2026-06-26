@@ -1,7 +1,7 @@
-import type { AppView, S3ProfileSummary } from "../types";
+import type { AppView, S3Profile } from "../types";
 
 export interface GalleryFocus {
-  profile?: S3ProfileSummary;
+  profile?: S3Profile;
   prefix: string;
   highlightedKeys: string[];
 }

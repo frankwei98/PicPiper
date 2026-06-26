@@ -1,10 +1,10 @@
 import { useState } from "react";
-import type { GalleryObject, S3ProfileSummary } from "../../types";
+import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
-  profiles: S3ProfileSummary[];
+  profiles: S3Profile[];
 }
 
 export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {

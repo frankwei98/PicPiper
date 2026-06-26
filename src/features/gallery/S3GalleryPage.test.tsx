@@ -7,8 +7,11 @@ const sampleProfile = {
   bucket: "images",
   endpoint: "https://s3.example.com",
   region: "auto",
+  accessKeyId: "AKIAEXAMPLE",
+  pathStyle: false,
   defaultPrefix: "2026/06",
   publicBaseUrl: "https://cdn.example.com",
+  insecureSecretFallback: false,
 };
 
 const defaultProps = {

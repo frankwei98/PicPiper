@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { OptimizeItem, S3ProfileSummary } from "../../types";
+import type { OptimizeItem, S3Profile } from "../../types";
 import { uploadApi } from "../../api/tauri";
 
 interface OptimizePageProps {
@@ -7,7 +7,7 @@ interface OptimizePageProps {
     prefix: string;
     highlightedKeys: string[];
   }) => void;
-  activeProfile?: S3ProfileSummary;
+  activeProfile?: S3Profile;
   namingTemplate: string;
 }
 
