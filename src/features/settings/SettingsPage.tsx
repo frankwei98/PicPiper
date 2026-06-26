@@ -46,6 +46,12 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     setSaving(true);
 
     try {
+      if (!secretAccessKey && !profile?.credentialRef) {
+        setSaving(false);
+        setSaveError("Secret access key is required for a new profile.");
+        return;
+      }
+
       const profileId = profile?.id || crypto.randomUUID();
 
       const secretResult = secretAccessKey
@@ -55,8 +61,8 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
             allowInsecureFallback,
           })
         : {
-            credentialRef: profile?.credentialRef ?? `s3:${profileId}`,
-            insecureFallbackUsed: profile?.insecureSecretFallback ?? false,
+            credentialRef: profile!.credentialRef!,
+            insecureFallbackUsed: profile!.insecureSecretFallback ?? false,
           };
 
       const savedProfile: S3Profile = {
