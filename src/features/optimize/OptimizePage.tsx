@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { CompressionPreset, CompressionSettings, OptimizeItem, S3Profile } from "../../types";
@@ -49,6 +49,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+  const thumbnailQueue = useRef<Array<{ id: string; path: string }>>([]);
+  const activeThumbnails = useRef(0);
+  const maxConcurrentThumbnails = 3;
 
   const canCompress = items.some((item) => item.status === "ready" || item.status === "pending");
 
@@ -67,8 +70,24 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
       setThumbnails((current) => ({ ...current, [id]: res.dataUrl }));
     } catch {
       // Thumbnails are best-effort; failures leave the placeholder.
+    } finally {
+      activeThumbnails.current -= 1;
+      drainThumbnailQueue();
     }
   }, []);
+
+  const drainThumbnailQueue = useCallback(() => {
+    while (activeThumbnails.current < maxConcurrentThumbnails && thumbnailQueue.current.length > 0) {
+      const next = thumbnailQueue.current.shift()!;
+      activeThumbnails.current += 1;
+      void loadThumbnail(next.id, next.path);
+    }
+  }, [loadThumbnail]);
+
+  const enqueueThumbnail = useCallback((id: string, path: string) => {
+    thumbnailQueue.current.push({ id, path });
+    drainThumbnailQueue();
+  }, [drainThumbnailQueue]);
 
   const updateQuality = (id: string, quality: number) => {
     setItems((current) =>
@@ -146,10 +165,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
 
     for (const item of newItems) {
       if (item.status !== "failed" && item.sourcePath) {
-        void loadThumbnail(item.id, item.sourcePath);
+        enqueueThumbnail(item.id, item.sourcePath);
       }
     }
-  }, [loadThumbnail]);
+  }, [enqueueThumbnail]);
 
   const handleChooseImages = async () => {
     const selected = await open({

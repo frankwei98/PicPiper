@@ -184,9 +184,9 @@ pub fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailR
         .decode()
         .map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
 
-    let thumb = img.resize(max_size, max_size, image::imageops::FilterType::Lanczos3);
+    // Triangle filter is ~3x faster than Lanczos3; quality is fine at thumbnail size.
+    let thumb = img.resize(max_size, max_size, image::imageops::FilterType::Triangle);
 
-    // Encode to JPEG for small size; fallback to PNG for formats with alpha
     let has_alpha = thumb.color().has_alpha();
     let (bytes, mime) = if has_alpha {
         let mut buf = std::io::Cursor::new(Vec::new());
@@ -196,7 +196,7 @@ pub fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailR
         (buf.into_inner(), "image/png")
     } else {
         let mut buf = std::io::Cursor::new(Vec::new());
-        let mut encoder = JpegEncoder::new_with_quality(&mut buf, 80);
+        let mut encoder = JpegEncoder::new_with_quality(&mut buf, 75);
         encoder
             .encode_image(&thumb)
             .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?;

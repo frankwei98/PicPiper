@@ -32,6 +32,13 @@ fn inspect_image(request: InspectImageRequest) -> AppResult<ImageInspection> {
 }
 
 #[tauri::command]
+async fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailResponse> {
+    tokio::task::spawn_blocking(move || optimizer::read_thumbnail(request))
+        .await
+        .map_err(|err| error::AppError::new("thumbnailJoinFailed", err.to_string()))?
+}
+
+#[tauri::command]
 fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageResult> {
     optimizer::compress_image(request)
 }
@@ -178,11 +185,6 @@ fn compress_batch(
 #[tauri::command]
 fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
     optimizer::copy_outputs_to_dir(request)
-}
-
-#[tauri::command]
-fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailResponse> {
-    optimizer::read_thumbnail(request)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
