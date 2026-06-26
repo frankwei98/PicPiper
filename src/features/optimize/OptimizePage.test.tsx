@@ -298,7 +298,7 @@ describe("OptimizePage", () => {
 
     expect(generateObjectKey).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourcePath: "/tmp/real-photo.jpg",
+        sourcePath: "/tmp/pic-piper/run-1/real-photo.webp",
         prefix: "images/2026/06",
         namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
       }),

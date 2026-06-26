@@ -271,7 +271,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
       const ext = item.settings.targetFormat;
       try {
         const { objectKey } = await namingApi.generateObjectKey({
-          sourcePath: item.sourcePath,
+          sourcePath: item.outputPath as string,
           outputFileName,
           prefix,
           namingTemplate,
