@@ -12,11 +12,11 @@ mod thumbnail;
 use error::AppResult;
 use models::{
     AppSettings, CompressBatchRequest, CompressBatchResponse, CompressImageRequest,
-    CompressImageResult, CopyOutputsRequest, DeleteObjectRequest, DownloadObjectRequest,
-    GalleryObject, GenerateObjectKeyRequest, GenerateObjectKeyResponse, ImageInspection,
-    InspectImageRequest, ListObjectsRequest, ReadThumbnailRequest, ReadThumbnailResponse,
-    SaveCredentialRequest, SaveCredentialResponse, SaveSettingsRequest, UploadHistoryEntry,
-    UploadObjectRequest,
+    CompressImageResult, CopyOutputsRequest, CreateOptimizerRunResponse, DeleteObjectRequest,
+    DownloadObjectRequest, GalleryObject, GenerateObjectKeyRequest, GenerateObjectKeyResponse,
+    ImageInspection, InspectImageRequest, ListObjectsRequest, ReadThumbnailRequest,
+    ReadThumbnailResponse, SaveCredentialRequest, SaveCredentialResponse, SaveSettingsRequest,
+    UploadHistoryEntry, UploadObjectRequest,
 };
 use sha2::{Digest, Sha256};
 use state::AppPaths;
@@ -39,6 +39,21 @@ async fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnai
     tokio::task::spawn_blocking(move || thumbnail::read_thumbnail(request))
         .await
         .map_err(|err| error::AppError::new("thumbnailJoinFailed", err.to_string()))?
+}
+
+#[tauri::command]
+fn create_optimizer_run(paths: State<'_, AppPaths>) -> AppResult<CreateOptimizerRunResponse> {
+    let run_id = format!(
+        "run-{}",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    );
+    let output_dir = paths.data_dir.join("optimizer-cache").join(&run_id);
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|err| error::AppError::new("outputDirFailed", err.to_string()))?;
+    Ok(CreateOptimizerRunResponse {
+        run_id,
+        output_dir: output_dir.to_string_lossy().to_string(),
+    })
 }
 
 #[tauri::command]
@@ -210,6 +225,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_default_settings,
             inspect_image,
+            create_optimizer_run,
             compress_image,
             compress_batch,
             copy_outputs_to_dir,

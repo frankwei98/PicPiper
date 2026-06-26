@@ -52,6 +52,11 @@ export interface CompressBatchResponse {
   items: CompressBatchItemResult[];
 }
 
+export interface CreateOptimizerRunResponse {
+  runId: string;
+  outputDir: string;
+}
+
 export interface CopyOutputsRequest {
   outputPaths: string[];
   targetDir: string;
@@ -69,6 +74,8 @@ export interface ReadThumbnailResponse {
 export const tauriApi = {
   inspectImage: (request: InspectImageRequest) =>
     invoke<OptimizeItem>("inspect_image", { request }),
+  createOptimizerRun: () =>
+    invoke<CreateOptimizerRunResponse>("create_optimizer_run"),
   compressImage: (request: CompressImageRequest) =>
     invoke<CompressImageResult>("compress_image", { request }),
   compressBatch: (request: CompressBatchRequest) =>

@@ -233,6 +233,13 @@ pub struct CompressBatchResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct CreateOptimizerRunResponse {
+    pub run_id: String,
+    pub output_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct CopyOutputsRequest {
     pub output_paths: Vec<String>,
     pub target_dir: String,
