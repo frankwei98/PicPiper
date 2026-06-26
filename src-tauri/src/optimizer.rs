@@ -4,7 +4,8 @@ use std::{
 };
 
 use image::{
-    codecs::jpeg::JpegEncoder, DynamicImage, GenericImageView, ImageFormat as CodecFormat,
+    codecs::{avif::AvifEncoder, jpeg::JpegEncoder},
+    DynamicImage, GenericImageView, ImageEncoder, ImageFormat as CodecFormat,
 };
 
 use crate::{
@@ -68,12 +69,8 @@ pub fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageR
         ImageFormat::Png => resized
             .save_with_format(&output_path, CodecFormat::Png)
             .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?,
-        ImageFormat::Webp => resized
-            .save_with_format(&output_path, CodecFormat::WebP)
-            .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?,
-        ImageFormat::Avif => resized
-            .save_with_format(&output_path, CodecFormat::Avif)
-            .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?,
+        ImageFormat::Webp => write_webp(&resized, &output_path, request.settings.quality)?,
+        ImageFormat::Avif => write_avif(&resized, &output_path, request.settings.quality)?,
         ImageFormat::Heif => {
             return Err(AppError::new(
                 "codecUnavailable",
@@ -208,6 +205,28 @@ fn write_jpeg(image: &DynamicImage, output_path: &Path, quality: u8) -> AppResul
         .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))
 }
 
+fn write_webp(image: &DynamicImage, output_path: &Path, quality: u8) -> AppResult<()> {
+    let rgba = image.to_rgba8();
+    let encoder = webp::Encoder::from_rgba(&rgba, image.width(), image.height());
+    let encoded = encoder.encode(quality.clamp(1, 100) as f32);
+    fs::write(output_path, &*encoded)
+        .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))
+}
+
+fn write_avif(image: &DynamicImage, output_path: &Path, quality: u8) -> AppResult<()> {
+    let file = fs::File::create(output_path)
+        .map_err(|err| AppError::new("outputWriteFailed", err.to_string()))?;
+    let encoder = AvifEncoder::new_with_speed_quality(file, 6, quality.clamp(1, 100));
+    encoder
+        .write_image(
+            image.as_bytes(),
+            image.width(),
+            image.height(),
+            image.color().into(),
+        )
+        .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))
+}
+
 fn map_codec_format(format: CodecFormat) -> Option<ImageFormat> {
     match format {
         CodecFormat::Jpeg => Some(ImageFormat::Jpg),
@@ -228,9 +247,8 @@ fn gps_warning(remove_gps: bool) -> Option<String> {
 
 fn quality_format_warning(target_format: &ImageFormat) -> Option<String> {
     match target_format {
-        ImageFormat::Png | ImageFormat::Webp | ImageFormat::Avif => Some(
-            "Quality setting only applies to JPEG output. This format uses its default quality."
-                .to_string(),
+        ImageFormat::Png => Some(
+            "Quality setting does not apply to PNG output. PNG is always lossless.".to_string(),
         ),
         _ => None,
     }
@@ -240,6 +258,18 @@ fn quality_format_warning(target_format: &ImageFormat) -> Option<String> {
 mod tests {
     use super::*;
     use crate::models::CompressionSettings;
+
+    /// Create a test image with some visual complexity (gradient pattern)
+    /// so lossy encoders actually have something to compress differently.
+    fn create_test_image(width: u32, height: u32) -> DynamicImage {
+        DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(width, height, |x, y| {
+            image::Rgb([
+                ((x as f64 / width as f64) * 255.0) as u8,
+                ((y as f64 / height as f64) * 255.0) as u8,
+                (((x + y) as f64 / (width + height) as f64) * 255.0) as u8,
+            ])
+        }))
+    }
 
     #[test]
     fn estimate_decreases_with_lower_quality() {
@@ -267,5 +297,119 @@ mod tests {
         });
 
         assert_eq!(result.unwrap_err().code, "codecUnavailable");
+    }
+
+    #[test]
+    fn webp_quality_affects_output_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("source.png");
+        create_test_image(64, 64).save(&input).unwrap();
+
+        let low = compress_image(CompressImageRequest {
+            source_path: input.to_string_lossy().to_string(),
+            output_dir: dir.path().to_string_lossy().to_string(),
+            output_file_name: "low.webp".to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Webp,
+                quality: 10,
+                max_width: 64,
+                max_height: 64,
+                allow_upscale: false,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+
+        let high = compress_image(CompressImageRequest {
+            source_path: input.to_string_lossy().to_string(),
+            output_dir: dir.path().to_string_lossy().to_string(),
+            output_file_name: "high.webp".to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Webp,
+                quality: 90,
+                max_width: 64,
+                max_height: 64,
+                allow_upscale: false,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+
+        assert!(
+            low.output_bytes < high.output_bytes,
+            "Low-quality WebP ({} bytes) should be smaller than high-quality WebP ({} bytes)",
+            low.output_bytes,
+            high.output_bytes
+        );
+    }
+
+    #[test]
+    fn avif_quality_affects_output_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("source.png");
+        create_test_image(64, 64).save(&input).unwrap();
+
+        let low = compress_image(CompressImageRequest {
+            source_path: input.to_string_lossy().to_string(),
+            output_dir: dir.path().to_string_lossy().to_string(),
+            output_file_name: "low.avif".to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Avif,
+                quality: 10,
+                max_width: 64,
+                max_height: 64,
+                allow_upscale: false,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+
+        let high = compress_image(CompressImageRequest {
+            source_path: input.to_string_lossy().to_string(),
+            output_dir: dir.path().to_string_lossy().to_string(),
+            output_file_name: "high.avif".to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Avif,
+                quality: 90,
+                max_width: 64,
+                max_height: 64,
+                allow_upscale: false,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+
+        assert!(
+            low.output_bytes < high.output_bytes,
+            "Low-quality AVIF ({} bytes) should be smaller than high-quality AVIF ({} bytes)",
+            low.output_bytes,
+            high.output_bytes
+        );
+    }
+
+    #[test]
+    fn webp_quality_warning_removed() {
+        let warning = quality_format_warning(&ImageFormat::Webp);
+        assert!(
+            warning.is_none(),
+            "WebP should not warn that quality is ignored, got: {:?}",
+            warning
+        );
+    }
+
+    #[test]
+    fn avif_quality_warning_removed() {
+        let warning = quality_format_warning(&ImageFormat::Avif);
+        assert!(
+            warning.is_none(),
+            "AVIF should not warn that quality is ignored, got: {:?}",
+            warning
+        );
+    }
+
+    #[test]
+    fn png_still_warns_about_quality() {
+        let warning = quality_format_warning(&ImageFormat::Png);
+        assert!(warning.is_some(), "PNG should still warn about quality");
     }
 }
