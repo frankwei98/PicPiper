@@ -1,9 +1,9 @@
 import type { AppView } from "../types";
 
-const NAV_ITEMS: Array<{ id: AppView; label: string }> = [
-  { id: "optimize", label: "Optimize" },
-  { id: "gallery", label: "S3 Gallery" },
-  { id: "settings", label: "Settings" },
+const NAV_ITEMS: Array<{ id: AppView; label: string; icon: string }> = [
+  { id: "optimize", label: "Optimize", icon: "⚡" },
+  { id: "gallery", label: "S3 Gallery", icon: "🖼" },
+  { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
 interface LayoutProps {
@@ -16,7 +16,10 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <h1>Pic Piper</h1>
+        <div className="sidebar-brand">
+          <div className="sidebar-brand-icon">🎵</div>
+          <h1>Pic Piper</h1>
+        </div>
         <nav aria-label="Main navigation">
           {NAV_ITEMS.map((item) => (
             <button
@@ -25,6 +28,7 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
               onClick={() => onViewChange(item.id)}
               type="button"
             >
+              <span className="nav-icon">{item.icon}</span>
               {item.label}
             </button>
           ))}

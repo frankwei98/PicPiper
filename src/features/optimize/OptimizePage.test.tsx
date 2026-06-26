@@ -130,7 +130,7 @@ describe("OptimizePage", () => {
 
     // Should show results with real output filename and sizes
     expect(await screen.findByText("real-photo.webp")).toBeInTheDocument();
-    expect(screen.getByText(/1.2 MB => 240 KB/)).toBeInTheDocument();
+    expect(screen.getByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
   });
 
   it("sends imported image in compressBatch items (not an empty array)", async () => {

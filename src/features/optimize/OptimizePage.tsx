@@ -395,7 +395,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
                   <p className="item-error">{item.error}</p>
                 ) : (
                   <p>
-                    {formatBytes(item.originalBytes)} =&gt; {formatBytes(item.outputBytes ?? item.estimatedBytes ?? 0)}
+                    {formatBytes(item.originalBytes)} → {formatBytes(item.outputBytes ?? item.estimatedBytes ?? 0)}
                   </p>
                 )}
                 {uploadingItems.has(item.id) && <p className="item-status">Uploading...</p>}
@@ -414,9 +414,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
         {saveSuccess && <p className="status-line">{saveSuccess}</p>}
 
         <div className="result-actions">
-          <button type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>
-          <button type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
-          <button type="button" onClick={() => setMode("edit")}>Back to edit settings</button>
+          <button className="btn-primary" type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>
+          <button className="btn-primary" type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
+          <button className="btn-secondary" type="button" onClick={() => setMode("edit")}>Back to edit settings</button>
         </div>
       </div>
     );
@@ -446,8 +446,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
               </select>
             </label>
           )}
-          <button type="button" onClick={handleApplyPreset}>Apply preset</button>
-          <button type="button" disabled={!canCompress} onClick={handleCompress}>Compress</button>
+          <button className="btn-secondary" type="button" onClick={handleApplyPreset}>Apply preset</button>
+          <button className="btn-primary" type="button" disabled={!canCompress} onClick={handleCompress}>Compress</button>
         </div>
       </header>
 
@@ -457,10 +457,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        Drop images here or{" "}
-        <button type="button" onClick={handleChooseImages} disabled={importing}>
-          Choose images
-        </button>
+        <div className="drop-zone-text">Drop images here</div>
+        <div className="drop-zone-hint">
+          or{" "}
+          <button className="btn-tertiary" type="button" onClick={handleChooseImages} disabled={importing}>
+            Choose images
+          </button>
+        </div>
       </section>
 
       {dropError && <p className="error-text" role="alert">{dropError}</p>}
@@ -477,8 +480,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
                 <p className="item-error">{item.error}</p>
               ) : (
                 <p>
-                  {item.sourceFormat.toUpperCase()} -&gt; {item.settings.targetFormat.toUpperCase()} |{" "}
-                  {formatBytes(item.originalBytes)} =&gt; {formatBytes(item.estimatedBytes ?? 0)}
+                  {item.sourceFormat.toUpperCase()} → {item.settings.targetFormat.toUpperCase()} |{" "}
+                  {formatBytes(item.originalBytes)} → {formatBytes(item.estimatedBytes ?? 0)}
                 </p>
               )}
               {item.warning && <p className="item-warning">{item.warning}</p>}

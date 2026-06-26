@@ -194,7 +194,7 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
           <h2>S3 Gallery</h2>
           <p>Browse a profile and prefix, then copy URLs or manage images.</p>
         </div>
-        <button type="button" onClick={handleUploadLocal}>Upload local images</button>
+        <button className="btn-primary" type="button" onClick={handleUploadLocal}>Upload local images</button>
       </header>
       <section className="gallery-toolbar">
         <select
@@ -266,16 +266,16 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
               </div>
               <p>{obj.key}</p>
               <div className="object-actions">
-                <button type="button" onClick={() => handleCopyUrl(obj)}>
+                <button className="btn-secondary btn-sm" type="button" onClick={() => handleCopyUrl(obj)}>
                   Copy URL
                 </button>
-                <button type="button" onClick={() => handleView(obj)}>
+                <button className="btn-secondary btn-sm" type="button" onClick={() => handleView(obj)}>
                   View
                 </button>
-                <button type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
+                <button className="btn-secondary btn-sm" type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
                   Download
                 </button>
-                <button type="button" onClick={() => handleDelete(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
+                <button className="btn-danger btn-sm" type="button" onClick={() => handleDelete(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
                   Delete
                 </button>
               </div>

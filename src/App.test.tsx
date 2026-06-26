@@ -6,8 +6,8 @@ describe("App", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Pic Piper" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Optimize" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "S3 Gallery" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Optimize/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /S3 Gallery/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Settings/ })).toBeInTheDocument();
   });
 });

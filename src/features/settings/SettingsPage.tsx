@@ -253,7 +253,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
                 onChange={(e) => setDefaultPrefix(e.target.value)}
               />
             </label>
-            <button type="submit" disabled={saving}>Save profile</button>
+            <button className="btn-primary" type="submit" disabled={saving}>Save profile</button>
           </form>
           {saving && <p className="status-line">Saving profile...</p>}
           {saveMessage && <p className="success-text" role="status">{saveMessage}</p>}
@@ -267,7 +267,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         <article className="panel">
           <div className="panel-header">
             <h3>Presets</h3>
-            <button type="button" onClick={openAddPreset}>Add preset</button>
+            <button className="btn-primary" type="button" onClick={openAddPreset}>Add preset</button>
           </div>
           {settings.presets.length === 0 && (
             <p className="status-line">No presets configured.</p>
@@ -280,8 +280,8 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
                     {preset.name} ({preset.targetFormat.toUpperCase()} {preset.quality}%)
                   </span>
                   <div className="preset-item-actions">
-                    <button type="button" onClick={() => openEditPreset(preset)}>Edit</button>
-                    <button type="button" onClick={() => handleDeletePreset(preset.id)}>Delete</button>
+                    <button className="btn-secondary btn-sm" type="button" onClick={() => openEditPreset(preset)}>Edit</button>
+                    <button className="btn-danger btn-sm" type="button" onClick={() => handleDeletePreset(preset.id)}>Delete</button>
                   </div>
                 </li>
               ))}
@@ -301,7 +301,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
           >
             <div className="modal-header">
               <h3 id="preset-dialog-title">{editingPreset ? "Edit preset" : "Add preset"}</h3>
-              <button type="button" onClick={closePresetDialog}>Close</button>
+              <button className="btn-secondary btn-sm" type="button" onClick={closePresetDialog}>Close</button>
             </div>
             <form
               className="profile-form preset-dialog-form"
@@ -347,8 +347,8 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
                 />
               </label>
               <div className="preset-form-actions">
-                <button type="submit">{editingPreset ? "Update preset" : "Save preset"}</button>
-                <button type="button" onClick={closePresetDialog}>Cancel</button>
+                <button className="btn-primary" type="submit">{editingPreset ? "Update preset" : "Save preset"}</button>
+                <button className="btn-secondary" type="button" onClick={closePresetDialog}>Cancel</button>
               </div>
             </form>
           </section>
