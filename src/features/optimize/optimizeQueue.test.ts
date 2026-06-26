@@ -70,6 +70,7 @@ describe("optimizeQueue", () => {
     expect(shouldRequeueForGlobalSettings(item("compressed"))).toBe(true);
     expect(shouldRequeueForGlobalSettings(item("queued"))).toBe(true);
     expect(shouldRequeueForGlobalSettings(item("compressing"))).toBe(true);
+    expect(shouldRequeueForGlobalSettings(item("inspecting"))).toBe(false);
     expect(shouldRequeueForGlobalSettings(item("failed"))).toBe(false);
     expect(shouldRequeueForGlobalSettings(item("cancelled"))).toBe(false);
   });

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -76,10 +76,60 @@ vi.mock("../../api/tauri", async () => ({
   },
 }));
 
+function installDefaultMocks() {
+  createOptimizerRun.mockImplementation(async () => ({
+    runId: "run-1",
+    outputDir: "/tmp/pic-piper/run-1",
+  }));
+  inspectImage.mockImplementation(async () => ({
+    id: "real-photo",
+    sourcePath: "/tmp/real-photo.jpg",
+    fileName: "real-photo.jpg",
+    sourceFormat: "jpg",
+    originalBytes: 1_200_000,
+    estimatedBytes: 260_000,
+    status: "queued",
+    settings: {
+      targetFormat: "jpg",
+      quality: 85,
+      removeGps: true,
+    },
+  }));
+  compressImage.mockImplementation(async (...args: unknown[]) => {
+    const request = args[0] as { sourcePath?: string; outputFileName?: string } | undefined;
+    return {
+      sourcePath: request?.sourcePath ?? "/tmp/real-photo.jpg",
+      outputPath: `/tmp/pic-piper/run-1/${request?.outputFileName ?? "real-photo.jpg"}`,
+      outputFileName: request?.outputFileName ?? "real-photo.jpg",
+      originalBytes: 1_200_000,
+      outputBytes: 240_000,
+      targetFormat: "jpg",
+    };
+  });
+  copyOutputsToDir.mockImplementation(async () => ["/tmp/saved/real-photo.jpg"]);
+  readThumbnail.mockImplementation(async ({ path }: { path: string }) => ({
+    dataUrl: path.includes("pic-piper") ? "data:image/jpeg;base64,COMPRESSED" : "data:image/jpeg;base64,ORIGINAL",
+  }));
+  uploadObject.mockImplementation(async () => ({
+    key: "images/2026/06/real-photo-abcdef12.jpg",
+    size: 240_000,
+    publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.jpg",
+    isImage: true,
+  }));
+  generateObjectKey.mockImplementation(async () => ({
+    objectKey: "images/2026/06/real-photo-abcdef12.jpg",
+  }));
+}
+
 describe("OptimizePage", () => {
   beforeEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    Object.defineProperty(navigator, "hardwareConcurrency", {
+      configurable: true,
+      value: 8,
+    });
+    installDefaultMocks();
     // Reset dialog mock to default behavior
     mockDialogOpen.mockImplementation(async (...args: unknown[]) => {
       const opts = args[0] as { directory?: boolean } | undefined;
@@ -177,6 +227,108 @@ describe("OptimizePage", () => {
         settings: expect.objectContaining({ targetFormat: "webp" }),
       }),
     );
+  });
+
+  it("keeps duplicate output filenames unique across sequential scheduler batches", async () => {
+    Object.defineProperty(navigator, "hardwareConcurrency", {
+      configurable: true,
+      value: 2,
+    });
+    mockDialogOpen.mockImplementation(async (...args: unknown[]) => {
+      const opts = args[0] as { directory?: boolean } | undefined;
+      if (opts?.directory) return "/tmp/saved" as unknown as string[];
+      return ["/tmp/first/photo.jpg", "/tmp/second/photo.jpg"];
+    });
+    inspectImage.mockImplementation(async (...args: unknown[]) => {
+      const request = args[0] as { path: string };
+      return {
+        id: request.path,
+        sourcePath: request.path,
+        fileName: "photo.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_200_000,
+        estimatedBytes: 260_000,
+        status: "queued",
+        settings: {
+          targetFormat: "jpg",
+          quality: 85,
+          removeGps: true,
+        },
+      };
+    });
+    compressImage.mockImplementation(async (...args: unknown[]) => {
+      const request = args[0] as { sourcePath: string; outputFileName: string };
+      return {
+        sourcePath: request.sourcePath,
+        outputPath: `/tmp/pic-piper/run-1/${request.outputFileName}`,
+        outputFileName: request.outputFileName,
+        originalBytes: 1_200_000,
+        outputBytes: 240_000,
+        targetFormat: "jpg",
+      };
+    });
+
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+
+    await waitFor(() => {
+      expect(compressImage).toHaveBeenCalledTimes(2);
+    });
+    const compressRequests = compressImage.mock.calls as unknown as Array<[{ outputFileName: string }]>;
+    expect(compressRequests.map(([request]) => request.outputFileName)).toEqual([
+      "photo.jpg",
+      "photo-2.jpg",
+    ]);
+  });
+
+  it("does not queue an inspecting placeholder when global settings change", async () => {
+    let resolveInspect!: (value: Awaited<ReturnType<typeof inspectImage>>) => void;
+    inspectImage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInspect = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 450));
+    });
+
+    expect(compressImage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveInspect({
+        id: "real-photo",
+        sourcePath: "/tmp/real-photo.jpg",
+        fileName: "real-photo.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_200_000,
+        estimatedBytes: 260_000,
+        status: "queued",
+        settings: {
+          targetFormat: "jpg",
+          quality: 60,
+          removeGps: true,
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(compressImage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ quality: 60 }),
+        }),
+      );
+    });
   });
 
   it("does not apply late compression results after cancellation", async () => {

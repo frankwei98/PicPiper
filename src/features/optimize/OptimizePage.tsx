@@ -67,6 +67,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const activeTasks = useRef(new Set<string>());
   const optimizerRun = useRef<{ runId: string; outputDir: string } | null>(null);
   const debounceRef = useRef<number | undefined>(undefined);
+  const qualityRef = useRef(quality);
+  const removeGpsRef = useRef(removeGps);
 
   useEffect(() => {
     return () => {
@@ -86,7 +88,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     try {
       const raw = (await tauriApi.inspectImage({
         path: sourcePath,
-        settings: { ...DEFAULT_SETTINGS, quality, removeGps },
+        settings: { ...DEFAULT_SETTINGS, quality: qualityRef.current, removeGps: removeGpsRef.current },
       })) as unknown as Record<string, unknown>;
 
       const fileName = (raw.fileName as string) ?? (raw.file_name as string) ?? sourcePath.split("/").pop() ?? "unknown";
@@ -94,6 +96,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       const originalBytes = (raw.originalBytes as number) ?? (raw.original_bytes as number) ?? 0;
       const estimatedBytes = (raw.estimatedBytes as number) ?? (raw.estimated_bytes as number) ?? 0;
       const targetFormat = defaultTargetFormat(sourceFormat);
+      const currentQuality = qualityRef.current;
+      const currentRemoveGps = removeGpsRef.current;
 
       setItems((current) =>
         current.map((ci) =>
@@ -106,7 +110,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                 estimatedBytes,
                 warning: raw.warning as string | undefined,
                 status: "queued" as const,
-                settings: { targetFormat, quality, removeGps },
+                settings: { targetFormat, quality: currentQuality, removeGps: currentRemoveGps },
               }
             : ci,
         ),
@@ -131,7 +135,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         ),
       );
     }
-  }, [quality, removeGps]);
+  }, []);
 
   const importImages = useCallback(async (paths: string[]) => {
     setImporting(true);
@@ -321,7 +325,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
     const outputNames = makeUniqueOutputFileNames(
       items
-        .filter((item) => item.status === "queued")
+        .filter((item) => item.status !== "failed" && item.status !== "cancelled" && item.originalBytes > 0)
         .map((item) => ({
           id: item.id,
           fileName: item.fileName,
@@ -366,13 +370,15 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const handleQualityChange = (nextQuality: number) => {
+    qualityRef.current = nextQuality;
     setQuality(nextQuality);
-    scheduleGlobalRequeue(nextQuality, removeGps);
+    scheduleGlobalRequeue(nextQuality, removeGpsRef.current);
   };
 
   const handleRemoveGpsChange = (checked: boolean) => {
+    removeGpsRef.current = checked;
     setRemoveGps(checked);
-    scheduleGlobalRequeue(quality, checked);
+    scheduleGlobalRequeue(qualityRef.current, checked);
   };
 
   // --- Per-item actions ---

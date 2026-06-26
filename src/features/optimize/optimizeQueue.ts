@@ -44,7 +44,7 @@ function appendSuffix(fileName: string, suffix: number): string {
 }
 
 export function shouldRequeueForGlobalSettings(item: OptimizeItem): boolean {
-  return item.status !== "failed" && item.status !== "cancelled";
+  return item.status !== "inspecting" && item.status !== "failed" && item.status !== "cancelled";
 }
 
 export function formatBytes(bytes: number): string {
