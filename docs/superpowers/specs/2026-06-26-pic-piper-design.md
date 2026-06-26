@@ -182,6 +182,7 @@ Credential storage:
 - Store only non-sensitive profile fields and secret references in app config when secure storage is available.
 - If secure storage is unavailable, allow fallback to local config file storage.
 - When using fallback storage, the UI must clearly mark the risk and allow migration back to secure storage later.
+- Set env var `PIC_PIPER_NO_KEYCHAIN=1` to bypass system keyring entirely and use local file fallback. Useful during development to avoid repeated Keychain prompts.
 
 Public URL behavior:
 

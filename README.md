@@ -51,6 +51,12 @@ pnpm build
 pnpm tauri dev
 ```
 
+To skip macOS Keychain prompts during development (credentials fall back to local file storage):
+
+```bash
+PIC_PIPER_NO_KEYCHAIN=1 pnpm tauri dev
+```
+
 Rust tests:
 
 ```bash
