@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
-import { galleryApi } from "../../api/tauri";
+import { galleryApi, namingApi, settingsApi, uploadApi } from "../../api/tauri";
 
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
@@ -19,6 +19,9 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [namingTemplate, setNamingTemplate] = useState("{yyyy}/{mm}/{slug}-{hash}.{ext}");
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [highlightedKeysState, setHighlightedKeysState] = useState<string[]>(galleryFocus.highlightedKeys);
 
   const loadObjects = useCallback(async () => {
     if (!selectedProfile) return;
@@ -41,9 +44,71 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
     loadObjects();
   }, [loadObjects]);
 
+  useEffect(() => {
+    settingsApi.loadSettings().then((s) => setNamingTemplate(s.namingTemplate)).catch(() => {});
+  }, []);
+
+  const handleUploadLocal = async () => {
+    if (!selectedProfile) return;
+    setUploadStatus(null);
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [
+          {
+            name: "Images",
+            extensions: ["jpg", "jpeg", "png", "webp", "avif", "heif", "heic"],
+          },
+        ],
+      });
+      if (!selected) return;
+
+      const paths = Array.isArray(selected) ? selected : [selected];
+      const currentPrefix = prefix || selectedProfile.defaultPrefix || "images";
+      const newKeys: string[] = [];
+
+      for (const filePath of paths) {
+        const fileName = filePath.split("/").pop() ?? "image";
+        const ext = fileName.split(".").pop() ?? "jpg";
+
+        const { objectKey } = await namingApi.generateObjectKey({
+          sourcePath: filePath,
+          outputFileName: fileName,
+          prefix: currentPrefix,
+          namingTemplate,
+          ext,
+        });
+
+        const contentTypeMap: Record<string, string> = {
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          png: "image/png",
+          webp: "image/webp",
+          avif: "image/avif",
+          heif: "image/heif",
+        };
+
+        await uploadApi.uploadObject({
+          profile: selectedProfile,
+          sourcePath: filePath,
+          objectKey,
+          contentType: contentTypeMap[ext] ?? "application/octet-stream",
+        });
+
+        newKeys.push(objectKey);
+      }
+
+      setHighlightedKeysState(newKeys);
+      setUploadStatus(`Uploaded ${newKeys.length} image(s).`);
+      await loadObjects();
+    } catch (err) {
+      setUploadStatus(err instanceof Error ? err.message : "Upload failed");
+    }
+  };
+
   const highlightedKeys = useMemo(
-    () => new Set(galleryFocus.highlightedKeys),
-    [galleryFocus.highlightedKeys],
+    () => new Set([...galleryFocus.highlightedKeys, ...highlightedKeysState]),
+    [galleryFocus.highlightedKeys, highlightedKeysState],
   );
 
   const filteredObjects = useMemo(() => {
@@ -111,7 +176,7 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
           <h2>S3 Gallery</h2>
           <p>Browse a profile and prefix, then copy URLs or manage images.</p>
         </div>
-        <button type="button">Upload local images</button>
+        <button type="button" onClick={handleUploadLocal}>Upload local images</button>
       </header>
       <section className="gallery-toolbar">
         <select aria-label="Profile" value={selectedProfile?.id ?? ""}>
@@ -137,6 +202,11 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
       {copyMessage && (
         <section className="copy-message" role="status">
           {copyMessage}
+        </section>
+      )}
+      {uploadStatus && (
+        <section className="upload-status" role="status">
+          {uploadStatus}
         </section>
       )}
       {loading && <section className="loading-state">Loading...</section>}

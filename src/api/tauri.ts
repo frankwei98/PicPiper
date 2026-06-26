@@ -98,11 +98,32 @@ export interface UploadObjectRequest {
   sourcePath: string;
   objectKey: string;
   contentType?: string;
+  sourceFilename?: string;
+  outputFilename?: string;
+  originalBytes?: number;
+  targetFormat?: string;
 }
 
 export const uploadApi = {
   uploadObject: (request: UploadObjectRequest) =>
     invoke<GalleryObject>("upload_gallery_object", { request }),
+};
+
+export interface GenerateObjectKeyRequest {
+  sourcePath: string;
+  outputFileName: string;
+  prefix: string;
+  namingTemplate: string;
+  ext: string;
+}
+
+export interface GenerateObjectKeyResponse {
+  objectKey: string;
+}
+
+export const namingApi = {
+  generateObjectKey: (request: GenerateObjectKeyRequest) =>
+    invoke<GenerateObjectKeyResponse>("generate_object_key", { request }),
 };
 
 export interface AppSettings {

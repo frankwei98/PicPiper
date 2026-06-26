@@ -183,6 +183,26 @@ pub struct UploadObjectRequest {
     pub source_path: String,
     pub object_key: String,
     pub content_type: Option<String>,
+    pub source_filename: Option<String>,
+    pub output_filename: Option<String>,
+    pub original_bytes: Option<u64>,
+    pub target_format: Option<ImageFormat>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateObjectKeyRequest {
+    pub source_path: String,
+    pub output_file_name: String,
+    pub prefix: String,
+    pub naming_template: String,
+    pub ext: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateObjectKeyResponse {
+    pub object_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -12,9 +12,11 @@ use error::AppResult;
 use models::{
     AppSettings, CompressBatchRequest, CompressBatchResponse, CompressImageRequest,
     CompressImageResult, CopyOutputsRequest, DeleteObjectRequest, DownloadObjectRequest,
-    GalleryObject, ImageInspection, InspectImageRequest, ListObjectsRequest, SaveCredentialRequest,
-    SaveCredentialResponse, SaveSettingsRequest, UploadObjectRequest,
+    GalleryObject, GenerateObjectKeyRequest, GenerateObjectKeyResponse, ImageInspection,
+    InspectImageRequest, ListObjectsRequest, SaveCredentialRequest, SaveCredentialResponse,
+    SaveSettingsRequest, UploadHistoryEntry, UploadObjectRequest,
 };
+use sha2::{Digest, Sha256};
 use state::AppPaths;
 use tauri::{Manager, State};
 
@@ -57,7 +59,84 @@ async fn upload_gallery_object(
     request: UploadObjectRequest,
 ) -> AppResult<GalleryObject> {
     let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
-    gallery::upload_object(request, secret).await
+    let object_key = request.object_key.clone();
+    let profile_id = request.profile.id.clone();
+    let bucket = request.profile.bucket.clone();
+    let public_base_url = request.profile.public_base_url.clone();
+    let source_filename = request.source_filename.clone();
+    let output_filename = request.output_filename.clone();
+    let original_bytes = request.original_bytes;
+    let target_format = request.target_format.clone();
+
+    let result = gallery::upload_object(request, secret).await?;
+
+    // Record history if optional fields are present
+    if let (
+        Some(source_filename),
+        Some(output_filename),
+        Some(original_bytes),
+        Some(target_format),
+    ) = (
+        source_filename,
+        output_filename,
+        original_bytes,
+        target_format,
+    ) {
+        let public_url = public_base_url.as_deref().map(|base| {
+            format!(
+                "{}/{}",
+                base.trim_end_matches('/'),
+                object_key.trim_start_matches('/')
+            )
+        });
+        let entry = UploadHistoryEntry {
+            profile_id,
+            bucket,
+            object_key,
+            public_url,
+            uploaded_at: chrono::Utc::now().to_rfc3339(),
+            source_filename,
+            output_filename,
+            original_bytes,
+            uploaded_bytes: result.size,
+            target_format,
+        };
+        let _ = history::append_history(&paths.history_path, entry);
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn generate_object_key(
+    request: GenerateObjectKeyRequest,
+) -> AppResult<GenerateObjectKeyResponse> {
+    let bytes = std::fs::read(&request.source_path)
+        .map_err(|err| error::AppError::new("readFileFailed", err.to_string()))?;
+    let hash = Sha256::digest(&bytes);
+    let content_hash = hex::encode(hash);
+
+    let date = chrono::Utc::now().date_naive();
+    let rendered = naming::render_object_key(
+        &request.naming_template,
+        &request.output_file_name,
+        &request.ext,
+        &content_hash,
+        date,
+    )?;
+
+    // Prefix the rendered key with the selected prefix if the template doesn't already start with it
+    let prefix_normalized = request.prefix.trim_end_matches('/');
+    let object_key = if !rendered.starts_with(prefix_normalized) && !prefix_normalized.is_empty() {
+        format!("{}/{}", prefix_normalized, rendered)
+    } else {
+        rendered
+    };
+
+    // Normalize slashes
+    let object_key = object_key.replace('\\', "/");
+
+    Ok(GenerateObjectKeyResponse { object_key })
 }
 
 #[tauri::command]
@@ -120,6 +199,7 @@ pub fn run() {
             delete_gallery_object,
             upload_gallery_object,
             download_gallery_object,
+            generate_object_key,
             load_app_settings,
             save_app_settings,
             save_s3_secret

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { CompressionSettings, OptimizeItem, S3Profile } from "../../types";
-import { tauriApi, uploadApi } from "../../api/tauri";
+import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   targetFormat: "webp",
@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS: CompressionSettings = {
 
 interface OptimizePageProps {
   onUploadedToS3?: (focus: {
+    profile: S3Profile;
     prefix: string;
     highlightedKeys: string[];
   }) => void;
@@ -38,7 +39,7 @@ function contentTypeFor(format: string) {
   }
 }
 
-export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProps) {
+export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [mode, setMode] = useState<"edit" | "results">("edit");
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -192,30 +193,71 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
     }
   };
 
+  const [uploadingItems, setUploadingItems] = useState<Set<string>>(new Set());
+  const [uploadFailedItems, setUploadFailedItems] = useState<Map<string, string>>(new Map());
+
   const uploadToS3 = async () => {
     if (!activeProfile) {
       setUploadError("Configure and select an S3 profile before uploading.");
       return;
     }
     setUploadError(null);
+    setUploadFailedItems(new Map());
     const prefix = activeProfile.defaultPrefix || "images";
     const compressedItems = items.filter((item) => item.status === "compressed" && item.outputPath);
-    const uploaded = await Promise.all(
-      compressedItems.map((item) => {
-        const outputFileName = item.outputFileName ?? "image.webp";
-        const objectKey = `${prefix.replace(/\/$/, "")}/${outputFileName}`;
-        return uploadApi.uploadObject({
+    if (compressedItems.length === 0) {
+      setUploadError("No compressed outputs to upload.");
+      return;
+    }
+
+    setUploadingItems(new Set(compressedItems.map((item) => item.id)));
+
+    const uploaded: { key: string }[] = [];
+    const failed = new Map<string, string>();
+
+    for (const item of compressedItems) {
+      const outputFileName = item.outputFileName ?? "image.webp";
+      const ext = item.settings.targetFormat;
+      try {
+        const { objectKey } = await namingApi.generateObjectKey({
+          sourcePath: item.sourcePath,
+          outputFileName,
+          prefix,
+          namingTemplate,
+          ext,
+        });
+
+        const result = await uploadApi.uploadObject({
           profile: activeProfile,
           sourcePath: item.outputPath as string,
           objectKey,
-          contentType: contentTypeFor(item.settings.targetFormat),
+          contentType: contentTypeFor(ext),
+          sourceFilename: item.fileName,
+          outputFilename: outputFileName,
+          originalBytes: item.originalBytes,
+          targetFormat: ext,
         });
-      }),
-    );
-    onUploadedToS3?.({
-      prefix,
-      highlightedKeys: uploaded.map((object) => object.key),
-    });
+
+        uploaded.push(result);
+      } catch (err) {
+        failed.set(item.id, err instanceof Error ? err.message : "Upload failed");
+      }
+    }
+
+    setUploadingItems(new Set());
+    setUploadFailedItems(failed);
+
+    if (failed.size === 0) {
+      onUploadedToS3?.({
+        profile: activeProfile,
+        prefix,
+        highlightedKeys: uploaded.map((object) => object.key),
+      });
+    } else {
+      setUploadError(
+        `${failed.size} of ${compressedItems.length} upload(s) failed. Fix and retry.`,
+      );
+    }
   };
 
   if (mode === "results") {
@@ -239,6 +281,10 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
                   <p>
                     {formatBytes(item.originalBytes)} =&gt; {formatBytes(item.outputBytes ?? item.estimatedBytes ?? 0)}
                   </p>
+                )}
+                {uploadingItems.has(item.id) && <p className="item-status">Uploading...</p>}
+                {uploadFailedItems.has(item.id) && (
+                  <p className="item-error">{uploadFailedItems.get(item.id)}</p>
                 )}
               </div>
             </article>

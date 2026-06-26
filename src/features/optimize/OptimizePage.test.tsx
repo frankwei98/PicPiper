@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen } = vi.hoisted(() => {
+const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen, uploadObject, generateObjectKey } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async (..._args: unknown[]) => ["/tmp/real-photo.jpg"]);
   return {
     inspectImage: vi.fn(async () => ({
@@ -42,6 +42,15 @@ const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen } = vi.hoi
     })),
     copyOutputsToDir: vi.fn(async () => ["/tmp/saved/real-photo.webp"]),
     mockDialogOpen,
+    uploadObject: vi.fn(async () => ({
+      key: "images/2026/06/real-photo-abcdef12.webp",
+      size: 240_000,
+      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.webp",
+      isImage: true,
+    })),
+    generateObjectKey: vi.fn(async () => ({
+      objectKey: "images/2026/06/real-photo-abcdef12.webp",
+    })),
   };
 });
 
@@ -56,7 +65,10 @@ vi.mock("../../api/tauri", async () => ({
     copyOutputsToDir,
   },
   uploadApi: {
-    uploadObject: vi.fn(),
+    uploadObject,
+  },
+  namingApi: {
+    generateObjectKey,
   },
 }));
 
@@ -134,6 +146,60 @@ describe("OptimizePage", () => {
     expect(copyOutputsToDir).toHaveBeenCalledWith({
       outputPaths: ["/tmp/pic-piper/run-1/real-photo.webp"],
       targetDir: "/tmp/saved",
+    });
+  });
+
+  it("Upload to S3 calls generateObjectKey and uploadObject with correct params", async () => {
+    const profile = {
+      id: "p1",
+      name: "Personal S3",
+      bucket: "images",
+      endpoint: "https://s3.example.com",
+      region: "auto",
+      accessKeyId: "AKIAEXAMPLE",
+      pathStyle: false,
+      defaultPrefix: "images/2026/06",
+      publicBaseUrl: "https://cdn.example.com",
+      insecureSecretFallback: false,
+    };
+    const onUploadedToS3 = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <OptimizePage
+        activeProfile={profile}
+        namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}"
+        onUploadedToS3={onUploadedToS3}
+      />,
+    );
+
+    // Import and compress
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText("real-photo.jpg");
+    await user.click(screen.getByRole("button", { name: "Compress" }));
+    await screen.findByText("real-photo.webp");
+
+    // Click Upload to S3
+    await user.click(screen.getByRole("button", { name: "Upload to S3" }));
+
+    expect(generateObjectKey).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourcePath: "/tmp/real-photo.jpg",
+        prefix: "images/2026/06",
+        namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+      }),
+    );
+    expect(uploadObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profile,
+        sourcePath: "/tmp/pic-piper/run-1/real-photo.webp",
+        objectKey: "images/2026/06/real-photo-abcdef12.webp",
+        contentType: "image/webp",
+      }),
+    );
+    expect(onUploadedToS3).toHaveBeenCalledWith({
+      profile,
+      prefix: "images/2026/06",
+      highlightedKeys: ["images/2026/06/real-photo-abcdef12.webp"],
     });
   });
 });

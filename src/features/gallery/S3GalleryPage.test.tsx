@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { S3GalleryPage } from "./S3GalleryPage";
 
-const { listObjects, deleteObject, downloadObject, mockDialogOpen } = vi.hoisted(() => {
+const { listObjects, deleteObject, downloadObject, mockDialogOpen, uploadObject, generateObjectKey, loadSettings } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async () => "/tmp/downloads");
   return {
     listObjects: vi.fn(async () => [
@@ -17,6 +17,20 @@ const { listObjects, deleteObject, downloadObject, mockDialogOpen } = vi.hoisted
     deleteObject: vi.fn(async () => {}),
     downloadObject: vi.fn(async () => "/tmp/downloads/photo.webp"),
     mockDialogOpen,
+    uploadObject: vi.fn(async (req: { objectKey: string }) => ({
+      key: req.objectKey,
+      size: 100_000,
+      publicUrl: `https://cdn.example.com/${req.objectKey}`,
+      isImage: true,
+    })),
+    generateObjectKey: vi.fn(async (req: { outputFileName: string }) => ({
+      objectKey: `images/2026/06/${req.outputFileName}`,
+    })),
+    loadSettings: vi.fn(async () => ({
+      profiles: [],
+      presets: [],
+      namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+    })),
   };
 });
 
@@ -27,8 +41,9 @@ vi.mock("@tauri-apps/plugin-dialog", async () => ({
 vi.mock("../../api/tauri", async () => ({
   galleryApi: { listObjects, deleteObject, downloadObject },
   tauriApi: {},
-  uploadApi: {},
-  settingsApi: {},
+  uploadApi: { uploadObject },
+  namingApi: { generateObjectKey },
+  settingsApi: { loadSettings },
 }));
 
 const profile = {
@@ -234,5 +249,39 @@ describe("S3GalleryPage", () => {
     await screen.findByText("images/photo.webp");
     expect(screen.queryByText(/rename/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/move/i)).not.toBeInTheDocument();
+  });
+
+  it("upload local images calls generateObjectKey and uploadObject, then refreshes", async () => {
+    mockDialogOpen.mockResolvedValueOnce(["/tmp/new-photo.jpg"] as unknown as string);
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+
+    await user.click(screen.getByRole("button", { name: /upload local images/i }));
+
+    expect(mockDialogOpen).toHaveBeenCalledWith(
+      expect.objectContaining({ multiple: true }),
+    );
+    expect(generateObjectKey).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourcePath: "/tmp/new-photo.jpg",
+        outputFileName: "new-photo.jpg",
+        namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+      }),
+    );
+    expect(uploadObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profile,
+        sourcePath: "/tmp/new-photo.jpg",
+      }),
+    );
+    // Should refresh the object list after upload
+    expect(listObjects).toHaveBeenCalledTimes(2);
   });
 });
