@@ -11,28 +11,6 @@ interface OptimizePageProps {
   namingTemplate: string;
 }
 
-const DEFAULT_SETTINGS = {
-  targetFormat: "webp" as const,
-  quality: 68,
-  maxWidth: 1600,
-  maxHeight: 1600,
-  allowUpscale: false,
-  removeGps: true,
-};
-
-const SAMPLE_ITEMS: OptimizeItem[] = [
-  {
-    id: "sample-1",
-    sourcePath: "/sample/photo-01.jpg",
-    fileName: "photo-01.jpg",
-    sourceFormat: "jpg",
-    originalBytes: 4_200_000,
-    estimatedBytes: 720_000,
-    status: "pending",
-    settings: DEFAULT_SETTINGS,
-  },
-];
-
 function contentTypeFor(format: string) {
   switch (format) {
     case "jpg":
@@ -51,9 +29,11 @@ function contentTypeFor(format: string) {
 }
 
 export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProps) {
-  const [items, setItems] = useState<OptimizeItem[]>(SAMPLE_ITEMS);
+  const [items, setItems] = useState<OptimizeItem[]>([]);
   const [mode, setMode] = useState<"edit" | "results">("edit");
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const canCompress = items.some((item) => item.status === "ready" || item.status === "pending");
 
   const updateQuality = (id: string, quality: number) => {
     setItems((current) =>
@@ -154,11 +134,11 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
         </div>
         <div className="header-actions">
           <button type="button">Apply preset</button>
-          <button type="button" onClick={handleCompress}>Compress</button>
+          <button type="button" disabled={!canCompress} onClick={handleCompress}>Compress</button>
         </div>
       </header>
 
-      <section className="drop-zone">Drop images here or choose files</section>
+      <section className="drop-zone">Drop images here or choose images</section>
 
       <section className="item-list" aria-label="Images to optimize">
         {items.map((item) => (

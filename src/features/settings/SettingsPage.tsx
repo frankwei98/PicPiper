@@ -5,7 +5,11 @@ interface SettingsPageProps {
   onSettingsChange: (settings: AppSettings) => void;
 }
 
-export function SettingsPage(_props: SettingsPageProps) {
+export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) {
+  const handleSaveProfile = () => {
+    onSettingsChange(settings);
+  };
+
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -58,6 +62,7 @@ export function SettingsPage(_props: SettingsPageProps) {
               Default prefix
               <input placeholder="images/2026/06" />
             </label>
+            <button type="button" onClick={handleSaveProfile}>Save profile</button>
           </form>
           <p>Secrets use system secure storage when available. Local fallback must be explicitly allowed.</p>
         </article>

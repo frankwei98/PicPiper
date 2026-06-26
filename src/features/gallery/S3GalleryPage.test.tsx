@@ -1,12 +1,29 @@
 import { render, screen } from "@testing-library/react";
 import { S3GalleryPage } from "./S3GalleryPage";
 
+const sampleProfile = {
+  id: "p1",
+  name: "Personal S3",
+  bucket: "images",
+  endpoint: "https://s3.example.com",
+  region: "auto",
+  defaultPrefix: "2026/06",
+  publicBaseUrl: "https://cdn.example.com",
+};
+
 const defaultProps = {
   galleryFocus: { prefix: "", highlightedKeys: [] },
-  profiles: [],
+  profiles: [sampleProfile],
 };
 
 describe("S3GalleryPage", () => {
+  it("does not render sample objects before a profile is selected and loaded", () => {
+    render(<S3GalleryPage galleryFocus={{ prefix: "", highlightedKeys: [] }} profiles={[]} />);
+
+    expect(screen.getByText(/no profile selected/i)).toBeInTheDocument();
+    expect(screen.queryByText("2026/06/photo-01-abcdef12.webp")).not.toBeInTheDocument();
+  });
+
   it("shows simplified manager actions without rename or move", () => {
     render(<S3GalleryPage {...defaultProps} />);
 

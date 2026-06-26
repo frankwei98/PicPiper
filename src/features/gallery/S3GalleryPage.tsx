@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { GalleryObject, S3ProfileSummary } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 
@@ -6,17 +7,23 @@ interface S3GalleryPageProps {
   profiles: S3ProfileSummary[];
 }
 
-const SAMPLE_OBJECTS: GalleryObject[] = [
-  {
-    key: "2026/06/photo-01-abcdef12.webp",
-    size: 720_000,
-    publicUrl: "https://cdn.example.com/2026/06/photo-01-abcdef12.webp",
-    isImage: true,
-  },
-];
-
-export function S3GalleryPage({ galleryFocus }: S3GalleryPageProps) {
+export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
+  const [objects] = useState<GalleryObject[]>([]);
   const highlightedKeys = new Set(galleryFocus.highlightedKeys);
+
+  if (profiles.length === 0) {
+    return (
+      <div className="page-stack">
+        <header className="page-header">
+          <div>
+            <h2>S3 Gallery</h2>
+            <p>Browse a profile and prefix, then copy URLs or manage images.</p>
+          </div>
+        </header>
+        <section className="empty-state">No profile selected.</section>
+      </div>
+    );
+  }
 
   return (
     <div className="page-stack">
@@ -35,7 +42,7 @@ export function S3GalleryPage({ galleryFocus }: S3GalleryPageProps) {
         <input aria-label="Search current prefix" placeholder="Search current prefix" />
       </section>
       <section className="gallery-grid">
-        {SAMPLE_OBJECTS.map((obj) => (
+        {objects.map((obj) => (
           <article
             key={obj.key}
             className={`object-card${highlightedKeys.has(obj.key) ? " highlighted" : ""}`}
