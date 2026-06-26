@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -116,23 +117,31 @@ pub fn compress_batch(
 
     let output_dir_str = output_dir.to_string_lossy().to_string();
 
+    let output_file_names = unique_output_file_names(
+        request
+            .items
+            .iter()
+            .map(|item| item.output_file_name.as_str()),
+    );
+
     let results: Vec<CompressBatchItemResult> = request
         .items
-        .par_iter()
-        .map(|item| {
+        .into_par_iter()
+        .zip(output_file_names)
+        .map(|(item, output_file_name)| {
             match compress_image(CompressImageRequest {
-                source_path: item.source_path.clone(),
+                source_path: item.source_path,
                 output_dir: output_dir_str.clone(),
-                output_file_name: item.output_file_name.clone(),
-                settings: item.settings.clone(),
+                output_file_name,
+                settings: item.settings,
             }) {
                 Ok(result) => CompressBatchItemResult {
-                    id: item.id.clone(),
+                    id: item.id,
                     result: Some(result),
                     error: None,
                 },
                 Err(err) => CompressBatchItemResult {
-                    id: item.id.clone(),
+                    id: item.id,
                     result: None,
                     error: Some(ItemError {
                         code: err.code,
@@ -172,6 +181,32 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
     }
 
     Ok(copied)
+}
+
+fn unique_output_file_names<'a>(file_names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut seen = HashMap::<String, usize>::new();
+
+    file_names
+        .into_iter()
+        .map(|file_name| {
+            let count = seen.entry(file_name.to_string()).or_insert(0);
+            *count += 1;
+            if *count == 1 {
+                file_name.to_string()
+            } else {
+                append_file_name_suffix(file_name, *count)
+            }
+        })
+        .collect()
+}
+
+fn append_file_name_suffix(file_name: &str, suffix: usize) -> String {
+    match file_name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() => {
+            format!("{}-{}.{}", stem, suffix, ext)
+        }
+        _ => format!("{}-{}", file_name, suffix),
+    }
 }
 
 fn estimate_bytes(original_bytes: u64, quality: u8) -> u64 {
@@ -479,5 +514,57 @@ mod tests {
             response.items.iter().map(|i| i.id.clone()).collect();
 
         assert_eq!(expected_ids, actual_ids, "item IDs must be preserved");
+    }
+
+    #[test]
+    fn compress_batch_disambiguates_duplicate_output_file_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let first_input = dir.path().join("first").join("photo.png");
+        let second_input = dir.path().join("second").join("photo.png");
+        std::fs::create_dir_all(first_input.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(second_input.parent().unwrap()).unwrap();
+        create_test_image(32, 32).save(&first_input).unwrap();
+        create_test_image(48, 48).save(&second_input).unwrap();
+
+        let response = compress_batch(
+            dir.path(),
+            CompressBatchRequest {
+                items: vec![
+                    CompressBatchItem {
+                        id: "first".to_string(),
+                        source_path: first_input.to_string_lossy().to_string(),
+                        output_file_name: "photo.jpg".to_string(),
+                        settings: CompressionSettings {
+                            target_format: ImageFormat::Jpg,
+                            quality: 75,
+                            remove_gps: true,
+                        },
+                    },
+                    CompressBatchItem {
+                        id: "second".to_string(),
+                        source_path: second_input.to_string_lossy().to_string(),
+                        output_file_name: "photo.jpg".to_string(),
+                        settings: CompressionSettings {
+                            target_format: ImageFormat::Jpg,
+                            quality: 75,
+                            remove_gps: true,
+                        },
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
+        let output_paths: std::collections::HashSet<_> = response
+            .items
+            .iter()
+            .map(|item| item.result.as_ref().unwrap().output_path.clone())
+            .collect();
+
+        assert_eq!(
+            output_paths.len(),
+            2,
+            "duplicate output names must not write to the same path"
+        );
     }
 }
