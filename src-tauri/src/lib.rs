@@ -11,9 +11,9 @@ mod state;
 use error::AppResult;
 use models::{
     AppSettings, CompressBatchRequest, CompressBatchResponse, CompressImageRequest,
-    CompressImageResult, CopyOutputsRequest, DeleteObjectRequest, GalleryObject, ImageInspection,
-    InspectImageRequest, ListObjectsRequest, SaveCredentialRequest, SaveCredentialResponse,
-    SaveSettingsRequest, UploadObjectRequest,
+    CompressImageResult, CopyOutputsRequest, DeleteObjectRequest, DownloadObjectRequest,
+    GalleryObject, ImageInspection, InspectImageRequest, ListObjectsRequest, SaveCredentialRequest,
+    SaveCredentialResponse, SaveSettingsRequest, UploadObjectRequest,
 };
 use state::AppPaths;
 use tauri::{Manager, State};
@@ -58,6 +58,15 @@ async fn upload_gallery_object(
 ) -> AppResult<GalleryObject> {
     let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
     gallery::upload_object(request, secret).await
+}
+
+#[tauri::command]
+async fn download_gallery_object(
+    paths: State<'_, AppPaths>,
+    request: DownloadObjectRequest,
+) -> AppResult<String> {
+    let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
+    gallery::download_object(request, secret).await
 }
 
 #[tauri::command]
@@ -110,6 +119,7 @@ pub fn run() {
             list_gallery_objects,
             delete_gallery_object,
             upload_gallery_object,
+            download_gallery_object,
             load_app_settings,
             save_app_settings,
             save_s3_secret

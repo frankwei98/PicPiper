@@ -187,6 +187,14 @@ pub struct UploadObjectRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct DownloadObjectRequest {
+    pub profile: S3Profile,
+    pub key: String,
+    pub output_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct SaveSettingsRequest {
     pub settings: AppSettings,
 }

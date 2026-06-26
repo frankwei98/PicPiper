@@ -7,7 +7,8 @@ use aws_sdk_s3::{
 use crate::{
     error::{AppError, AppResult},
     models::{
-        DeleteObjectRequest, GalleryObject, ListObjectsRequest, S3Profile, UploadObjectRequest,
+        DeleteObjectRequest, DownloadObjectRequest, GalleryObject, ListObjectsRequest, S3Profile,
+        UploadObjectRequest,
     },
 };
 
@@ -106,6 +107,27 @@ pub async fn delete_object(request: DeleteObjectRequest, secret: String) -> AppR
         .await
         .map_err(|err| AppError::new("s3DeleteFailed", err.to_string()))?;
     Ok(())
+}
+
+pub async fn download_object(request: DownloadObjectRequest, secret: String) -> AppResult<String> {
+    let client = client_for(&request.profile, secret).await;
+    let response = client
+        .get_object()
+        .bucket(&request.profile.bucket)
+        .key(&request.key)
+        .send()
+        .await
+        .map_err(|err| AppError::new("s3DownloadFailed", err.to_string()))?;
+    let bytes = response
+        .body
+        .collect()
+        .await
+        .map_err(|err| AppError::new("s3DownloadReadFailed", err.to_string()))?
+        .into_bytes();
+    tokio::fs::write(&request.output_path, bytes)
+        .await
+        .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
+    Ok(request.output_path)
 }
 
 pub async fn upload_object(

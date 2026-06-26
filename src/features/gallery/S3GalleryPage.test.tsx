@@ -1,7 +1,37 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { S3GalleryPage } from "./S3GalleryPage";
 
-const sampleProfile = {
+const { listObjects, deleteObject, downloadObject, mockDialogOpen } = vi.hoisted(() => {
+  const mockDialogOpen = vi.fn(async () => "/tmp/downloads");
+  return {
+    listObjects: vi.fn(async () => [
+      {
+        key: "images/photo.webp",
+        size: 240_000,
+        publicUrl: "https://cdn.example.com/images/photo.webp",
+        isImage: true,
+      },
+    ]),
+    deleteObject: vi.fn(async () => {}),
+    downloadObject: vi.fn(async () => "/tmp/downloads/photo.webp"),
+    mockDialogOpen,
+  };
+});
+
+vi.mock("@tauri-apps/plugin-dialog", async () => ({
+  open: mockDialogOpen,
+}));
+
+vi.mock("../../api/tauri", async () => ({
+  galleryApi: { listObjects, deleteObject, downloadObject },
+  tauriApi: {},
+  uploadApi: {},
+  settingsApi: {},
+}));
+
+const profile = {
   id: "p1",
   name: "Personal S3",
   bucket: "images",
@@ -14,25 +44,194 @@ const sampleProfile = {
   insecureSecretFallback: false,
 };
 
-const defaultProps = {
-  galleryFocus: { prefix: "", highlightedKeys: [] },
-  profiles: [sampleProfile],
-};
-
 describe("S3GalleryPage", () => {
-  it("does not render sample objects before a profile is selected and loaded", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listObjects.mockResolvedValue([
+      {
+        key: "images/photo.webp",
+        size: 240_000,
+        publicUrl: "https://cdn.example.com/images/photo.webp",
+        isImage: true,
+      },
+    ]);
+  });
+
+  it("shows empty state when no profiles are passed", () => {
     render(<S3GalleryPage galleryFocus={{ prefix: "", highlightedKeys: [] }} profiles={[]} />);
 
     expect(screen.getByText(/no profile selected/i)).toBeInTheDocument();
-    expect(screen.queryByText("2026/06/photo-01-abcdef12.webp")).not.toBeInTheDocument();
+    expect(screen.queryByText("images/photo.webp")).not.toBeInTheDocument();
   });
 
-  it("shows simplified manager actions without rename or move", () => {
-    render(<S3GalleryPage {...defaultProps} />);
+  it("loads objects for the selected profile and prefix", async () => {
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
 
-    expect(screen.getByRole("heading", { name: "S3 Gallery" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Upload local images" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Prefix")).toBeInTheDocument();
+    expect(await screen.findByText("images/photo.webp")).toBeInTheDocument();
+    expect(listObjects).toHaveBeenCalledWith({ profile, prefix: "images" });
+  });
+
+  it("renders loading state while fetching objects", async () => {
+    listObjects.mockImplementation(() => new Promise(() => {}));
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+  });
+
+  it("renders error state when listObjects fails", async () => {
+    listObjects.mockRejectedValue(new Error("S3 connection failed"));
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    expect(await screen.findByText(/s3 connection failed/i)).toBeInTheDocument();
+  });
+
+  it("renders empty state when no objects returned", async () => {
+    listObjects.mockResolvedValue([]);
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    expect(await screen.findByText(/no objects/i)).toBeInTheDocument();
+  });
+
+  it("deletes after confirmation and refreshes the prefix", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /delete/i }));
+
+    expect(deleteObject).toHaveBeenCalledWith({ profile, key: "images/photo.webp" });
+    expect(listObjects).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not delete when confirmation is cancelled", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /delete/i }));
+
+    expect(deleteObject).not.toHaveBeenCalled();
+    expect(listObjects).toHaveBeenCalledTimes(1);
+  });
+
+  it("copies public URL to clipboard when Copy URL is clicked", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(navigator.clipboard, "writeText").mockImplementation(writeText);
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /copy url/i }));
+
+    expect(writeText).toHaveBeenCalledWith("https://cdn.example.com/images/photo.webp");
+  });
+
+  it("shows error when Copy URL is clicked but publicBaseUrl is missing", async () => {
+    listObjects.mockResolvedValue([
+      {
+        key: "images/photo.webp",
+        size: 240_000,
+        publicUrl: undefined as unknown as string,
+        isImage: true,
+      },
+    ]);
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /copy url/i }));
+
+    expect(screen.getByText(/public base url/i)).toBeInTheDocument();
+  });
+
+  it("opens public URL in new tab when View is clicked", async () => {
+    const open = vi.fn();
+    Object.assign(window, { open });
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /view/i }));
+
+    expect(open).toHaveBeenCalledWith("https://cdn.example.com/images/photo.webp", "_blank");
+  });
+
+  it("downloads object to chosen directory", async () => {
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /download/i }));
+
+    expect(mockDialogOpen).toHaveBeenCalledWith({ directory: true });
+    expect(downloadObject).toHaveBeenCalledWith({
+      profile,
+      key: "images/photo.webp",
+      outputPath: "/tmp/downloads/photo.webp",
+    });
+  });
+
+  it("does not show rename or move buttons", async () => {
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
     expect(screen.queryByText(/rename/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/move/i)).not.toBeInTheDocument();
   });
