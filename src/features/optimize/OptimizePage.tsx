@@ -215,9 +215,11 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
   };
 
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
   const handleSaveToLocal = async () => {
     setSaveError(null);
+    setSaveSuccess(null);
     setSaving(true);
     try {
       const targetDir = await open({ directory: true });
@@ -237,7 +239,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
 
       const copied = await tauriApi.copyOutputsToDir({ outputPaths, targetDir: targetDir as string });
       setSaving(false);
-      alert(`Saved ${copied.length} file(s) to ${targetDir}`);
+      setSaveSuccess(`Saved ${copied.length} file(s) to ${targetDir}`);
     } catch (err) {
       setSaving(false);
       setSaveError(err instanceof Error ? err.message : "Failed to save files");
@@ -346,6 +348,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
         {uploadingItems.size > 0 && <p className="status-line">Uploading {uploadingItems.size} image(s)...</p>}
         {uploadError && <p className="error-text">{uploadError}</p>}
         {saveError && <p className="error-text">{saveError}</p>}
+        {saveSuccess && <p className="status-line">{saveSuccess}</p>}
 
         <div className="result-actions">
           <button type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>

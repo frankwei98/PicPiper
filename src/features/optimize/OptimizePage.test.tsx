@@ -174,6 +174,27 @@ describe("OptimizePage", () => {
     });
   });
 
+  it("shows in-page success message after saving locally instead of alert", async () => {
+    const alertSpy = vi.spyOn(window, "alert");
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Import and compress
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText("real-photo.jpg");
+    await user.click(screen.getByRole("button", { name: "Compress" }));
+    await screen.findByText("real-photo.webp");
+
+    // Save to local folder
+    await user.click(screen.getByRole("button", { name: "Save to local folder" }));
+
+    // Should show success message in the page
+    expect(await screen.findByText(/Saved 1 file\(s\) to \/tmp\/saved/)).toBeInTheDocument();
+    // Should NOT call window.alert
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
   it("Apply preset applies preset settings and compressBatch includes them", async () => {
     const preset = {
       id: "preset-1",
