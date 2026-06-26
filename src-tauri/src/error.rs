@@ -18,6 +18,7 @@ impl AppError {
         }
     }
 
+    #[allow(dead_code)]
     pub fn fatal(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),

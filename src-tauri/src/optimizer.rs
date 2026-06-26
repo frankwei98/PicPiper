@@ -3,18 +3,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use image::{
     codecs::{avif::AvifEncoder, jpeg::JpegEncoder},
     DynamicImage, ImageEncoder, ImageFormat as CodecFormat,
 };
+use rayon::prelude::*;
 
 use crate::{
     error::{AppError, AppResult},
     models::{
         CompressBatchItemResult, CompressBatchRequest, CompressBatchResponse, CompressImageRequest,
         CompressImageResult, CopyOutputsRequest, ImageFormat, ImageInspection, InspectImageRequest,
-        ItemError, ReadThumbnailRequest, ReadThumbnailResponse,
+        ItemError,
     },
 };
 
@@ -103,47 +103,50 @@ pub fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageR
 }
 
 pub fn compress_batch(
-    paths: &crate::state::AppPaths,
+    data_dir: &Path,
     request: CompressBatchRequest,
 ) -> AppResult<CompressBatchResponse> {
     let run_id = format!(
         "run-{}",
         chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
     );
-    let output_dir = paths.data_dir.join("optimizer-cache").join(&run_id);
+    let output_dir = data_dir.join("optimizer-cache").join(&run_id);
     fs::create_dir_all(&output_dir)
         .map_err(|err| AppError::new("outputDirFailed", err.to_string()))?;
 
-    let mut results = Vec::new();
+    let output_dir_str = output_dir.to_string_lossy().to_string();
 
-    for item in request.items {
-        let item_result = match compress_image(CompressImageRequest {
-            source_path: item.source_path.clone(),
-            output_dir: output_dir.to_string_lossy().to_string(),
-            output_file_name: item.output_file_name.clone(),
-            settings: item.settings,
-        }) {
-            Ok(result) => CompressBatchItemResult {
-                id: item.id,
-                result: Some(result),
-                error: None,
-            },
-            Err(err) => CompressBatchItemResult {
-                id: item.id,
-                result: None,
-                error: Some(ItemError {
-                    code: err.code,
-                    message: err.message,
-                    recoverable: err.recoverable,
-                }),
-            },
-        };
-        results.push(item_result);
-    }
+    let results: Vec<CompressBatchItemResult> = request
+        .items
+        .par_iter()
+        .map(|item| {
+            match compress_image(CompressImageRequest {
+                source_path: item.source_path.clone(),
+                output_dir: output_dir_str.clone(),
+                output_file_name: item.output_file_name.clone(),
+                settings: item.settings.clone(),
+            }) {
+                Ok(result) => CompressBatchItemResult {
+                    id: item.id.clone(),
+                    result: Some(result),
+                    error: None,
+                },
+                Err(err) => CompressBatchItemResult {
+                    id: item.id.clone(),
+                    result: None,
+                    error: Some(ItemError {
+                        code: err.code,
+                        message: err.message,
+                        recoverable: err.recoverable,
+                    }),
+                },
+            }
+        })
+        .collect();
 
     Ok(CompressBatchResponse {
         run_id,
-        output_dir: output_dir.to_string_lossy().to_string(),
+        output_dir: output_dir_str,
         items: results,
     })
 }
@@ -169,44 +172,6 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
     }
 
     Ok(copied)
-}
-
-pub fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailResponse> {
-    let path = PathBuf::from(&request.path);
-    let max_size = request.max_size.unwrap_or(256).clamp(16, 1024);
-
-    let reader = image::ImageReader::open(&path)
-        .map_err(|err| AppError::new("imageOpenFailed", err.to_string()))?
-        .with_guessed_format()
-        .map_err(|err| AppError::new("imageFormatFailed", err.to_string()))?;
-
-    let img = reader
-        .decode()
-        .map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
-
-    // Triangle filter is ~3x faster than Lanczos3; quality is fine at thumbnail size.
-    let thumb = img.resize(max_size, max_size, image::imageops::FilterType::Triangle);
-
-    let has_alpha = thumb.color().has_alpha();
-    let (bytes, mime) = if has_alpha {
-        let mut buf = std::io::Cursor::new(Vec::new());
-        thumb
-            .write_to(&mut buf, image::ImageFormat::Png)
-            .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?;
-        (buf.into_inner(), "image/png")
-    } else {
-        let mut buf = std::io::Cursor::new(Vec::new());
-        let mut encoder = JpegEncoder::new_with_quality(&mut buf, 75);
-        encoder
-            .encode_image(&thumb)
-            .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?;
-        (buf.into_inner(), "image/jpeg")
-    };
-
-    let encoded = BASE64_STANDARD.encode(&bytes);
-    let data_url = format!("data:{};base64,{}", mime, encoded);
-
-    Ok(ReadThumbnailResponse { data_url })
 }
 
 fn estimate_bytes(original_bytes: u64, quality: u8) -> u64 {
@@ -277,7 +242,7 @@ fn quality_format_warning(target_format: &ImageFormat) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::CompressionSettings;
+    use crate::models::{CompressBatchItem, CompressionSettings};
     use image::GenericImageView;
 
     /// Create a test image with some visual complexity (gradient pattern)
@@ -439,5 +404,80 @@ mod tests {
     fn png_still_warns_about_quality() {
         let warning = quality_format_warning(&ImageFormat::Png);
         assert!(warning.is_some(), "PNG should still warn about quality");
+    }
+
+    #[test]
+    fn compress_batch_parallel_returns_results_for_all_items() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create 3 test images.
+        let mut items = Vec::new();
+        for i in 0..3 {
+            let input = dir.path().join(format!("src_{}.png", i));
+            create_test_image(48, 48).save(&input).unwrap();
+            items.push(CompressBatchItem {
+                id: format!("item-{}", i),
+                source_path: input.to_string_lossy().to_string(),
+                output_file_name: format!("out_{}.jpg", i),
+                settings: CompressionSettings {
+                    target_format: ImageFormat::Jpg,
+                    quality: 75,
+                    remove_gps: true,
+                },
+            });
+        }
+
+        let data_dir = dir.path().to_path_buf();
+        let response = compress_batch(&data_dir, CompressBatchRequest { items }).unwrap();
+
+        assert_eq!(response.items.len(), 3);
+        for item_result in &response.items {
+            assert!(
+                item_result.result.is_some(),
+                "item {} should have succeeded",
+                item_result.id
+            );
+            assert!(
+                item_result.error.is_none(),
+                "item {} should have no error",
+                item_result.id
+            );
+            let result = item_result.result.as_ref().unwrap();
+            assert!(
+                std::path::Path::new(&result.output_path).exists(),
+                "output file should exist: {}",
+                result.output_path
+            );
+        }
+    }
+
+    #[test]
+    fn compress_batch_preserves_item_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut items = Vec::new();
+        for i in 0..3 {
+            let input = dir.path().join(format!("id_src_{}.png", i));
+            create_test_image(32, 32).save(&input).unwrap();
+            items.push(CompressBatchItem {
+                id: format!("batch-{}", i),
+                source_path: input.to_string_lossy().to_string(),
+                output_file_name: format!("id_out_{}.jpg", i),
+                settings: CompressionSettings {
+                    target_format: ImageFormat::Jpg,
+                    quality: 75,
+                    remove_gps: true,
+                },
+            });
+        }
+
+        let expected_ids: std::collections::HashSet<_> =
+            items.iter().map(|i| i.id.clone()).collect();
+
+        let data_dir = dir.path().to_path_buf();
+        let response = compress_batch(&data_dir, CompressBatchRequest { items }).unwrap();
+
+        let actual_ids: std::collections::HashSet<_> =
+            response.items.iter().map(|i| i.id.clone()).collect();
+
+        assert_eq!(expected_ids, actual_ids, "item IDs must be preserved");
     }
 }

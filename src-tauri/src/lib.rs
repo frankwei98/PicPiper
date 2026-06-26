@@ -7,6 +7,7 @@ mod naming;
 mod optimizer;
 mod settings;
 mod state;
+mod thumbnail;
 
 use error::AppResult;
 use models::{
@@ -27,20 +28,24 @@ fn get_default_settings() -> AppSettings {
 }
 
 #[tauri::command]
-fn inspect_image(request: InspectImageRequest) -> AppResult<ImageInspection> {
-    optimizer::inspect_image(request)
+async fn inspect_image(request: InspectImageRequest) -> AppResult<ImageInspection> {
+    tokio::task::spawn_blocking(move || optimizer::inspect_image(request))
+        .await
+        .map_err(|err| error::AppError::new("inspectJoinFailed", err.to_string()))?
 }
 
 #[tauri::command]
 async fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailResponse> {
-    tokio::task::spawn_blocking(move || optimizer::read_thumbnail(request))
+    tokio::task::spawn_blocking(move || thumbnail::read_thumbnail(request))
         .await
         .map_err(|err| error::AppError::new("thumbnailJoinFailed", err.to_string()))?
 }
 
 #[tauri::command]
-fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageResult> {
-    optimizer::compress_image(request)
+async fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageResult> {
+    tokio::task::spawn_blocking(move || optimizer::compress_image(request))
+        .await
+        .map_err(|err| error::AppError::new("compressJoinFailed", err.to_string()))?
 }
 
 #[tauri::command]
@@ -74,7 +79,7 @@ async fn upload_gallery_object(
     let source_filename = request.source_filename.clone();
     let output_filename = request.output_filename.clone();
     let original_bytes = request.original_bytes;
-    let target_format = request.target_format.clone();
+    let target_format = request.target_format;
 
     let result = gallery::upload_object(request, secret).await?;
 
@@ -175,16 +180,21 @@ fn save_s3_secret(
 }
 
 #[tauri::command]
-fn compress_batch(
+async fn compress_batch(
     paths: State<'_, AppPaths>,
     request: CompressBatchRequest,
 ) -> AppResult<CompressBatchResponse> {
-    optimizer::compress_batch(&paths, request)
+    let data_dir = paths.data_dir.clone();
+    tokio::task::spawn_blocking(move || optimizer::compress_batch(&data_dir, request))
+        .await
+        .map_err(|err| error::AppError::new("compressBatchJoinFailed", err.to_string()))?
 }
 
 #[tauri::command]
-fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
-    optimizer::copy_outputs_to_dir(request)
+async fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
+    tokio::task::spawn_blocking(move || optimizer::copy_outputs_to_dir(request))
+        .await
+        .map_err(|err| error::AppError::new("copyJoinFailed", err.to_string()))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
