@@ -10,9 +10,10 @@ mod state;
 
 use error::AppResult;
 use models::{
-    AppSettings, CompressImageRequest, CompressImageResult, DeleteObjectRequest, GalleryObject,
-    ImageInspection, InspectImageRequest, ListObjectsRequest, SaveCredentialRequest,
-    SaveCredentialResponse, SaveSettingsRequest, UploadObjectRequest,
+    AppSettings, CompressBatchRequest, CompressBatchResponse, CompressImageRequest,
+    CompressImageResult, CopyOutputsRequest, DeleteObjectRequest, GalleryObject, ImageInspection,
+    InspectImageRequest, ListObjectsRequest, SaveCredentialRequest, SaveCredentialResponse,
+    SaveSettingsRequest, UploadObjectRequest,
 };
 use state::AppPaths;
 use tauri::{Manager, State};
@@ -77,6 +78,19 @@ fn save_s3_secret(
     credentials::save_secret(&paths.credential_fallback_dir, request)
 }
 
+#[tauri::command]
+fn compress_batch(
+    paths: State<'_, AppPaths>,
+    request: CompressBatchRequest,
+) -> AppResult<CompressBatchResponse> {
+    optimizer::compress_batch(&paths, request)
+}
+
+#[tauri::command]
+fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
+    optimizer::copy_outputs_to_dir(request)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -91,6 +105,8 @@ pub fn run() {
             get_default_settings,
             inspect_image,
             compress_image,
+            compress_batch,
+            copy_outputs_to_dir,
             list_gallery_objects,
             delete_gallery_object,
             upload_gallery_object,

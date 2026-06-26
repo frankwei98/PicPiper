@@ -10,8 +10,9 @@ use image::{
 use crate::{
     error::{AppError, AppResult},
     models::{
-        CompressImageRequest, CompressImageResult, ImageFormat, ImageInspection,
-        InspectImageRequest,
+        CompressBatchItemResult, CompressBatchRequest, CompressBatchResponse, CompressImageRequest,
+        CompressImageResult, CopyOutputsRequest, ImageFormat, ImageInspection, InspectImageRequest,
+        ItemError,
     },
 };
 
@@ -107,6 +108,75 @@ pub fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageR
             Some(warning)
         },
     })
+}
+
+pub fn compress_batch(
+    paths: &crate::state::AppPaths,
+    request: CompressBatchRequest,
+) -> AppResult<CompressBatchResponse> {
+    let run_id = format!(
+        "run-{}",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    );
+    let output_dir = paths.data_dir.join("optimizer-cache").join(&run_id);
+    fs::create_dir_all(&output_dir)
+        .map_err(|err| AppError::new("outputDirFailed", err.to_string()))?;
+
+    let mut results = Vec::new();
+
+    for item in request.items {
+        let item_result = match compress_image(CompressImageRequest {
+            source_path: item.source_path.clone(),
+            output_dir: output_dir.to_string_lossy().to_string(),
+            output_file_name: item.output_file_name.clone(),
+            settings: item.settings,
+        }) {
+            Ok(result) => CompressBatchItemResult {
+                id: item.id,
+                result: Some(result),
+                error: None,
+            },
+            Err(err) => CompressBatchItemResult {
+                id: item.id,
+                result: None,
+                error: Some(ItemError {
+                    code: err.code,
+                    message: err.message,
+                    recoverable: err.recoverable,
+                }),
+            },
+        };
+        results.push(item_result);
+    }
+
+    Ok(CompressBatchResponse {
+        run_id,
+        output_dir: output_dir.to_string_lossy().to_string(),
+        items: results,
+    })
+}
+
+pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
+    let target = Path::new(&request.target_dir);
+    fs::create_dir_all(target).map_err(|err| AppError::new("targetDirFailed", err.to_string()))?;
+
+    let mut copied = Vec::new();
+
+    for src_path in &request.output_paths {
+        let file_name = Path::new(src_path)
+            .file_name()
+            .ok_or_else(|| AppError::new("invalidPath", "Could not extract filename from path"))?;
+        let dest = target.join(file_name);
+        fs::copy(src_path, &dest).map_err(|err| {
+            AppError::new(
+                "copyFailed",
+                format!("Failed to copy {}: {}", src_path, err),
+            )
+        })?;
+        copied.push(dest.to_string_lossy().to_string());
+    }
+
+    Ok(copied)
 }
 
 fn estimate_bytes(original_bytes: u64, quality: u8) -> u64 {

@@ -1,35 +1,59 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { inspectImage } = vi.hoisted(() => ({
-  inspectImage: vi.fn(async () => ({
-    id: "real-photo",
-    sourcePath: "/tmp/real-photo.jpg",
-    fileName: "real-photo.jpg",
-    sourceFormat: "jpg",
-    originalBytes: 1_200_000,
-    estimatedBytes: 260_000,
-    status: "ready",
-    settings: {
-      targetFormat: "webp",
-      quality: 68,
-      maxWidth: 1600,
-      maxHeight: 1600,
-      allowUpscale: false,
-      removeGps: true,
-    },
-  })),
-}));
+const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen } = vi.hoisted(() => {
+  const mockDialogOpen = vi.fn(async (..._args: unknown[]) => ["/tmp/real-photo.jpg"]);
+  return {
+    inspectImage: vi.fn(async () => ({
+      id: "real-photo",
+      sourcePath: "/tmp/real-photo.jpg",
+      fileName: "real-photo.jpg",
+      sourceFormat: "jpg",
+      originalBytes: 1_200_000,
+      estimatedBytes: 260_000,
+      status: "ready",
+      settings: {
+        targetFormat: "webp",
+        quality: 68,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        allowUpscale: false,
+        removeGps: true,
+      },
+    })),
+    compressBatch: vi.fn(async () => ({
+      runId: "run-1",
+      outputDir: "/tmp/pic-piper/run-1",
+      items: [
+        {
+          id: "real-photo",
+          result: {
+            sourcePath: "/tmp/real-photo.jpg",
+            outputPath: "/tmp/pic-piper/run-1/real-photo.webp",
+            outputFileName: "real-photo.webp",
+            originalBytes: 1_200_000,
+            outputBytes: 240_000,
+            targetFormat: "webp",
+          },
+        },
+      ],
+    })),
+    copyOutputsToDir: vi.fn(async () => ["/tmp/saved/real-photo.webp"]),
+    mockDialogOpen,
+  };
+});
 
 vi.mock("@tauri-apps/plugin-dialog", async () => ({
-  open: vi.fn(async () => ["/tmp/real-photo.jpg"]),
+  open: mockDialogOpen,
 }));
 
 vi.mock("../../api/tauri", async () => ({
   tauriApi: {
     inspectImage,
+    compressBatch,
+    copyOutputsToDir,
   },
   uploadApi: {
     uploadObject: vi.fn(),
@@ -37,6 +61,16 @@ vi.mock("../../api/tauri", async () => ({
 }));
 
 describe("OptimizePage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset dialog mock to default behavior
+    mockDialogOpen.mockImplementation(async (...args: unknown[]) => {
+      const opts = args[0] as { directory?: boolean } | undefined;
+      if (opts?.directory) return "/tmp/saved" as unknown as string[];
+      return ["/tmp/real-photo.jpg"];
+    });
+  });
+
   it("starts empty and asks the user to choose images", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
@@ -63,5 +97,43 @@ describe("OptimizePage", () => {
     });
     expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Compress" })).toBeEnabled();
+  });
+
+  it("calls compressBatch and shows real compression results", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Import an image
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText("real-photo.jpg");
+
+    // Click Compress
+    await user.click(screen.getByRole("button", { name: "Compress" }));
+
+    expect(compressBatch).toHaveBeenCalled();
+
+    // Should show results with real output filename and sizes
+    expect(await screen.findByText("real-photo.webp")).toBeInTheDocument();
+    expect(screen.getByText(/1.2 MB => 240 KB/)).toBeInTheDocument();
+  });
+
+  it("Save to local folder opens directory picker and copies files", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Import and compress
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText("real-photo.jpg");
+    await user.click(screen.getByRole("button", { name: "Compress" }));
+    await screen.findByText("real-photo.webp");
+
+    // Click Save to local folder
+    await user.click(screen.getByRole("button", { name: "Save to local folder" }));
+
+    expect(mockDialogOpen).toHaveBeenCalledWith({ directory: true });
+    expect(copyOutputsToDir).toHaveBeenCalledWith({
+      outputPaths: ["/tmp/pic-piper/run-1/real-photo.webp"],
+      targetDir: "/tmp/saved",
+    });
   });
 });

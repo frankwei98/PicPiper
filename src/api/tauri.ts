@@ -23,11 +23,49 @@ export interface CompressImageResult {
   warning?: string;
 }
 
+export interface CompressBatchItem {
+  id: string;
+  sourcePath: string;
+  outputFileName: string;
+  settings: CompressionSettings;
+}
+
+export interface CompressBatchRequest {
+  items: CompressBatchItem[];
+}
+
+export interface ItemError {
+  code: string;
+  message: string;
+  recoverable: boolean;
+}
+
+export interface CompressBatchItemResult {
+  id: string;
+  result?: CompressImageResult;
+  error?: ItemError;
+}
+
+export interface CompressBatchResponse {
+  runId: string;
+  outputDir: string;
+  items: CompressBatchItemResult[];
+}
+
+export interface CopyOutputsRequest {
+  outputPaths: string[];
+  targetDir: string;
+}
+
 export const tauriApi = {
   inspectImage: (request: InspectImageRequest) =>
     invoke<OptimizeItem>("inspect_image", { request }),
   compressImage: (request: CompressImageRequest) =>
     invoke<CompressImageResult>("compress_image", { request }),
+  compressBatch: (request: CompressBatchRequest) =>
+    invoke<CompressBatchResponse>("compress_batch", { request }),
+  copyOutputsToDir: (request: CopyOutputsRequest) =>
+    invoke<string[]>("copy_outputs_to_dir", { request }),
 };
 
 export interface ListGalleryObjectsRequest {

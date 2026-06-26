@@ -190,3 +190,49 @@ pub struct UploadObjectRequest {
 pub struct SaveSettingsRequest {
     pub settings: AppSettings,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressBatchItem {
+    pub id: String,
+    pub source_path: String,
+    pub output_file_name: String,
+    pub settings: CompressionSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressBatchRequest {
+    pub items: Vec<CompressBatchItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressBatchItemResult {
+    pub id: String,
+    pub result: Option<CompressImageResult>,
+    pub error: Option<ItemError>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemError {
+    pub code: String,
+    pub message: String,
+    pub recoverable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompressBatchResponse {
+    pub run_id: String,
+    pub output_dir: String,
+    pub items: Vec<CompressBatchItemResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyOutputsRequest {
+    pub output_paths: Vec<String>,
+    pub target_dir: String,
+}

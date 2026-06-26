@@ -111,8 +111,85 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
     setItems((current) => [...current, ...newItems]);
   };
 
-  const handleCompress = () => {
-    setMode("results");
+  const [compressError, setCompressError] = useState<string | null>(null);
+
+  const handleCompress = async () => {
+    setCompressError(null);
+    setItems((current) =>
+      current.map((item) =>
+        item.status === "ready" || item.status === "pending"
+          ? { ...item, status: "compressing" as const }
+          : item,
+      ),
+    );
+
+    try {
+      const batchItems = items
+        .filter((item) => item.status === "compressing")
+        .map((item) => ({
+          id: item.id,
+          sourcePath: item.sourcePath,
+          outputFileName: item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`),
+          settings: item.settings,
+        }));
+
+      const response = await tauriApi.compressBatch({ items: batchItems });
+
+      setItems((current) =>
+        current.map((item) => {
+          const batchResult = response.items.find((r) => r.id === item.id);
+          if (!batchResult) return item;
+          if (batchResult.error) {
+            return { ...item, status: "failed" as const, error: batchResult.error.message };
+          }
+          if (batchResult.result) {
+            return {
+              ...item,
+              status: "compressed" as const,
+              outputBytes: batchResult.result.outputBytes,
+              outputPath: batchResult.result.outputPath,
+              outputFileName: batchResult.result.outputFileName,
+            };
+          }
+          return item;
+        }),
+      );
+
+      setMode("results");
+    } catch (err) {
+      setCompressError(err instanceof Error ? err.message : "Compression failed");
+      setItems((current) =>
+        current.map((item) =>
+          item.status === "compressing"
+            ? { ...item, status: "ready" as const }
+            : item,
+        ),
+      );
+    }
+  };
+
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleSaveToLocal = async () => {
+    setSaveError(null);
+    try {
+      const targetDir = await open({ directory: true });
+      if (!targetDir) return;
+
+      const outputPaths = items
+        .filter((item) => item.status === "compressed" && item.outputPath)
+        .map((item) => item.outputPath as string);
+
+      if (outputPaths.length === 0) {
+        setSaveError("No compressed outputs to save.");
+        return;
+      }
+
+      const copied = await tauriApi.copyOutputsToDir({ outputPaths, targetDir: targetDir as string });
+      alert(`Saved ${copied.length} file(s) to ${targetDir}`);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save files");
+    }
   };
 
   const uploadToS3 = async () => {
@@ -122,19 +199,14 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
     }
     setUploadError(null);
     const prefix = activeProfile.defaultPrefix || "images";
-    const compressedItems = items.map((item) => ({
-      ...item,
-      status: "compressed" as const,
-      outputBytes: item.estimatedBytes ?? item.originalBytes,
-      outputFileName: item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`),
-    }));
+    const compressedItems = items.filter((item) => item.status === "compressed" && item.outputPath);
     const uploaded = await Promise.all(
       compressedItems.map((item) => {
         const outputFileName = item.outputFileName ?? "image.webp";
         const objectKey = `${prefix.replace(/\/$/, "")}/${outputFileName}`;
         return uploadApi.uploadObject({
           profile: activeProfile,
-          sourcePath: item.outputPath ?? item.sourcePath,
+          sourcePath: item.outputPath as string,
           objectKey,
           contentType: contentTypeFor(item.settings.targetFormat),
         });
@@ -147,13 +219,6 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
   };
 
   if (mode === "results") {
-    const compressedItems = items.map((item) => ({
-      ...item,
-      status: "compressed" as const,
-      outputBytes: item.estimatedBytes ?? item.originalBytes,
-      outputFileName: item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`),
-    }));
-
     return (
       <div className="page-stack">
         <header className="page-header">
@@ -164,22 +229,27 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
         </header>
 
         <section className="result-summary" aria-label="Compression results">
-          {compressedItems.map((item) => (
+          {items.map((item) => (
             <article className="image-row" key={item.id}>
               <div>
-                <strong>{item.outputFileName}</strong>
-                <p>
-                  {formatBytes(item.originalBytes)} =&gt; {formatBytes(item.outputBytes ?? 0)}
-                </p>
+                <strong>{item.outputFileName ?? item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`)}</strong>
+                {item.error ? (
+                  <p className="item-error">{item.error}</p>
+                ) : (
+                  <p>
+                    {formatBytes(item.originalBytes)} =&gt; {formatBytes(item.outputBytes ?? item.estimatedBytes ?? 0)}
+                  </p>
+                )}
               </div>
             </article>
           ))}
         </section>
 
         {uploadError && <p className="upload-error">{uploadError}</p>}
+        {saveError && <p className="upload-error">{saveError}</p>}
 
         <div className="result-actions">
-          <button type="button">Save to local folder</button>
+          <button type="button" onClick={handleSaveToLocal}>Save to local folder</button>
           <button type="button" onClick={uploadToS3}>Upload to S3</button>
           <button type="button" onClick={() => setMode("edit")}>Back to edit settings</button>
         </div>
@@ -206,6 +276,8 @@ export function OptimizePage({ activeProfile, onUploadedToS3 }: OptimizePageProp
           Choose images
         </button>
       </section>
+
+      {compressError && <p className="upload-error">{compressError}</p>}
 
       <section className="item-list" aria-label="Images to optimize">
         {items.map((item) => (
