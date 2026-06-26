@@ -28,7 +28,6 @@ const { listObjects, deleteObject, downloadObject, mockDialogOpen, uploadObject,
     })),
     loadSettings: vi.fn(async () => ({
       profiles: [],
-      presets: [],
       namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
     })),
   };

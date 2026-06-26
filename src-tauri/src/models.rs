@@ -16,16 +16,6 @@ pub struct S3Profile {
     pub insecure_secret_fallback: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CompressionPreset {
-    pub id: String,
-    pub name: String,
-    pub target_format: ImageFormat,
-    pub quality: u8,
-    pub remove_gps: bool,
-}
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageFormat {
@@ -40,7 +30,6 @@ pub enum ImageFormat {
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub profiles: Vec<S3Profile>,
-    pub presets: Vec<CompressionPreset>,
     pub naming_template: String,
     pub default_output_dir: Option<String>,
     pub default_profile_id: Option<String>,
@@ -50,13 +39,6 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             profiles: Vec::new(),
-            presets: vec![CompressionPreset {
-                id: "small-web".to_string(),
-                name: "Small web image".to_string(),
-                target_format: ImageFormat::Webp,
-                quality: 85,
-                remove_gps: true,
-            }],
             naming_template: "{yyyy}/{mm}/{slug}-{hash}.{ext}".to_string(),
             default_output_dir: None,
             default_profile_id: None,

@@ -36,6 +36,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let settings = load_settings(&dir.path().join("settings.json")).unwrap();
         assert_eq!(settings.naming_template, "{yyyy}/{mm}/{slug}-{hash}.{ext}");
-        assert_eq!(settings.presets.len(), 1);
+        assert!(settings.profiles.is_empty());
+        assert!(settings.default_output_dir.is_none());
+        assert!(settings.default_profile_id.is_none());
     }
 }

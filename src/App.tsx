@@ -14,7 +14,6 @@ function App() {
   const [navigation, setNavigation] = useState<AppNavigationState>(initialNavigationState);
   const [settings, setSettings] = useState<AppSettings>({
     profiles: [],
-    presets: [],
     namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
   });
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -56,7 +55,6 @@ function App() {
           activeProfile={selectedProfile}
           namingTemplate={settings.namingTemplate}
           onUploadedToS3={openGallery}
-          presets={settings.presets}
         />
       )}
       {navigation.view === "gallery" && (

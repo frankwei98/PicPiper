@@ -30,7 +30,6 @@ describe("SettingsPage", () => {
       <SettingsPage
         settings={{
           profiles: [],
-          presets: [],
           namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
         }}
         onSettingsChange={() => {}}
@@ -38,6 +37,21 @@ describe("SettingsPage", () => {
     );
 
     expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
+  });
+
+  it("does not render preset management", () => {
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText(/presets/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add preset/i })).not.toBeInTheDocument();
   });
 
   it("rejects saving a new profile when secret access key is empty", async () => {
@@ -48,7 +62,6 @@ describe("SettingsPage", () => {
       <SettingsPage
         settings={{
           profiles: [],
-          presets: [],
           namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
         }}
         onSettingsChange={onSettingsChange}
@@ -82,7 +95,6 @@ describe("SettingsPage", () => {
       <SettingsPage
         settings={{
           profiles: [],
-          presets: [],
           namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
         }}
         onSettingsChange={onSettingsChange}
@@ -133,7 +145,6 @@ describe("SettingsPage", () => {
               insecureSecretFallback: false,
             },
           ],
-          presets: [],
           namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
         }}
         onSettingsChange={onSettingsChange}
@@ -155,136 +166,6 @@ describe("SettingsPage", () => {
             defaultPrefix: "images/2026/06",
           }),
         ]),
-      }),
-    );
-    expect(onSettingsChange).toHaveBeenCalled();
-  });
-
-  it("adds a new preset and saves it via saveSettings", async () => {
-    const user = userEvent.setup();
-    const onSettingsChange = vi.fn();
-
-    render(
-      <SettingsPage
-        settings={{
-          profiles: [],
-          presets: [],
-          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
-        }}
-        onSettingsChange={onSettingsChange}
-      />,
-    );
-
-    // Click "Add preset"
-    await user.click(screen.getByRole("button", { name: /add preset/i }));
-
-    const dialog = screen.getByRole("dialog", { name: /add preset/i });
-
-    // Fill out the preset form
-    await user.type(within(dialog).getByLabelText(/preset name/i), "Thumbnail");
-    await user.selectOptions(within(dialog).getByLabelText(/target format/i), "jpg");
-    await user.clear(within(dialog).getByLabelText(/quality/i));
-    await user.type(within(dialog).getByLabelText(/quality/i), "60");
-
-    // Save the preset
-    await user.click(screen.getByRole("button", { name: /save preset/i }));
-
-    expect(saveSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        presets: expect.arrayContaining([
-          expect.objectContaining({
-            name: "Thumbnail",
-            targetFormat: "jpg",
-            quality: 60,
-          }),
-        ]),
-      }),
-    );
-    expect(onSettingsChange).toHaveBeenCalled();
-  });
-
-  it("edits an existing preset and updates it via saveSettings", async () => {
-    const user = userEvent.setup();
-    const onSettingsChange = vi.fn();
-
-    render(
-      <SettingsPage
-        settings={{
-          profiles: [],
-          presets: [
-            {
-              id: "p1",
-              name: "Small web",
-              targetFormat: "webp",
-              quality: 85,
-                                removeGps: true,
-            },
-          ],
-          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
-        }}
-        onSettingsChange={onSettingsChange}
-      />,
-    );
-
-    // Click "Edit" on the preset
-    await user.click(screen.getByRole("button", { name: /edit/i }));
-
-    const dialog = screen.getByRole("dialog", { name: /edit preset/i });
-
-    // Change the name
-    const nameInput = within(dialog).getByLabelText(/preset name/i);
-    await user.clear(nameInput);
-    await user.type(nameInput, "Updated preset");
-
-    // Update the preset
-    await user.click(screen.getByRole("button", { name: /update preset/i }));
-
-    expect(saveSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        presets: expect.arrayContaining([
-          expect.objectContaining({
-            id: "p1",
-            name: "Updated preset",
-          }),
-        ]),
-      }),
-    );
-    expect(onSettingsChange).toHaveBeenCalled();
-  });
-
-  it("deletes a preset and saves via saveSettings", async () => {
-    const user = userEvent.setup();
-    const onSettingsChange = vi.fn();
-
-    render(
-      <SettingsPage
-        settings={{
-          profiles: [],
-          presets: [
-            {
-              id: "p1",
-              name: "To delete",
-              targetFormat: "webp",
-              quality: 85,
-                                removeGps: true,
-            },
-          ],
-          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
-        }}
-        onSettingsChange={onSettingsChange}
-      />,
-    );
-
-    // Click "Delete" on the preset
-    await user.click(screen.getByRole("button", { name: /delete/i }));
-
-    // Confirm in the AlertDialog
-    const dialog = await screen.findByRole("alertdialog");
-    await user.click(within(dialog).getByRole("button", { name: /delete/i }));
-
-    expect(saveSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        presets: [],
       }),
     );
     expect(onSettingsChange).toHaveBeenCalled();

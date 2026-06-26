@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import type { CompressionPreset, CompressionSettings, OptimizeItem, S3Profile } from "../../types";
+import type { CompressionSettings, OptimizeItem, S3Profile } from "../../types";
 import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 import { cn } from "../../utils/cn";
 import { Slider } from "../../components/ui/Slider";
@@ -20,7 +20,6 @@ interface OptimizePageProps {
   }) => void;
   activeProfile?: S3Profile;
   namingTemplate: string;
-  presets?: CompressionPreset[];
 }
 
 function contentTypeFor(format: string) {
@@ -44,14 +43,13 @@ const btnBase = "border-none rounded-md cursor-pointer text-callout font-medium 
 const btnPrimary = cn(btnBase, "bg-primary-container text-on-primary-container font-semibold hover:shadow-[0_1px_3px_rgba(0,0,0,0.3)] hover:brightness-110");
 const btnSecondary = cn(btnBase, "bg-white/5 border border-outline-variant text-on-surface hover:bg-white/10 hover:border-outline");
 const btnTertiary = cn(btnBase, "bg-transparent text-primary px-3 hover:bg-[rgba(255,189,127,0.1)]");
-export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, presets = [] }: OptimizePageProps) {
+export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [mode, setMode] = useState<"edit" | "results">("edit");
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [compressing, setCompressing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
@@ -109,21 +107,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
     );
   };
 
-  const handleApplyPreset = () => {
-    const preset = presets.find((p) => p.id === selectedPresetId);
-    const appliedSettings: CompressionSettings = preset
-      ? {
-          targetFormat: preset.targetFormat as CompressionSettings["targetFormat"],
-          quality: preset.quality,
-          removeGps: preset.removeGps,
-        }
-      : { ...DEFAULT_SETTINGS };
-
+  const handleApplyDefaults = () => {
     setItems((current) =>
       current.map((item) => ({
         ...item,
-        estimatedBytes: Math.round(item.originalBytes * (appliedSettings.quality / 100) * 0.25),
-        settings: { ...appliedSettings },
+        estimatedBytes: Math.round(item.originalBytes * (DEFAULT_SETTINGS.quality / 100) * 0.25),
+        settings: { ...DEFAULT_SETTINGS },
       })),
     );
   };
@@ -473,27 +462,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
       <header className="flex justify-between items-start gap-lg">
         <div>
           <h2 className="text-large-title font-bold text-on-surface text-balance">Optimize</h2>
-          <p className="text-on-surface-variant mt-xs text-body text-pretty">Apply a preset, tune each image, then compress.</p>
+          <p className="text-on-surface-variant mt-xs text-body text-pretty">Tune each image, then compress.</p>
         </div>
         <div className="flex gap-sm items-end flex-wrap">
-          {presets.length > 0 && (
-            <label className="grid gap-xs text-footnote font-medium text-on-surface-variant">
-              Preset
-              <select
-                className="rounded-md border border-outline-variant bg-surface-container text-on-surface p-2.5 text-body transition-[border-color,box-shadow] duration-150 ease-out focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 w-full"
-                value={selectedPresetId}
-                onChange={(e) => setSelectedPresetId(e.target.value)}
-              >
-                <option value="">Default</option>
-                {presets.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <button className={btnSecondary} type="button" onClick={handleApplyPreset}>Apply preset</button>
+          <button className={btnSecondary} type="button" onClick={handleApplyDefaults}>Reset to defaults</button>
           <button className={btnPrimary} type="button" disabled={!canCompress} onClick={handleCompress}>Compress</button>
         </div>
       </header>
