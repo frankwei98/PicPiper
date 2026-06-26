@@ -1,26 +1,15 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { CompressionSettings, OptimizeItem, S3Profile } from "../../types";
+import type { CompressionPreset, CompressionSettings, OptimizeItem, S3Profile } from "../../types";
 import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   targetFormat: "webp",
-  quality: 68,
+  quality: 85,
   maxWidth: 1600,
   maxHeight: 1600,
   allowUpscale: false,
   removeGps: true,
-};
-
-type Preset = {
-  id: string;
-  name: string;
-  targetFormat: string;
-  quality: number;
-  maxWidth: number;
-  maxHeight: number;
-  allowUpscale: boolean;
-  removeGps: boolean;
 };
 
 interface OptimizePageProps {
@@ -31,7 +20,7 @@ interface OptimizePageProps {
   }) => void;
   activeProfile?: S3Profile;
   namingTemplate: string;
-  presets?: Preset[];
+  presets?: CompressionPreset[];
 }
 
 function contentTypeFor(format: string) {
@@ -59,6 +48,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
   const [compressing, setCompressing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
+  const [dropError, setDropError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const canCompress = items.some((item) => item.status === "ready" || item.status === "pending");
 
@@ -98,21 +89,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
     );
   };
 
-  const handleChooseImages = async () => {
-    const selected = await open({
-      multiple: true,
-      filters: [
-        {
-          name: "Images",
-          extensions: ["jpg", "jpeg", "png", "webp", "avif", "heif", "heic"],
-        },
-      ],
-    });
-
-    if (!selected) return;
-
-    const paths = Array.isArray(selected) ? selected : [selected];
+  const importImages = useCallback(async (paths: string[]) => {
     setImporting(true);
+    setDropError(null);
 
     const results = await Promise.allSettled(
       paths.map((path) =>
@@ -150,7 +129,56 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
 
     setItems((current) => [...current, ...newItems]);
     setImporting(false);
+  }, []);
+
+  const handleChooseImages = async () => {
+    const selected = await open({
+      multiple: true,
+      filters: [
+        {
+          name: "Images",
+          extensions: ["jpg", "jpeg", "png", "webp", "avif", "heif", "heic"],
+        },
+      ],
+    });
+
+    if (!selected) return;
+
+    const paths = Array.isArray(selected) ? selected : [selected];
+    await importImages(paths);
   };
+
+  const handleDrop = useCallback(async (event: React.DragEvent) => {
+    event.preventDefault();
+    setDragging(false);
+
+    const files = Array.from(event.dataTransfer.files);
+    const paths: string[] = [];
+
+    for (const file of files) {
+      const filePath = (file as File & { path?: string }).path;
+      if (filePath) {
+        paths.push(filePath);
+      }
+    }
+
+    if (paths.length === 0) {
+      setDropError("Drag/drop file paths are unavailable; use Choose images.");
+      return;
+    }
+
+    await importImages(paths);
+  }, [importImages]);
+
+  const handleDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    setDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    setDragging(false);
+  }, []);
 
   const [compressError, setCompressError] = useState<string | null>(null);
 
@@ -388,13 +416,19 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
         </div>
       </header>
 
-      <section className="drop-zone">
+      <section
+        className={`drop-zone${dragging ? " drop-zone--active" : ""}`}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+      >
         Drop images here or{" "}
         <button type="button" onClick={handleChooseImages} disabled={importing}>
           Choose images
         </button>
       </section>
 
+      {dropError && <p className="error-text" role="alert">{dropError}</p>}
       {importing && <p className="status-line">Importing images...</p>}
       {compressing && <p className="status-line">Compressing images...</p>}
       {compressError && <p className="error-text">{compressError}</p>}

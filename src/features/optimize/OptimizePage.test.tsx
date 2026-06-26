@@ -16,7 +16,7 @@ const { inspectImage, compressBatch, copyOutputsToDir, mockDialogOpen, uploadObj
       status: "ready",
       settings: {
         targetFormat: "webp",
-        quality: 68,
+        quality: 85,
         maxWidth: 1600,
         maxHeight: 1600,
         allowUpscale: false,
@@ -105,7 +105,7 @@ describe("OptimizePage", () => {
 
     expect(inspectImage).toHaveBeenCalledWith({
       path: "/tmp/real-photo.jpg",
-      settings: expect.objectContaining({ targetFormat: "webp", quality: 68 }),
+      settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
     });
     expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Compress" })).toBeEnabled();
@@ -147,7 +147,7 @@ describe("OptimizePage", () => {
             id: "real-photo",
             sourcePath: "/tmp/real-photo.jpg",
             outputFileName: "real-photo.webp",
-            settings: expect.objectContaining({ targetFormat: "webp", quality: 68 }),
+            settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
           }),
         ]),
       }),
@@ -199,7 +199,7 @@ describe("OptimizePage", () => {
     const preset = {
       id: "preset-1",
       name: "High Quality",
-      targetFormat: "avif",
+      targetFormat: "avif" as const,
       quality: 85,
       maxWidth: 2000,
       maxHeight: 2000,
@@ -275,7 +275,7 @@ describe("OptimizePage", () => {
             id: "real-photo",
             settings: expect.objectContaining({
               targetFormat: "webp",
-              quality: 68,
+              quality: 85,
               maxWidth: 1600,
               maxHeight: 1600,
             }),
@@ -337,5 +337,46 @@ describe("OptimizePage", () => {
       prefix: "images/2026/06",
       highlightedKeys: ["images/2026/06/real-photo-abcdef12.webp"],
     });
+  });
+
+  it("dropping file with usable path calls inspectImage", async () => {
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    const dropZone = document.querySelector(".drop-zone")!;
+    const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });
+    Object.defineProperty(file, "path", { value: "/tmp/dropped-photo.jpg" });
+    const fileList = Object.assign([file], { item: (i: number) => (fileList as unknown as File[])[i] });
+
+    const event = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", {
+      value: { files: fileList },
+    });
+    dropZone.dispatchEvent(event);
+
+    // The mock returns fileName "real-photo.jpg" regardless of input path
+    expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
+    expect(inspectImage).toHaveBeenCalledWith({
+      path: "/tmp/dropped-photo.jpg",
+      settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
+    });
+  });
+
+  it("dropping file without usable path shows error and does not call inspectImage", async () => {
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    const dropZone = document.querySelector(".drop-zone")!;
+    const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });
+    const fileList = Object.assign([file], { item: (i: number) => (fileList as unknown as File[])[i] });
+
+    const event = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", {
+      value: { files: fileList },
+    });
+    dropZone.dispatchEvent(event);
+
+    expect(
+      await screen.findByText(/drag\/drop file paths are unavailable/i),
+    ).toBeInTheDocument();
+    expect(inspectImage).not.toHaveBeenCalled();
   });
 });
