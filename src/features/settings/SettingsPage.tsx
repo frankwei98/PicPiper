@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { settingsApi } from "../../api/tauri";
 import type { AppSettings } from "../../api/tauri";
 import type { CompressionPreset, ImageFormat, S3Profile } from "../../types";
-import { AlertDialog } from "../../components/AlertDialog";
+import { AlertDialog, Dialog } from "../../components/ui/Dialog";
+import { StatusMessage } from "../../components/ui/Toast";
+import { cn } from "../../utils/cn";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -26,6 +28,15 @@ const EMPTY_PRESET: Omit<CompressionPreset, "id"> = {
   removeGps: true,
 };
 
+const btnBase = "border-none rounded-md cursor-pointer text-callout font-medium px-5 py-2.5 transition-[background-color,box-shadow,filter] duration-150 ease-out inline-flex items-center justify-center gap-sm leading-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-38 disabled:cursor-not-allowed disabled:pointer-events-none";
+const btnPrimary = cn(btnBase, "bg-primary-container text-on-primary-container font-semibold hover:shadow-[0_1px_3px_rgba(0,0,0,0.3)] hover:brightness-110");
+const btnSecondary = cn(btnBase, "bg-white/5 border border-outline-variant text-on-surface hover:bg-white/10 hover:border-outline");
+const btnDanger = cn(btnBase, "bg-error-container text-on-error-container hover:brightness-115");
+const btnSm = "text-footnote px-3 py-1.5 rounded-md";
+
+const inputClass = "rounded-md border border-outline-variant bg-surface-container text-on-surface p-2.5 text-body transition-[border-color,box-shadow] duration-150 ease-out focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 w-full";
+const labelClass = "grid gap-xs text-footnote font-medium text-on-surface-variant";
+
 export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) {
   const profile = settings.profiles[0];
 
@@ -47,13 +58,11 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Preset management state
   const [editingPreset, setEditingPreset] = useState<CompressionPreset | null>(null);
   const [isAddingPreset, setIsAddingPreset] = useState(false);
   const [presetForm, setPresetForm] = useState<Omit<CompressionPreset, "id">>({ ...EMPTY_PRESET });
 
   const [deleteTarget, setDeleteTarget] = useState<CompressionPreset | null>(null);
-  const presetDialogRef = useRef<HTMLDivElement>(null);
 
   const isPresetDialogOpen = isAddingPreset || editingPreset !== null;
 
@@ -62,26 +71,6 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     setIsAddingPreset(false);
     setPresetForm({ ...EMPTY_PRESET });
   }, []);
-
-  // Escape key closes the preset dialog
-  useEffect(() => {
-    if (!isPresetDialogOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closePresetDialog();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isPresetDialogOpen, closePresetDialog]);
-
-  // Focus trap for preset dialog
-  useEffect(() => {
-    if (!isPresetDialogOpen || !presetDialogRef.current) return;
-    const dialog = presetDialogRef.current;
-    dialog.focus();
-  }, [isPresetDialogOpen]);
 
   const openAddPreset = () => {
     setEditingPreset(null);
@@ -196,63 +185,42 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   };
 
   return (
-    <div className="page-stack">
-      <header className="page-header">
+    <div className="grid gap-lg max-w-page">
+      <header className="flex justify-between items-start gap-lg">
         <div>
-          <h2>Settings</h2>
-          <p>Manage S3 profiles, presets, naming, and output defaults.</p>
+          <h2 className="text-large-title font-bold text-on-surface text-balance">Settings</h2>
+          <p className="text-on-surface-variant mt-xs text-body text-pretty">Manage S3 profiles, presets, naming, and output defaults.</p>
         </div>
       </header>
-      <section className="settings-grid">
-        <article className="panel">
-          <h3>Profile</h3>
-          <form className="profile-form" onSubmit={handleSaveProfile}>
-            <label>
+      <section className="grid gap-lg max-w-[980px]">
+        <article className="border border-outline-variant rounded-lg bg-surface-container p-lg transition-[border-color] duration-200 hover:border-outline">
+          <h3 className="text-title-2 font-semibold text-on-surface text-balance mb-md">Profile</h3>
+          <form className="grid gap-md grid-cols-2 max-lg:grid-cols-1" onSubmit={handleSaveProfile}>
+            <label className={labelClass}>
               Profile name
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
+              <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
             </label>
-            <label>
+            <label className={labelClass}>
               Endpoint
-              <input
-                placeholder="https://s3.example.com"
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-              />
+              <input className={inputClass} placeholder="https://s3.example.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
             </label>
-            <label>
+            <label className={labelClass}>
               Region
-              <input
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-              />
+              <input className={inputClass} value={region} onChange={(e) => setRegion(e.target.value)} />
             </label>
-            <label>
+            <label className={labelClass}>
               Bucket
-              <input
-                placeholder="my-image-bucket"
-                value={bucket}
-                onChange={(e) => setBucket(e.target.value)}
-              />
+              <input className={inputClass} placeholder="my-image-bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} />
             </label>
-            <label>
+            <label className={labelClass}>
               Access key ID
-              <input
-                value={accessKeyId}
-                onChange={(e) => setAccessKeyId(e.target.value)}
-              />
+              <input className={inputClass} value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
             </label>
-            <label>
+            <label className={labelClass}>
               Secret access key
-              <input
-                type="password"
-                value={secretAccessKey}
-                onChange={(e) => setSecretAccessKey(e.target.value)}
-              />
+              <input className={inputClass} type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
             </label>
-            <label>
+            <label className={labelClass}>
               Allow local secret fallback
               <input
                 type="checkbox"
@@ -260,58 +228,47 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
                 onChange={(e) => setAllowInsecureFallback(e.target.checked)}
               />
             </label>
-            <label>
+            <label className={labelClass}>
               Naming template
-              <input
-                value={namingTemplate}
-                onChange={(e) => setNamingTemplate(e.target.value)}
-              />
+              <input className={inputClass} value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
             </label>
-            <label>
+            <label className={labelClass}>
               Public Base URL
-              <input
-                placeholder="https://cdn.example.com"
-                value={publicBaseUrl}
-                onChange={(e) => setPublicBaseUrl(e.target.value)}
-              />
+              <input className={inputClass} placeholder="https://cdn.example.com" value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} />
             </label>
-            <label>
+            <label className={labelClass}>
               Default prefix
-              <input
-                placeholder="images/2026/06"
-                value={defaultPrefix}
-                onChange={(e) => setDefaultPrefix(e.target.value)}
-              />
+              <input className={inputClass} placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
             </label>
-            <button className="btn-primary" type="submit" disabled={saving}>Save profile</button>
+            <button className={btnPrimary} type="submit" disabled={saving}>Save profile</button>
           </form>
-          {saving && <p className="status-line">Saving profile...</p>}
-          {saveMessage && <p className="success-text" role="status">{saveMessage}</p>}
-          {saveError && <p className="error-text" role="alert">{saveError}</p>}
+          {saving && <StatusMessage>Saving profile...</StatusMessage>}
+          {saveMessage && <StatusMessage>{saveMessage}</StatusMessage>}
+          {saveError && <StatusMessage variant="error">{saveError}</StatusMessage>}
           {allowInsecureFallback && (
-            <p className="error-text">Warning: Credential fallback to local storage is enabled. Secrets may be stored insecurely.</p>
+            <StatusMessage variant="error">Warning: Credential fallback to local storage is enabled. Secrets may be stored insecurely.</StatusMessage>
           )}
-          <p>Secrets use system secure storage when available. Local fallback must be explicitly allowed.</p>
+          <p className="text-on-surface-variant text-footnote text-pretty">Secrets use system secure storage when available. Local fallback must be explicitly allowed.</p>
         </article>
 
-        <article className="panel">
-          <div className="panel-header">
-            <h3>Presets</h3>
-            <button className="btn-primary" type="button" onClick={openAddPreset}>Add preset</button>
+        <article className="border border-outline-variant rounded-lg bg-surface-container p-lg transition-[border-color] duration-200 hover:border-outline">
+          <div className="flex justify-between items-center mb-lg">
+            <h3 className="text-title-2 font-semibold text-on-surface text-balance mb-0">Presets</h3>
+            <button className={btnPrimary} type="button" onClick={openAddPreset}>Add preset</button>
           </div>
           {settings.presets.length === 0 && (
-            <p className="status-line">No presets configured.</p>
+            <StatusMessage>No presets configured.</StatusMessage>
           )}
           {settings.presets.length > 0 && (
-            <ul className="preset-list">
+            <ul className="mb-lg grid bg-surface-container border border-outline-variant rounded-md overflow-hidden">
               {settings.presets.map((preset) => (
-                <li key={preset.id} className="preset-item">
-                  <span>
+                <li key={preset.id} className="flex justify-between items-center px-lg py-md text-callout text-on-surface border-b border-outline-variant last:border-b-0 transition-[background] duration-150 hover:bg-surface-container-high">
+                  <span className="tabular-nums">
                     {preset.name} ({preset.targetFormat.toUpperCase()} {preset.quality}%)
                   </span>
-                  <div className="preset-item-actions">
-                    <button className="btn-secondary btn-sm" type="button" onClick={() => openEditPreset(preset)}>Edit</button>
-                    <button className="btn-danger btn-sm" type="button" onClick={() => handleDeletePresetRequest(preset)}>Delete</button>
+                  <div className="flex gap-xs">
+                    <button className={cn(btnSecondary, btnSm)} type="button" onClick={() => openEditPreset(preset)}>Edit</button>
+                    <button className={cn(btnDanger, btnSm)} type="button" onClick={() => handleDeletePresetRequest(preset)}>Delete</button>
                   </div>
                 </li>
               ))}
@@ -320,74 +277,66 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         </article>
       </section>
 
-      {isPresetDialogOpen && (
-        <div className="modal-backdrop" onClick={closePresetDialog}>
-          <section
-            ref={presetDialogRef}
-            className="modal-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="preset-dialog-title"
-            tabIndex={-1}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="modal-header">
-              <h3 id="preset-dialog-title">{editingPreset ? "Edit preset" : "Add preset"}</h3>
-              <button className="btn-secondary btn-sm" type="button" onClick={closePresetDialog}>Close</button>
-            </div>
-            <form
-              className="profile-form preset-dialog-form"
-              onSubmit={(e) => { e.preventDefault(); handleSavePreset(); }}
+      <Dialog
+        open={isPresetDialogOpen}
+        onOpenChange={(open) => { if (!open) closePresetDialog(); }}
+        title={editingPreset ? "Edit preset" : "Add preset"}
+      >
+        <form
+          className="grid grid-cols-2 gap-md max-md:grid-cols-1"
+          onSubmit={(e) => { e.preventDefault(); handleSavePreset(); }}
+        >
+          <label className={labelClass}>
+            Preset name
+            <input
+              className={inputClass}
+              value={presetForm.name}
+              onChange={(e) => setPresetForm((f) => ({ ...f, name: e.target.value }))}
+              required
+            />
+          </label>
+          <label className={labelClass}>
+            Target format
+            <select
+              className={inputClass}
+              value={presetForm.targetFormat}
+              onChange={(e) => setPresetForm((f) => ({ ...f, targetFormat: e.target.value as ImageFormat }))}
             >
-              <label>
-                Preset name
-                <input
-                  value={presetForm.name}
-                  onChange={(e) => setPresetForm((f) => ({ ...f, name: e.target.value }))}
-                  required
-                />
-              </label>
-              <label>
-                Target format
-                <select
-                  value={presetForm.targetFormat}
-                  onChange={(e) => setPresetForm((f) => ({ ...f, targetFormat: e.target.value as ImageFormat }))}
-                >
-                  <option value="jpg">JPG</option>
-                  <option value="png">PNG</option>
-                  <option value="webp">WebP</option>
-                  <option value="avif">AVIF</option>
-                  <option value="heif">HEIF</option>
-                </select>
-              </label>
-              <label>
-                Quality (1-100)
-                <input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={presetForm.quality}
-                  onChange={(e) => setPresetForm((f) => ({ ...f, quality: Number(e.target.value) }))}
-                />
-              </label>
-              <label>
-                Remove GPS
-                <input
-                  type="checkbox"
-                  checked={presetForm.removeGps}
-                  onChange={(e) => setPresetForm((f) => ({ ...f, removeGps: e.target.checked }))}
-                />
-              </label>
-              <div className="preset-form-actions">
-                <button className="btn-primary" type="submit">{editingPreset ? "Update preset" : "Save preset"}</button>
-                <button className="btn-secondary" type="button" onClick={closePresetDialog}>Cancel</button>
-              </div>
-            </form>
-          </section>
-        </div>
-      )}
+              <option value="jpg">JPG</option>
+              <option value="png">PNG</option>
+              <option value="webp">WebP</option>
+              <option value="avif">AVIF</option>
+              <option value="heif">HEIF</option>
+            </select>
+          </label>
+          <label className={labelClass}>
+            Quality (1-100)
+            <input
+              className={inputClass}
+              type="number"
+              min={1}
+              max={100}
+              value={presetForm.quality}
+              onChange={(e) => setPresetForm((f) => ({ ...f, quality: Number(e.target.value) }))}
+            />
+          </label>
+          <label className={labelClass}>
+            Remove GPS
+            <input
+              type="checkbox"
+              checked={presetForm.removeGps}
+              onChange={(e) => setPresetForm((f) => ({ ...f, removeGps: e.target.checked }))}
+            />
+          </label>
+          <div className="col-span-2 flex gap-sm items-end max-md:col-span-1">
+            <button className={btnPrimary} type="submit">{editingPreset ? "Update preset" : "Save preset"}</button>
+            <Dialog.Close className={cn(btnSecondary)}>Cancel</Dialog.Close>
+          </div>
+        </form>
+      </Dialog>
       <AlertDialog
         open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
         title={`Delete preset "${deleteTarget?.name ?? ""}"?`}
         description="This preset will be permanently removed. This action cannot be undone."
         confirmLabel="Delete"

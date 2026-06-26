@@ -9,7 +9,6 @@ import type { S3Profile } from "./types";
 import type { GalleryFocus } from "./state/appState";
 import { initialNavigationState } from "./state/appState";
 import type { AppNavigationState } from "./state/appState";
-import "./App.css";
 
 function App() {
   const [navigation, setNavigation] = useState<AppNavigationState>(initialNavigationState);
@@ -48,7 +47,7 @@ function App() {
       onViewChange={(view) => setNavigation((prev) => ({ ...prev, view }))}
     >
       {settingsError && (
-        <p className="settings-error" role="alert">
+        <p className="text-footnote mt-sm bg-error-container border border-error rounded-xs px-md py-sm text-on-error-container" role="alert">
           Could not load settings: {settingsError}
         </p>
       )}

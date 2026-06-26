@@ -4,7 +4,17 @@ import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 import type { AppView } from "../../types";
 import { galleryApi, namingApi, settingsApi, uploadApi } from "../../api/tauri";
-import { AlertDialog } from "../../components/AlertDialog";
+import { AlertDialog } from "../../components/ui/Dialog";
+import { cn } from "../../utils/cn";
+import { StatusMessage } from "../../components/ui/Toast";
+
+const btnBase = "border-none rounded-md cursor-pointer text-callout font-medium px-5 py-2.5 transition-[background-color,box-shadow,filter] duration-150 ease-out inline-flex items-center justify-center gap-sm leading-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-38 disabled:cursor-not-allowed disabled:pointer-events-none";
+const btnPrimary = cn(btnBase, "bg-primary-container text-on-primary-container font-semibold hover:shadow-[0_1px_3px_rgba(0,0,0,0.3)] hover:brightness-110");
+const btnSecondary = cn(btnBase, "bg-white/5 border border-outline-variant text-on-surface hover:bg-white/10 hover:border-outline");
+const btnDanger = cn(btnBase, "bg-error-container text-on-error-container hover:brightness-115");
+const btnSm = "text-footnote px-3 py-1.5 rounded-md";
+
+const inputClass = "rounded-md border border-outline-variant bg-surface-container text-on-surface p-2.5 text-body transition-[border-color,box-shadow] duration-150 ease-out focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 w-full";
 
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
@@ -34,6 +44,7 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [highlightedKeysState, setHighlightedKeysState] = useState<string[]>(galleryFocus.highlightedKeys);
   const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
+  const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
 
   const loadObjects = useCallback(async () => {
     if (!selectedProfile) return;
@@ -45,6 +56,7 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
         prefix,
       });
       setObjects(result);
+      setImgErrors(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -183,17 +195,17 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
 
   if (profiles.length === 0) {
     return (
-      <div className="page-stack">
-        <header className="page-header">
+      <div className="grid gap-lg max-w-page">
+        <header className="flex justify-between items-start gap-lg">
           <div>
-            <h2>S3 Gallery</h2>
-            <p>Browse a profile and prefix, then copy URLs or manage images.</p>
+            <h2 className="text-large-title font-bold text-on-surface text-balance">S3 Gallery</h2>
+            <p className="text-on-surface-variant mt-xs text-body text-pretty">Browse a profile and prefix, then copy URLs or manage images.</p>
           </div>
         </header>
-        <section className="empty-state">
+        <section className="border border-dashed border-outline-variant rounded-lg bg-surface-container-low p-2xl text-center text-on-surface-variant text-callout">
           No profile selected.
           {onNavigate && (
-            <button className="btn-primary" type="button" onClick={() => onNavigate("settings")} style={{ marginTop: "var(--space-md)" }}>
+            <button className={cn(btnPrimary, "mt-md")} type="button" onClick={() => onNavigate("settings")}>
               Add a profile in Settings
             </button>
           )}
@@ -203,17 +215,18 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
   }
 
   return (
-    <div className="page-stack">
-      <header className="page-header">
+    <div className="grid gap-lg max-w-page">
+      <header className="flex justify-between items-start gap-lg">
         <div>
-          <h2>S3 Gallery</h2>
-          <p>Browse a profile and prefix, then copy URLs or manage images.</p>
+          <h2 className="text-large-title font-bold text-on-surface text-balance">S3 Gallery</h2>
+          <p className="text-on-surface-variant mt-xs text-body text-pretty">Browse a profile and prefix, then copy URLs or manage images.</p>
         </div>
-        <button className="btn-primary" type="button" onClick={handleUploadLocal}>Upload local images</button>
+        <button className={btnPrimary} type="button" onClick={handleUploadLocal}>Upload local images</button>
       </header>
-      <section className="gallery-toolbar">
+      <section className="grid gap-sm grid-cols-3 max-md:grid-cols-1">
         <select
           aria-label="Profile"
+          className={inputClass}
           value={selectedProfile?.id ?? ""}
           onChange={(e) => {
             const newId = e.target.value;
@@ -230,81 +243,84 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
         </select>
         <input
           aria-label="Prefix"
+          className={inputClass}
           placeholder="images/2026/06"
           value={prefix}
           onChange={(e) => setPrefix(e.target.value)}
         />
         <input
           aria-label="Search current prefix"
+          className={inputClass}
           placeholder="Search current prefix"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </section>
       {copyMessage && (
-        <p className="status-line" role="status">{copyMessage}</p>
+        <StatusMessage>{copyMessage}</StatusMessage>
       )}
       {uploadStatus && (
-        <p className={uploadStatus.includes("failed") ? "error-text" : "success-text"} role="status">{uploadStatus}</p>
+        <StatusMessage variant={uploadStatus.includes("failed") ? "error" : "default"}>{uploadStatus}</StatusMessage>
       )}
       {loading && (
-        <section className="gallery-grid" aria-label="Loading">
+        <section className="grid gap-md grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" aria-label="Loading">
           {Array.from({ length: 6 }, (_, i) => (
-            <article key={i} className="object-card">
-              <div className="object-thumb" style={{ background: "var(--surface-container-high)" }} />
-              <p style={{ height: "var(--fs-caption)", background: "var(--surface-container-high)", borderRadius: "var(--radius-sm)" }}>&nbsp;</p>
+            <article key={i} className="bg-surface-container border border-outline-variant rounded-md grid gap-sm p-md">
+              <div className="aspect-[4/3] bg-surface-container-high rounded-xs" aria-hidden="true" />
+              <p className="h-[var(--text-caption)] bg-surface-container-high rounded-xs" aria-hidden="true">&nbsp;</p>
             </article>
           ))}
         </section>
       )}
-      {deletingKey && <p className="status-line">Deleting {deletingKey}...</p>}
-      {downloadingKey && <p className="status-line">Downloading {downloadingKey}...</p>}
-      {error && <p className="error-text">{error}</p>}
+      {deletingKey && <StatusMessage>Deleting {deletingKey}...</StatusMessage>}
+      {downloadingKey && <StatusMessage>Downloading {downloadingKey}...</StatusMessage>}
+      {error && <StatusMessage variant="error">{error}</StatusMessage>}
       {!loading && !error && filteredObjects.length === 0 && (
-        <section className="empty-state">
+        <section className="border border-dashed border-outline-variant rounded-lg bg-surface-container-low p-2xl text-center text-on-surface-variant text-callout">
           No objects found.
-          <button className="btn-primary" type="button" onClick={handleUploadLocal} style={{ marginTop: "var(--space-md)" }}>
+          <button className={cn(btnPrimary, "mt-md")} type="button" onClick={handleUploadLocal}>
             Upload local images
           </button>
         </section>
       )}
       {!loading && !error && filteredObjects.length > 0 && (
-        <section className="gallery-grid">
+        <section className="grid gap-md grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
           {filteredObjects.map((obj) => (
             <article
               key={obj.key}
-              className={`object-card${highlightedKeys.has(obj.key) ? " highlighted" : ""}`}
+              className={cn(
+                "bg-surface-container border border-outline-variant rounded-md grid gap-sm p-md",
+                "transition-[border-color,transform] duration-200 ease-out",
+                "hover:border-outline hover:-translate-y-px",
+                highlightedKeys.has(obj.key) && "border-primary shadow-[0_0_0_1px_var(--primary)]",
+              )}
             >
-              <div className="object-thumb">
-                {obj.isImage && obj.publicUrl ? (
+              <div className="aspect-[4/3] bg-surface-container-high rounded-xs text-on-surface-variant flex justify-center items-center overflow-hidden text-caption">
+                {obj.isImage && obj.publicUrl && !imgErrors.has(obj.key) ? (
                   <img
-                    className="object-thumb-img"
+                    className="w-full h-full object-cover rounded-xs"
                     src={obj.publicUrl}
                     alt={obj.key}
                     loading="lazy"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                      const fallback = (e.target as HTMLImageElement).parentElement?.querySelector(".thumb-fallback");
-                      if (fallback) fallback.textContent = "Image";
-                    }}
+                    onError={() => setImgErrors((prev) => new Set(prev).add(obj.key))}
                   />
                 ) : null}
-                <span className="thumb-fallback">
-                  {obj.isImage && !obj.publicUrl ? "Image" : !obj.isImage ? "File" : ""}
+                <span className="text-caption opacity-60">
+                  {!obj.isImage ? "File" : "Image"}
                 </span>
               </div>
-              <p>{obj.key}</p>
-              <div className="object-actions">
-                <button className="btn-secondary btn-sm" type="button" onClick={() => handleCopyUrl(obj)}>
+              <p className="text-caption text-on-surface-variant overflow-hidden text-ellipsis whitespace-nowrap text-pretty tabular-nums">{obj.key}</p>
+              <div className="grid gap-1 grid-cols-2">
+                <button className={cn(btnSecondary, btnSm)} type="button" onClick={() => handleCopyUrl(obj)}>
                   Copy URL
                 </button>
-                <button className="btn-secondary btn-sm" type="button" onClick={() => handleView(obj)}>
+                <button className={cn(btnSecondary, btnSm)} type="button" onClick={() => handleView(obj)}>
                   View
                 </button>
-                <button className="btn-secondary btn-sm" type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
+                <button className={cn(btnSecondary, btnSm)} type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
                   Download
                 </button>
-                <button className="btn-danger btn-sm" type="button" onClick={() => handleDeleteRequest(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
+                <button className={cn(btnDanger, btnSm)} type="button" onClick={() => handleDeleteRequest(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
                   Delete
                 </button>
               </div>
@@ -314,6 +330,7 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
       )}
       <AlertDialog
         open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
         title={`Delete ${deleteTarget?.key ?? ""}?`}
         description="This will permanently remove the object from S3. This action cannot be undone."
         confirmLabel="Delete"

@@ -3,6 +3,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { CompressionPreset, CompressionSettings, OptimizeItem, S3Profile } from "../../types";
 import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
+import { cn } from "../../utils/cn";
+import { Slider } from "../../components/ui/Slider";
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   targetFormat: "webp",
@@ -38,6 +40,10 @@ function contentTypeFor(format: string) {
   }
 }
 
+const btnBase = "border-none rounded-md cursor-pointer text-callout font-medium px-5 py-2.5 transition-[background-color,box-shadow,filter] duration-150 ease-out inline-flex items-center justify-center gap-sm leading-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-38 disabled:cursor-not-allowed disabled:pointer-events-none";
+const btnPrimary = cn(btnBase, "bg-primary-container text-on-primary-container font-semibold hover:shadow-[0_1px_3px_rgba(0,0,0,0.3)] hover:brightness-110");
+const btnSecondary = cn(btnBase, "bg-white/5 border border-outline-variant text-on-surface hover:bg-white/10 hover:border-outline");
+const btnTertiary = cn(btnBase, "bg-transparent text-primary px-3 hover:bg-[rgba(255,189,127,0.1)]");
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, presets = [] }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [mode, setMode] = useState<"edit" | "results">("edit");
@@ -246,12 +252,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
           }
           unlisten = cleanup;
         })
-        .catch(() => {
-          // Browser-only preview cannot access the Tauri webview. DOM drag/drop remains as fallback.
-        });
-    } catch {
-      // Browser-only preview cannot access the Tauri webview. DOM drag/drop remains as fallback.
-    }
+        .catch(() => {});
+    } catch {}
 
     return () => {
       disposed = true;
@@ -422,62 +424,63 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
 
   if (mode === "results") {
     return (
-      <div className="page-stack">
-        <header className="page-header">
+      <div className="grid gap-lg max-w-page">
+        <header className="flex justify-between items-start gap-lg">
           <div>
-            <h2>Compression results</h2>
-            <p>Review compressed output before saving.</p>
+            <h2 className="text-large-title font-bold text-on-surface text-balance">Compression results</h2>
+            <p className="text-on-surface-variant mt-xs text-body text-pretty">Review compressed output before saving.</p>
           </div>
         </header>
 
-        <section className="result-summary" aria-label="Compression results">
+        <section className="bg-surface-container border border-outline-variant rounded-md p-lg" aria-label="Compression results">
           {items.map((item) => (
-            <article className="image-row" key={item.id}>
+            <article className="relative bg-surface-container border border-outline-variant rounded-md flex flex-col gap-sm p-md transition-[border-color,background-color] duration-150 ease-out hover:border-outline hover:bg-surface-container-high" key={item.id}>
               <div>
-                <strong>{item.outputFileName ?? item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`)}</strong>
+                <strong className="text-callout font-semibold text-on-surface truncate">{item.outputFileName ?? item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`)}</strong>
                 {item.error ? (
-                  <p className="item-error">{item.error}</p>
+                  <p className="text-error text-caption mt-0.5">{item.error}</p>
                 ) : (
-                  <p>
+                  <p className="text-on-surface-variant mt-0.5 text-footnote tabular-nums">
                     {formatBytes(item.originalBytes)} → {formatBytes(item.outputBytes ?? item.estimatedBytes ?? 0)}
                   </p>
                 )}
-                {uploadingItems.has(item.id) && <p className="item-status">Uploading...</p>}
+                {uploadingItems.has(item.id) && <p className="text-on-surface-variant text-caption mt-0.5">Uploading...</p>}
                 {uploadFailedItems.has(item.id) && (
-                  <p className="item-error">{uploadFailedItems.get(item.id)}</p>
+                  <p className="text-error text-caption mt-0.5">{uploadFailedItems.get(item.id)}</p>
                 )}
               </div>
             </article>
           ))}
         </section>
 
-        {saving && <p className="status-line">Saving files...</p>}
-        {uploadingItems.size > 0 && <p className="status-line">Uploading {uploadingItems.size} image(s)...</p>}
-        {uploadError && <p className="error-text">{uploadError}</p>}
-        {saveError && <p className="error-text">{saveError}</p>}
-        {saveSuccess && <p className="status-line">{saveSuccess}</p>}
+        {saving && <p className="text-on-surface-variant text-footnote">Saving files...</p>}
+        {uploadingItems.size > 0 && <p className="text-on-surface-variant text-footnote">Uploading {uploadingItems.size} image(s)...</p>}
+        {uploadError && <p className="text-error text-footnote">{uploadError}</p>}
+        {saveError && <p className="text-error text-footnote">{saveError}</p>}
+        {saveSuccess && <p className="text-on-surface-variant text-footnote">{saveSuccess}</p>}
 
-        <div className="result-actions">
-          <button className="btn-primary" type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>
-          <button className="btn-primary" type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
-          <button className="btn-secondary" type="button" onClick={() => setMode("edit")}>Back to edit settings</button>
+        <div className="flex gap-sm flex-wrap">
+          <button className={btnPrimary} type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>
+          <button className={btnPrimary} type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
+          <button className={btnSecondary} type="button" onClick={() => setMode("edit")}>Back to edit settings</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="page-stack">
-      <header className="page-header">
+    <div className="grid gap-lg max-w-page">
+      <header className="flex justify-between items-start gap-lg">
         <div>
-          <h2>Optimize</h2>
-          <p>Apply a preset, tune each image, then compress.</p>
+          <h2 className="text-large-title font-bold text-on-surface text-balance">Optimize</h2>
+          <p className="text-on-surface-variant mt-xs text-body text-pretty">Apply a preset, tune each image, then compress.</p>
         </div>
-        <div className="header-actions">
+        <div className="flex gap-sm items-end flex-wrap">
           {presets.length > 0 && (
-            <label>
+            <label className="grid gap-xs text-footnote font-medium text-on-surface-variant">
               Preset
               <select
+                className="rounded-md border border-outline-variant bg-surface-container text-on-surface p-2.5 text-body transition-[border-color,box-shadow] duration-150 ease-out focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 w-full"
                 value={selectedPresetId}
                 onChange={(e) => setSelectedPresetId(e.target.value)}
               >
@@ -490,81 +493,86 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, pr
               </select>
             </label>
           )}
-          <button className="btn-secondary" type="button" onClick={handleApplyPreset}>Apply preset</button>
-          <button className="btn-primary" type="button" disabled={!canCompress} onClick={handleCompress}>Compress</button>
+          <button className={btnSecondary} type="button" onClick={handleApplyPreset}>Apply preset</button>
+          <button className={btnPrimary} type="button" disabled={!canCompress} onClick={handleCompress}>Compress</button>
         </div>
       </header>
 
       <section
-        className={`drop-zone${dragging ? " drop-zone--active" : ""}`}
+        data-testid="drop-zone"
+        className={cn(
+          "border-2 border-dashed rounded-lg bg-surface-container-low p-2xl px-xl text-center text-on-surface-variant text-callout",
+          "transition-[border-color,background-color] duration-150 ease-out cursor-pointer",
+          "hover:border-outline hover:bg-surface-container",
+          dragging && "border-primary bg-[rgba(255,149,0,0.08)] border-solid",
+        )}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        <div className="drop-zone-text">Drop images here</div>
-        <div className="drop-zone-hint">
+        <div className="text-headline font-medium text-on-surface mb-sm">Drop images here</div>
+        <div className="text-footnote text-on-surface-variant opacity-70">
           or{" "}
-          <button className="btn-tertiary" type="button" onClick={handleChooseImages} disabled={importing}>
+          <button className={btnTertiary} type="button" onClick={handleChooseImages} disabled={importing}>
             Choose images
           </button>
         </div>
       </section>
 
-      {dropError && <p className="error-text" role="alert">{dropError}</p>}
+      {dropError && <p className="text-error text-footnote" role="alert">{dropError}</p>}
       {importing && (
-        <section className="item-list" aria-label="Importing images">
+        <section className="grid gap-sm grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Importing images">
           {Array.from({ length: 3 }, (_, i) => (
-            <article key={i} className="image-row">
-              <div className="image-row__thumb" style={{ background: "var(--surface-container-high)" }} />
-              <div className="image-row__meta">
-                <strong style={{ height: "var(--fs-callout)", background: "var(--surface-container-high)", borderRadius: "var(--radius-sm)" }}>&nbsp;</strong>
-                <p style={{ height: "var(--fs-footnote)", background: "var(--surface-container-high)", borderRadius: "var(--radius-sm)", marginTop: "4px" }}>&nbsp;</p>
+            <article key={i} className="relative bg-surface-container border border-outline-variant rounded-md flex flex-col gap-sm p-md">
+              <div className="w-full aspect-square rounded-[calc(var(--radius-md)-2px)] overflow-hidden bg-surface-container-high flex items-center justify-center" aria-hidden="true" />
+              <div className="flex flex-col gap-0.5 min-w-0">
+                <strong className="h-[var(--text-callout)] bg-surface-container-high rounded-xs">&nbsp;</strong>
+                <p className="h-[var(--text-footnote)] bg-surface-container-high rounded-xs mt-1">&nbsp;</p>
               </div>
             </article>
           ))}
         </section>
       )}
-      {compressing && <p className="status-line">Compressing images...</p>}
-      {compressError && <p className="error-text">{compressError}</p>}
+      {compressing && <p className="text-on-surface-variant text-footnote">Compressing images...</p>}
+      {compressError && <p className="text-error text-footnote">{compressError}</p>}
 
-      <section className="item-list" aria-label="Images to optimize">
+      <section className="grid gap-sm grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Images to optimize">
         {items.map((item) => (
-          <article className="image-row" key={item.id}>
+          <article className="relative bg-surface-container border border-outline-variant rounded-md flex flex-col gap-sm p-md transition-[border-color,background-color] duration-150 ease-out hover:border-outline hover:bg-surface-container-high" key={item.id}>
             <button
               type="button"
-              className="image-row__remove"
+              className="absolute top-1 right-1 size-[22px] border-none rounded-full bg-surface-container-high text-on-surface-variant text-base leading-none p-0 cursor-pointer flex items-center justify-center opacity-0 transition-[opacity,background] duration-150 group-hover:opacity-100 focus-within:opacity-100 hover:bg-outline hover:text-on-surface"
               aria-label={`Remove ${item.fileName} from queue`}
               onClick={() => removeItem(item.id)}
             >
               ×
             </button>
-            <div className="image-row__thumb">
+            <div className="w-full aspect-square rounded-[calc(var(--radius-md)-2px)] overflow-hidden bg-surface-container-low flex items-center justify-center">
               {thumbnails[item.id] ? (
-                <img src={thumbnails[item.id]} alt="" loading="lazy" />
+                <img src={thumbnails[item.id]} alt="" loading="lazy" className="w-full h-full object-cover block" />
               ) : (
-                <span className="image-row__thumb-placeholder" aria-hidden="true" />
+                <span className="w-full h-full bg-surface-container-high" aria-hidden="true" />
               )}
             </div>
-            <div className="image-row__meta">
-              <strong>{item.fileName}</strong>
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <strong className="text-callout font-semibold text-on-surface overflow-hidden text-ellipsis whitespace-nowrap">{item.fileName}</strong>
               {item.error ? (
-                <p className="item-error">{item.error}</p>
+                <p className="text-error text-caption mt-0.5">{item.error}</p>
               ) : (
-                <p>
+                <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty tabular-nums">
                   {item.sourceFormat.toUpperCase()} → {item.settings.targetFormat.toUpperCase()} |{" "}
                   {formatBytes(item.originalBytes)} → {formatBytes(item.estimatedBytes ?? 0)}
                 </p>
               )}
-              {item.warning && <p className="item-warning">{item.warning}</p>}
+              {item.warning && <p className="text-on-tertiary text-caption mt-0.5">{item.warning}</p>}
               {!item.error && (
-                <label>
+                <label className="flex flex-col mt-xs text-footnote text-on-surface-variant">
                   Quality {item.settings.quality}%
-                  <input
-                    max={100}
-                    min={1}
-                    onChange={(event) => updateQuality(item.id, Number(event.currentTarget.value))}
-                    type="range"
+                  <Slider
                     value={item.settings.quality}
+                    onValueChange={(v) => updateQuality(item.id, v)}
+                    min={1}
+                    max={100}
                   />
                 </label>
               )}

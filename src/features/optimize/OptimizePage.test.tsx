@@ -355,7 +355,7 @@ describe("OptimizePage", () => {
 
   it("dropping file with usable path calls inspectImage", async () => {    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    const dropZone = document.querySelector(".drop-zone")!;
+    const dropZone = document.querySelector("[data-testid='drop-zone']")!;
     const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });
     Object.defineProperty(file, "path", { value: "/tmp/dropped-photo.jpg" });
     const fileList = Object.assign([file], { item: (i: number) => (fileList as unknown as File[])[i] });
@@ -399,7 +399,7 @@ describe("OptimizePage", () => {
   it("dropping file without usable path shows error and does not call inspectImage", async () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    const dropZone = document.querySelector(".drop-zone")!;
+    const dropZone = document.querySelector("[data-testid='drop-zone']")!;
     const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });
     const fileList = Object.assign([file], { item: (i: number) => (fileList as unknown as File[])[i] });
 
