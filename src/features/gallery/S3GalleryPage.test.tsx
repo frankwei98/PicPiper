@@ -251,6 +251,33 @@ describe("S3GalleryPage", () => {
     expect(screen.queryByText(/move/i)).not.toBeInTheDocument();
   });
 
+  it("switches profile via select and reloads objects with new profile's defaultPrefix", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ profile, prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    // Initial load uses profile 1 with its defaultPrefix
+    await screen.findByText("images/photo.webp");
+    expect(listObjects).toHaveBeenCalledWith({ profile, prefix: "2026/06" });
+
+    // Switch to profile 2
+    const select = screen.getByRole("combobox", { name: /profile/i });
+    await user.selectOptions(select, "p2");
+
+    // Should reload with profile 2 and its defaultPrefix
+    expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
+  });
+
   it("upload local images calls generateObjectKey and uploadObject, then refreshes", async () => {
     mockDialogOpen.mockResolvedValueOnce(["/tmp/new-photo.jpg"] as unknown as string);
     const user = userEvent.setup();

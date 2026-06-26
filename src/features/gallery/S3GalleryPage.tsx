@@ -10,7 +10,13 @@ interface S3GalleryPageProps {
 }
 
 export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
-  const selectedProfile = galleryFocus.profile ?? profiles[0];
+  const [selectedProfileId, setSelectedProfileId] = useState(
+    galleryFocus.profile?.id ?? profiles[0]?.id ?? "",
+  );
+  const selectedProfile = useMemo(
+    () => profiles.find((p) => p.id === selectedProfileId) ?? profiles[0],
+    [profiles, selectedProfileId],
+  );
   const [prefix, setPrefix] = useState(
     galleryFocus.prefix || selectedProfile?.defaultPrefix || "",
   );
@@ -191,7 +197,16 @@ export function S3GalleryPage({ galleryFocus, profiles }: S3GalleryPageProps) {
         <button type="button" onClick={handleUploadLocal}>Upload local images</button>
       </header>
       <section className="gallery-toolbar">
-        <select aria-label="Profile" value={selectedProfile?.id ?? ""}>
+        <select
+          aria-label="Profile"
+          value={selectedProfile?.id ?? ""}
+          onChange={(e) => {
+            const newId = e.target.value;
+            setSelectedProfileId(newId);
+            const newProfile = profiles.find((p) => p.id === newId);
+            setPrefix(newProfile?.defaultPrefix ?? "");
+          }}
+        >
           {profiles.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
