@@ -129,6 +129,31 @@ describe("OptimizePage", () => {
     expect(screen.getByText(/1.2 MB => 240 KB/)).toBeInTheDocument();
   });
 
+  it("sends imported image in compressBatch items (not an empty array)", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Import an image
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText("real-photo.jpg");
+
+    // Click Compress
+    await user.click(screen.getByRole("button", { name: "Compress" }));
+
+    expect(compressBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            id: "real-photo",
+            sourcePath: "/tmp/real-photo.jpg",
+            outputFileName: "real-photo.webp",
+            settings: expect.objectContaining({ targetFormat: "webp", quality: 68 }),
+          }),
+        ]),
+      }),
+    );
+  });
+
   it("Save to local folder opens directory picker and copies files", async () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);

@@ -122,6 +122,16 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const handleCompress = async () => {
     setCompressError(null);
     setCompressing(true);
+
+    const batchItems = items
+      .filter((item) => item.status === "ready" || item.status === "pending")
+      .map((item) => ({
+        id: item.id,
+        sourcePath: item.sourcePath,
+        outputFileName: item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`),
+        settings: item.settings,
+      }));
+
     setItems((current) =>
       current.map((item) =>
         item.status === "ready" || item.status === "pending"
@@ -131,14 +141,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     );
 
     try {
-      const batchItems = items
-        .filter((item) => item.status === "compressing")
-        .map((item) => ({
-          id: item.id,
-          sourcePath: item.sourcePath,
-          outputFileName: item.fileName.replace(/\.[^.]+$/, `.${item.settings.targetFormat}`),
-          settings: item.settings,
-        }));
 
       const response = await tauriApi.compressBatch({ items: batchItems });
 
