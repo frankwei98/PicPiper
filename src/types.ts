@@ -2,7 +2,14 @@ export type AppView = "optimize" | "gallery" | "settings";
 
 export type ImageFormat = "jpg" | "png" | "webp" | "avif" | "heif";
 
-export type ImageStatus = "pending" | "ready" | "compressing" | "compressed" | "failed";
+export type ImageStatus =
+  | "inspecting"
+  | "queued"
+  | "compressing"
+  | "loadingPreview"
+  | "compressed"
+  | "failed"
+  | "cancelled";
 
 export interface CompressionSettings {
   targetFormat: ImageFormat;
@@ -23,6 +30,10 @@ export interface OptimizeItem {
   status: ImageStatus;
   warning?: string;
   error?: string;
+  originalPreviewUrl?: string;
+  compressedPreviewUrl?: string;
+  taskVersion?: number;
+  cancelling?: boolean;
   settings: CompressionSettings;
 }
 
