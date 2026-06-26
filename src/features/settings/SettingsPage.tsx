@@ -51,15 +51,26 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
 
   // Preset management state
   const [editingPreset, setEditingPreset] = useState<CompressionPreset | null>(null);
+  const [isAddingPreset, setIsAddingPreset] = useState(false);
   const [presetForm, setPresetForm] = useState<Omit<CompressionPreset, "id">>({ ...EMPTY_PRESET });
+
+  const isPresetDialogOpen = isAddingPreset || editingPreset !== null;
+
+  const closePresetDialog = () => {
+    setEditingPreset(null);
+    setIsAddingPreset(false);
+    setPresetForm({ ...EMPTY_PRESET });
+  };
 
   const openAddPreset = () => {
     setEditingPreset(null);
+    setIsAddingPreset(true);
     setPresetForm({ ...EMPTY_PRESET });
   };
 
   const openEditPreset = (preset: CompressionPreset) => {
     setEditingPreset(preset);
+    setIsAddingPreset(false);
     setPresetForm({
       name: preset.name,
       targetFormat: preset.targetFormat,
@@ -85,8 +96,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     const nextSettings: AppSettings = { ...settings, presets: updatedPresets };
     await settingsApi.saveSettings(nextSettings);
     onSettingsChange(nextSettings);
-    setEditingPreset(null);
-    setPresetForm({ ...EMPTY_PRESET });
+    closePresetDialog();
   };
 
   const handleDeletePreset = async (presetId: string) => {
@@ -98,6 +108,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     onSettingsChange(nextSettings);
     if (editingPreset?.id === presetId) {
       setEditingPreset(null);
+      setIsAddingPreset(false);
       setPresetForm({ ...EMPTY_PRESET });
     }
   };
@@ -264,7 +275,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
             <h3>Presets</h3>
             <button type="button" onClick={openAddPreset}>Add preset</button>
           </div>
-          {settings.presets.length === 0 && !editingPreset && (
+          {settings.presets.length === 0 && (
             <p className="status-line">No presets configured.</p>
           )}
           {settings.presets.length > 0 && (
@@ -282,9 +293,24 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
               ))}
             </ul>
           )}
-          {(editingPreset !== null || settings.presets.length === 0) && (
+        </article>
+      </section>
+
+      {isPresetDialogOpen && (
+        <div className="modal-backdrop" onClick={closePresetDialog}>
+          <section
+            className="modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="preset-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3 id="preset-dialog-title">{editingPreset ? "Edit preset" : "Add preset"}</h3>
+              <button type="button" onClick={closePresetDialog}>Close</button>
+            </div>
             <form
-              className="profile-form"
+              className="profile-form preset-dialog-form"
               onSubmit={(e) => { e.preventDefault(); handleSavePreset(); }}
             >
               <label>
@@ -354,16 +380,12 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
               </label>
               <div className="preset-form-actions">
                 <button type="submit">{editingPreset ? "Update preset" : "Save preset"}</button>
-                {editingPreset && (
-                  <button type="button" onClick={() => { setEditingPreset(null); setPresetForm({ ...EMPTY_PRESET }); }}>
-                    Cancel
-                  </button>
-                )}
+                <button type="button" onClick={closePresetDialog}>Cancel</button>
               </div>
             </form>
-          )}
-        </article>
-      </section>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

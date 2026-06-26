@@ -80,6 +80,11 @@ pub fn load_secret(fallback_dir: &Path, profile_id: &str) -> AppResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Serialize tests that mutate PIC_PIPER_NO_KEYCHAIN so they don't
+    // interfere with each other when cargo runs tests in parallel.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn credential_ref_is_stable() {
@@ -88,6 +93,7 @@ mod tests {
 
     #[test]
     fn no_keychain_env_skips_keyring_and_uses_fallback() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         // With PIC_PIPER_NO_KEYCHAIN=1, save_secret always uses file fallback.
         let dir = tempfile::tempdir().unwrap();
         unsafe {
@@ -112,6 +118,7 @@ mod tests {
 
     #[test]
     fn fallback_requires_explicit_permission_without_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         // Without the env var, if keyring fails and allow_insecure_fallback is false,
         // save_secret should return an error.
         // (In CI the keyring backend is typically unavailable.)

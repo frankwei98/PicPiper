@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
@@ -178,11 +178,13 @@ describe("SettingsPage", () => {
     // Click "Add preset"
     await user.click(screen.getByRole("button", { name: /add preset/i }));
 
+    const dialog = screen.getByRole("dialog", { name: /add preset/i });
+
     // Fill out the preset form
-    await user.type(screen.getByLabelText(/preset name/i), "Thumbnail");
-    await user.selectOptions(screen.getByLabelText(/target format/i), "jpg");
-    await user.clear(screen.getByLabelText(/quality/i));
-    await user.type(screen.getByLabelText(/quality/i), "60");
+    await user.type(within(dialog).getByLabelText(/preset name/i), "Thumbnail");
+    await user.selectOptions(within(dialog).getByLabelText(/target format/i), "jpg");
+    await user.clear(within(dialog).getByLabelText(/quality/i));
+    await user.type(within(dialog).getByLabelText(/quality/i), "60");
 
     // Save the preset
     await user.click(screen.getByRole("button", { name: /save preset/i }));
@@ -230,8 +232,10 @@ describe("SettingsPage", () => {
     // Click "Edit" on the preset
     await user.click(screen.getByRole("button", { name: /edit/i }));
 
+    const dialog = screen.getByRole("dialog", { name: /edit preset/i });
+
     // Change the name
-    const nameInput = screen.getByLabelText(/preset name/i);
+    const nameInput = within(dialog).getByLabelText(/preset name/i);
     await user.clear(nameInput);
     await user.type(nameInput, "Updated preset");
 
