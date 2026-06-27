@@ -50,8 +50,6 @@ function contentTypeFor(format: string) {
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [quality, setQuality] = useState(DEFAULT_SETTINGS.quality);
-  // removeGps is always true since the encoder always strips metadata
-  const removeGps = true;
   const [compareItemId, setCompareItemId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -64,7 +62,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const tauriDragDropActive = useRef(false);
   const debounceRef = useRef<number | undefined>(undefined);
   const qualityRef = useRef(quality);
-  const removeGpsRef = useRef(removeGps);
 
   useEffect(() => {
     return () => {
@@ -84,13 +81,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     try {
       const inspection: ImageInspection = await tauriApi.inspectImage({
         path: sourcePath,
-        settings: { ...DEFAULT_SETTINGS, quality: qualityRef.current, removeGps: removeGpsRef.current },
+        settings: { ...DEFAULT_SETTINGS, quality: qualityRef.current, removeGps: true },
       });
 
       const sourceFormat = inspection.sourceFormat ?? "unknown";
       const targetFormat = defaultTargetFormat(sourceFormat);
       const currentQuality = qualityRef.current;
-      const currentRemoveGps = removeGpsRef.current;
+      const currentRemoveGps = true;
 
       setItems((current) =>
         current.map((ci) =>
@@ -141,7 +138,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       sourceFormat: "unknown" as const,
       originalBytes: 0,
       status: "inspecting" as const,
-      settings: { ...DEFAULT_SETTINGS, quality, removeGps },
+      settings: { ...DEFAULT_SETTINGS, quality, removeGps: true },
       taskVersion: 0,
     }));
 
@@ -152,7 +149,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
 
     setImporting(false);
-  }, [quality, removeGps, inspectSingleItem]);
+  }, [quality, inspectSingleItem]);
 
   const handleChooseImages = async () => {
     const selected = await open({
@@ -349,7 +346,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   }, [items, runCompressionTask]);
 
   // --- Global settings requeue with debounce ---
-  const scheduleGlobalRequeue = (nextQuality: number, nextRemoveGps: boolean) => {
+  const scheduleGlobalRequeue = (nextQuality: number) => {
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       optimizerRun.current = null;
@@ -370,7 +367,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                 settings: {
                   ...item.settings,
                   quality: nextQuality,
-                  removeGps: nextRemoveGps,
+                  removeGps: true,
                 },
               }
             : item,
@@ -382,7 +379,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const handleQualityChange = (nextQuality: number) => {
     qualityRef.current = nextQuality;
     setQuality(nextQuality);
-    scheduleGlobalRequeue(nextQuality, removeGpsRef.current);
+    scheduleGlobalRequeue(nextQuality);
   };
 
   // --- Per-item actions ---
@@ -401,7 +398,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
               compressedPreviewUrl: undefined,
               error: undefined,
               taskVersion: (item.taskVersion ?? 0) + 1,
-              settings: { ...item.settings, targetFormat, quality, removeGps },
+              settings: { ...item.settings, targetFormat, quality, removeGps: true },
             }
           : item,
       ),
@@ -437,7 +434,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                 error: undefined,
                 cancelling: false,
                 taskVersion: (item.taskVersion ?? 0) + 1,
-                settings: { ...item.settings, quality, removeGps },
+                settings: { ...item.settings, quality, removeGps: true },
               }
             : item,
         ),

@@ -33,6 +33,7 @@ export interface ImageInspection {
 export interface CompressionSettings {
   targetFormat: WritableImageFormat;
   quality: number;
+  /** @deprecated Ignored — metadata (including GPS) is always stripped during compression. */
   removeGps: boolean;
 }
 

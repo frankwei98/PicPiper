@@ -81,6 +81,7 @@ pub struct SaveCredentialResponse {
 pub struct CompressionSettings {
     pub target_format: ImageFormat,
     pub quality: u8,
+    /// Ignored — metadata (including GPS) is always stripped during compression.
     pub remove_gps: bool,
 }
 
