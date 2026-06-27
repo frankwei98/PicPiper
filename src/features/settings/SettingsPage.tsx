@@ -3,7 +3,7 @@ import { settingsApi } from "../../api/tauri";
 import type { AppSettings } from "../../api/tauri";
 import type { S3Profile } from "../../types";
 import { StatusMessage } from "../../components/ui/Toast";
-import { btnPrimary, inputClass, labelClass } from "../../components/ui/buttonStyles";
+import { btnPrimary, btnSecondary, inputClass, labelClass } from "../../components/ui/buttonStyles";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -25,7 +25,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     settings.defaultProfileId ?? settings.profiles[0]?.id ?? "",
   );
 
-  const profile = settings.profiles.find((p) => p.id === editingProfileId) ?? settings.profiles[0];
+  const profile = settings.profiles.find((p) => p.id === editingProfileId);
 
   const [name, setName] = useState(profile?.name ?? "Personal S3");
   const [endpoint, setEndpoint] = useState(profile?.endpoint ?? "");
@@ -39,12 +39,25 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [namingTemplate, setNamingTemplate] = useState(settings.namingTemplate);
   const [publicBaseUrl, setPublicBaseUrl] = useState(profile?.publicBaseUrl ?? "");
   const [defaultPrefix, setDefaultPrefix] = useState(profile?.defaultPrefix ?? "");
-  const [pathStyle] = useState(profile?.pathStyle ?? true);
+  const [pathStyle, setPathStyle] = useState(profile?.pathStyle ?? true);
 
   // Re-populate form fields when the selected profile changes
   useEffect(() => {
-    const p = settings.profiles.find((pr) => pr.id === editingProfileId) ?? settings.profiles[0];
-    if (!p) return;
+    const p = settings.profiles.find((pr) => pr.id === editingProfileId);
+    if (!p) {
+      // Clear form for new profile
+      setName("");
+      setEndpoint("");
+      setRegion("auto");
+      setBucket("");
+      setAccessKeyId("");
+      setSecretAccessKey("");
+      setAllowInsecureFallback(false);
+      setPublicBaseUrl("");
+      setDefaultPrefix("");
+      setPathStyle(true);
+      return;
+    }
     setName(p.name);
     setEndpoint(p.endpoint);
     setRegion(p.region);
@@ -54,6 +67,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     setAllowInsecureFallback(p.insecureSecretFallback);
     setPublicBaseUrl(p.publicBaseUrl ?? "");
     setDefaultPrefix(p.defaultPrefix);
+    setPathStyle(p.pathStyle ?? true);
   }, [editingProfileId, settings.profiles]);
 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -83,7 +97,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
           })
         : {
             credentialRef: profile!.credentialRef!,
-            insecureFallbackUsed: profile!.insecureSecretFallback ?? false,
+            insecureFallbackUsed: allowInsecureFallback,
           };
 
       const savedProfile: S3Profile = {
@@ -177,6 +191,14 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
               />
             </label>
             <label className={labelClass}>
+              Path style addressing
+              <input
+                type="checkbox"
+                checked={pathStyle}
+                onChange={(e) => setPathStyle(e.target.checked)}
+              />
+            </label>
+            <label className={labelClass}>
               Naming template
               <input className={inputClass} value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
             </label>
@@ -188,7 +210,16 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
               Default prefix
               <input className={inputClass} placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
             </label>
-            <button className={btnPrimary} type="submit" disabled={saving}>Save profile</button>
+            <div className="col-span-2 flex gap-sm">
+              <button className={btnPrimary} type="submit" disabled={saving}>Save profile</button>
+              <button
+                className={btnSecondary}
+                type="button"
+                onClick={() => setEditingProfileId("")}
+              >
+                Add profile
+              </button>
+            </div>
           </form>
           {saving && <StatusMessage>Saving profile...</StatusMessage>}
           {saveMessage && <StatusMessage>{saveMessage}</StatusMessage>}

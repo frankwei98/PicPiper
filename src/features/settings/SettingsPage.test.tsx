@@ -222,4 +222,150 @@ describe("SettingsPage", () => {
     );
     expect(onSettingsChange).toHaveBeenCalled();
   });
+
+  it("persists allowInsecureFallback toggle without re-entering the secret", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [
+            {
+              id: "personal",
+              name: "Personal R2",
+              endpoint: "https://example.r2.cloudflarestorage.com",
+              region: "auto",
+              bucket: "images",
+              accessKeyId: "access-key",
+              credentialRef: "s3:personal",
+              pathStyle: true,
+              defaultPrefix: "images",
+              insecureSecretFallback: false,
+            },
+          ],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    // Toggle the checkbox on without entering a new secret
+    await user.click(screen.getByLabelText("Allow local secret fallback"));
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(saveS3Secret).not.toHaveBeenCalled();
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profiles: expect.arrayContaining([
+          expect.objectContaining({
+            id: "personal",
+            insecureSecretFallback: true,
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("renders and saves path style addressing checkbox", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [
+            {
+              id: "personal",
+              name: "Personal R2",
+              endpoint: "https://example.r2.cloudflarestorage.com",
+              region: "auto",
+              bucket: "images",
+              accessKeyId: "access-key",
+              credentialRef: "s3:personal",
+              pathStyle: true,
+              defaultPrefix: "images",
+              insecureSecretFallback: false,
+            },
+          ],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    const checkbox = screen.getByLabelText("Path style addressing");
+    expect(checkbox).toBeInTheDocument();
+    expect(checkbox).toBeChecked();
+
+    // Toggle off
+    await user.click(checkbox);
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profiles: expect.arrayContaining([
+          expect.objectContaining({
+            id: "personal",
+            pathStyle: false,
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("adds a new profile without overwriting existing ones", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [
+            {
+              id: "existing",
+              name: "Existing S3",
+              endpoint: "https://s3.example.com",
+              region: "auto",
+              bucket: "existing-bucket",
+              accessKeyId: "key1",
+              credentialRef: "s3:existing",
+              pathStyle: true,
+              defaultPrefix: "images",
+              insecureSecretFallback: false,
+            },
+          ],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+          defaultProfileId: "existing",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    // Click Add profile
+    await user.click(screen.getByRole("button", { name: /add profile/i }));
+
+    // Fill in new profile
+    await user.clear(screen.getByLabelText("Profile name"));
+    await user.type(screen.getByLabelText("Profile name"), "New S3");
+    await user.type(screen.getByLabelText("Endpoint"), "https://new.s3.example.com");
+    await user.clear(screen.getByLabelText("Region"));
+    await user.type(screen.getByLabelText("Region"), "auto");
+    await user.type(screen.getByLabelText("Bucket"), "new-bucket");
+    await user.type(screen.getByLabelText("Access key ID"), "new-key");
+    await user.type(screen.getByLabelText("Secret access key"), "new-secret");
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(saveSettings).toHaveBeenCalled();
+    const savedSettings = saveSettings.mock.calls[0][0];
+    // Both profiles should exist
+    expect(savedSettings.profiles).toHaveLength(2);
+    expect(savedSettings.profiles[0].id).toBe("existing");
+    expect(savedSettings.profiles[0].name).toBe("Existing S3");
+    expect(savedSettings.profiles[1].name).toBe("New S3");
+    expect(savedSettings.profiles[1].id).not.toBe("existing");
+  });
 });
