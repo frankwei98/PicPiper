@@ -181,13 +181,19 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
     setDeleteTarget(obj);
   };
 
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const handleDeleteConfirm = async () => {
     if (!selectedProfile || !deleteTarget) return;
-    setDeletingKey(deleteTarget.key);
+    const targetKey = deleteTarget.key;
+    setDeletingKey(targetKey);
     setDeleteTarget(null);
+    setDeleteError(null);
     try {
-      await galleryApi.deleteObject({ profile: selectedProfile, key: deleteTarget.key });
+      await galleryApi.deleteObject({ profile: selectedProfile, key: targetKey });
       await loadObjects();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setDeletingKey(null);
     }
@@ -274,6 +280,7 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
       )}
       {deletingKey && <StatusMessage>Deleting {deletingKey}...</StatusMessage>}
       {downloadingKey && <StatusMessage>Downloading {downloadingKey}...</StatusMessage>}
+      {deleteError && <StatusMessage variant="error">{deleteError}</StatusMessage>}
       {error && <StatusMessage variant="error">{error}</StatusMessage>}
       {!loading && !error && filteredObjects.length === 0 && (
         <section className="border border-dashed border-outline-variant rounded-lg bg-surface-container-low p-2xl text-center text-on-surface-variant text-callout">

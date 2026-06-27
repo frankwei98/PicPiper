@@ -129,7 +129,9 @@ async fn upload_gallery_object(
             uploaded_bytes: result.size,
             target_format,
         };
-        let _ = history::append_history(&paths.history_path, entry);
+        if let Err(err) = history::append_history(&paths.history_path, entry) {
+            eprintln!("[history] warning: failed to append upload history: {}", err);
+        }
     }
 
     Ok(result)

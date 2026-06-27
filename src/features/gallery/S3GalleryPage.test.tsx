@@ -181,6 +181,27 @@ describe("S3GalleryPage", () => {
     expect(listObjects).toHaveBeenCalledTimes(2);
   });
 
+  it("shows an error when delete rejects", async () => {
+    deleteObject.mockRejectedValueOnce(new Error("Access denied"));
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /delete/i }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /delete/i }));
+
+    expect(await screen.findByText(/access denied/i)).toBeInTheDocument();
+    // listObjects should only be called once (initial load), not refreshed after failed delete
+    expect(listObjects).toHaveBeenCalledTimes(1);
+  });
+
   it("does not delete when confirmation is cancelled", async () => {
     const user = userEvent.setup();
     render(
