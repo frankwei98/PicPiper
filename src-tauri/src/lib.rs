@@ -18,7 +18,7 @@ use models::{
     SaveCredentialResponse, SaveSettingsRequest, UploadHistoryEntry, UploadObjectRequest,
 };
 use sha2::{Digest, Sha256};
-use state::AppPaths;
+use state::{AppPaths, HistoryStore};
 use tauri::{Manager, State};
 
 #[tauri::command]
@@ -42,10 +42,7 @@ async fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnai
 
 #[tauri::command]
 async fn create_optimizer_run(paths: State<'_, AppPaths>) -> AppResult<CreateOptimizerRunResponse> {
-    let run_id = format!(
-        "run-{}",
-        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
-    );
+    let run_id = format!("run-{}", uuid::Uuid::new_v4());
     let cache_dir = paths.data_dir.join("optimizer-cache");
     let output_dir = cache_dir.join(&run_id);
     tokio::fs::create_dir_all(&output_dir)
@@ -92,6 +89,7 @@ async fn delete_gallery_object(
 #[tauri::command]
 async fn upload_gallery_object(
     paths: State<'_, AppPaths>,
+    history: State<'_, HistoryStore>,
     request: UploadObjectRequest,
 ) -> AppResult<GalleryObject> {
     let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
@@ -137,7 +135,7 @@ async fn upload_gallery_object(
             uploaded_bytes: result.size,
             target_format,
         };
-        if let Err(err) = history::append_history(&paths.history_path, entry) {
+        if let Err(err) = history.append(entry) {
             eprintln!(
                 "[history] warning: failed to append upload history: {}",
                 err
@@ -226,6 +224,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let paths = state::AppPaths::from_app_handle(app.handle())?;
+            let history_store = state::HistoryStore::new(paths.history_path.clone());
+            app.manage(history_store);
             app.manage(paths);
             Ok(())
         })
