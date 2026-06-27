@@ -10,7 +10,7 @@ use crate::{
         DeleteObjectRequest, DownloadObjectRequest, GalleryObject, ListObjectsRequest, S3Profile,
         UploadObjectRequest,
     },
-    optimizer,
+    naming, optimizer,
 };
 
 async fn client_for(profile: &S3Profile, secret: String) -> Client {
@@ -135,7 +135,14 @@ pub async fn list_objects(
         all_objects.extend(map_s3_objects(&request.profile, response.contents()));
 
         if response.is_truncated().unwrap_or(false) {
-            continuation_token = response.next_continuation_token().map(String::from);
+            let next_token = response.next_continuation_token().map(String::from);
+            if next_token.is_none() {
+                return Err(AppError::new(
+                    "s3PaginationFailed",
+                    "S3 response indicates more results but returned no continuation token.",
+                ));
+            }
+            continuation_token = next_token;
         } else {
             break;
         }
@@ -223,6 +230,7 @@ pub async fn upload_object(
     request: UploadObjectRequest,
     secret: String,
 ) -> AppResult<GalleryObject> {
+    naming::validate_object_key(&request.object_key)?;
     let client = client_for(&request.profile, secret).await;
     let body = ByteStream::from_path(&request.source_path)
         .await
