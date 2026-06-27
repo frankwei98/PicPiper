@@ -150,11 +150,26 @@ async fn upload_gallery_object(
 async fn generate_object_key(
     request: GenerateObjectKeyRequest,
 ) -> AppResult<GenerateObjectKeyResponse> {
-    let bytes = tokio::fs::read(&request.source_path)
+    // Stream the file through SHA-256 to avoid reading the entire contents
+    // into memory. Large images (≥10 MB) would otherwise double their peak
+    // memory footprint since upload_object reads the file again.
+    use tokio::io::AsyncReadExt;
+    let mut file = tokio::fs::File::open(&request.source_path)
         .await
         .map_err(|err| error::AppError::new("readFileFailed", err.to_string()))?;
-    let hash = Sha256::digest(&bytes);
-    let content_hash = hex::encode(hash);
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .await
+            .map_err(|err| error::AppError::new("readFileFailed", err.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let content_hash = hex::encode(hasher.finalize());
 
     let date = chrono::Utc::now().date_naive();
     let rendered = naming::render_object_key(

@@ -7,6 +7,33 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use image::codecs::jpeg::JpegEncoder;
 use std::path::PathBuf;
 
+/// Convert premultiplied RGBA to straight (non-premultiplied) RGBA.
+///
+/// CoreGraphics renders with `kCGImageAlphaPremultipliedLast`, meaning each
+/// color channel has been multiplied by alpha/255. The PNG encoder expects
+/// straight alpha, so we divide each color channel back by alpha.
+fn unpremultiply(premultiplied: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(premultiplied.len());
+    for chunk in premultiplied.chunks_exact(4) {
+        let r = chunk[0] as u16;
+        let g = chunk[1] as u16;
+        let b = chunk[2] as u16;
+        let a = chunk[3];
+        if a == 0 {
+            out.extend_from_slice(&[0, 0, 0, 0]);
+        } else {
+            let a16 = a as u16;
+            // Round-trip: premultiplied = floor(straight * alpha / 255)
+            // Inverse:  straight ≈ premultiplied * 255 / alpha  (rounded)
+            out.push(((r * 255 + a16 / 2) / a16).min(255) as u8);
+            out.push(((g * 255 + a16 / 2) / a16).min(255) as u8);
+            out.push(((b * 255 + a16 / 2) / a16).min(255) as u8);
+            out.push(a);
+        }
+    }
+    out
+}
+
 /// Encode RGBA thumbnail bytes as a data URL. If any alpha byte is less than
 /// 255, the image is encoded as PNG to preserve transparency. Otherwise it is
 /// encoded as JPEG for smaller output.
@@ -161,7 +188,10 @@ fn read_thumbnail_macos(path: &str, max_size: u32) -> AppResult<ReadThumbnailRes
         );
 
         let data = ctx.data();
-        let rgba: Vec<u8> = data.to_vec();
+        // CGContext with kCGImageAlphaPremultipliedLast produces premultiplied
+        // RGBA. The PNG encoder expects straight (non-premultiplied) alpha, so
+        // we must undo the premultiplication before encoding.
+        let rgba = unpremultiply(data);
 
         let data_url = encode_thumbnail_data_url(width as u32, height as u32, &rgba)?;
 

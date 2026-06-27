@@ -53,6 +53,9 @@ pub fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageR
     let image =
         image::open(&source).map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
 
+    // Defensive: reject output_file_name values that could escape output_dir.
+    validate_output_file_name(&request.output_file_name)?;
+
     fs::create_dir_all(&request.output_dir)
         .map_err(|err| AppError::new("outputDirFailed", err.to_string()))?;
     let output_path = Path::new(&request.output_dir).join(&request.output_file_name);
@@ -175,12 +178,69 @@ pub fn cleanup_old_runs(cache_dir: &Path, max_age: std::time::Duration) -> usize
             continue;
         };
         if now.duration_since(modified).unwrap_or_default() > max_age {
-            let _ = fs::remove_dir_all(entry.path());
-            removed += 1;
+            if fs::remove_dir_all(entry.path()).is_ok() {
+                removed += 1;
+            }
         }
     }
 
     removed
+}
+
+/// Reject output file names that could escape the output directory via path
+/// traversal (`..`), absolute paths, directory separators, or control characters.
+fn validate_output_file_name(name: &str) -> AppResult<()> {
+    if name.is_empty() {
+        return Err(AppError::new(
+            "invalidOutputFileName",
+            "Output file name must not be empty.",
+        ));
+    }
+
+    let path = Path::new(name);
+
+    // Reject absolute paths
+    if path.is_absolute() {
+        return Err(AppError::new(
+            "invalidOutputFileName",
+            "Output file name must not be an absolute path.",
+        ));
+    }
+
+    // Reject any component that is ".." or "."
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                return Err(AppError::new(
+                    "invalidOutputFileName",
+                    "Output file name must not contain '..' path traversal.",
+                ));
+            }
+            std::path::Component::CurDir => {
+                return Err(AppError::new(
+                    "invalidOutputFileName",
+                    "Output file name must not contain '.' path component.",
+                ));
+            }
+            std::path::Component::Normal(_) => {}
+            _ => {
+                return Err(AppError::new(
+                    "invalidOutputFileName",
+                    "Output file name contains an invalid path component.",
+                ));
+            }
+        }
+    }
+
+    // Reject control characters
+    if name.chars().any(|c| c.is_control()) {
+        return Err(AppError::new(
+            "invalidOutputFileName",
+            "Output file name must not contain control characters.",
+        ));
+    }
+
+    Ok(())
 }
 
 fn estimate_bytes(original_bytes: u64, quality: u8) -> u64 {

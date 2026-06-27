@@ -74,6 +74,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [highlightedKeysState, setHighlightedKeysState] = useState<string[]>(galleryFocus.highlightedKeys);
   const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
   const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
+  const [uploading, setUploading] = useState(false);
 
   const loadObjects = useCallback(async () => {
     if (!selectedProfile) return;
@@ -98,8 +99,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   }, [loadObjects]);
 
   const handleUploadLocal = async () => {
-    if (!selectedProfile) return;
+    if (!selectedProfile || uploading) return;
     setUploadStatus(null);
+    setUploading(true);
     try {
       const selected = await open({
         multiple: true,
@@ -118,7 +120,8 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
 
       for (const filePath of paths) {
         const fileName = filePath.split("/").pop() ?? "image";
-        const ext = fileName.split(".").pop() ?? "jpg";
+        const dotIndex = fileName.lastIndexOf(".");
+        const ext = dotIndex > 0 ? fileName.substring(dotIndex + 1) : "jpg";
 
         const { objectKey } = await namingApi.generateObjectKey({
           sourcePath: filePath,
@@ -153,6 +156,8 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       await loadObjects();
     } catch (err) {
       setUploadStatus(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -261,7 +266,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           <h2 className="text-large-title font-bold text-on-surface text-balance">S3 Gallery</h2>
           <p className="text-on-surface-variant mt-xs text-body text-pretty">Browse a profile and prefix, then copy URLs or manage images.</p>
         </div>
-        <button className={btnPrimary} type="button" onClick={handleUploadLocal}>Upload local images</button>
+        <button className={btnPrimary} type="button" onClick={handleUploadLocal} disabled={uploading}>{uploading ? "Uploading…" : "Upload local images"}</button>
       </header>
       <section className="grid gap-sm grid-cols-3 max-md:grid-cols-1">
         <select

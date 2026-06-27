@@ -23,19 +23,31 @@ export function makeOutputFileName(fileName: string, targetFormat: WritableImage
 
 export function makeUniqueOutputFileNames(
   items: Array<{ id: string; fileName: string; targetFormat: WritableImageFormat }>,
-  alreadyClaimed?: Map<string, number>,
+  preferredCounts: Map<string, number>,
 ): Record<string, string> {
-  const seen = new Map<string, number>(alreadyClaimed);
+  const counts = new Map<string, number>(preferredCounts);
   const outputNames: Record<string, string> = {};
 
   for (const item of items) {
     const preferredName = makeOutputFileName(item.fileName, item.targetFormat);
-    const count = (seen.get(preferredName) ?? 0) + 1;
-    seen.set(preferredName, count);
+    const count = (counts.get(preferredName) ?? 0) + 1;
+    counts.set(preferredName, count);
     outputNames[item.id] = count === 1 ? preferredName : appendSuffix(preferredName, count);
   }
 
   return outputNames;
+}
+
+/// Increment preferred name counts for the items that were actually dispatched.
+/// Call this AFTER dispatching items so the next scheduler run sees the correct counts.
+export function trackDispatchedNames(
+  dispatchedItems: Array<{ fileName: string; targetFormat: WritableImageFormat }>,
+  preferredCounts: Map<string, number>,
+): void {
+  for (const item of dispatchedItems) {
+    const preferredName = makeOutputFileName(item.fileName, item.targetFormat);
+    preferredCounts.set(preferredName, (preferredCounts.get(preferredName) ?? 0) + 1);
+  }
 }
 
 function appendSuffix(fileName: string, suffix: number): string {

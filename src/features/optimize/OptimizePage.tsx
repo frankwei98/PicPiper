@@ -14,6 +14,7 @@ import {
   formatBytes,
   getCompressionConcurrency,
   makeUniqueOutputFileNames,
+  trackDispatchedNames,
   savingsPercent,
   shouldRequeueForGlobalSettings,
 } from "./optimizeQueue";
@@ -57,7 +58,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const activeTasks = useRef(new Set<string>());
-  const dispatchedOutputNames = useRef(new Map<string, number>());
+  // Tracks how many times each preferred (base) output name has been dispatched
+  // across scheduler runs, keyed by preferred name (e.g. "photo.webp" → 2).
+  // This matches the key space that makeUniqueOutputFileNames expects.
+  const preferredNameCounts = useRef(new Map<string, number>());
   const optimizerRun = useRef<{ runId: string; outputDir: string } | null>(null);
   const tauriDragDropActive = useRef(false);
   const debounceRef = useRef<number | undefined>(undefined);
@@ -332,16 +336,19 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         fileName: item.fileName,
         targetFormat: item.settings.targetFormat,
       })),
-      dispatchedOutputNames.current,
+      preferredNameCounts.current,
     );
 
     const nextItems = queuedItems.slice(0, availableSlots);
+    // Track preferred name counts only for items actually dispatched, so
+    // subsequent scheduler runs produce correct suffixes.
+    trackDispatchedNames(
+      nextItems.map((item) => ({ fileName: item.fileName, targetFormat: item.settings.targetFormat })),
+      preferredNameCounts.current,
+    );
     for (const item of nextItems) {
       activeTasks.current.add(item.id);
-      // Track the output name to prevent duplicates across scheduler runs
-      const outputName = outputNames[item.id];
-      dispatchedOutputNames.current.set(outputName, (dispatchedOutputNames.current.get(outputName) ?? 0) + 1);
-      void runCompressionTask(item, outputName);
+      void runCompressionTask(item, outputNames[item.id]);
     }
   }, [items, runCompressionTask]);
 
@@ -350,7 +357,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       optimizerRun.current = null;
-      dispatchedOutputNames.current.clear();
+      preferredNameCounts.current.clear();
       setItems((current) =>
         current.map((item) =>
           shouldRequeueForGlobalSettings(item)
@@ -385,7 +392,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   // --- Per-item actions ---
   const updateFormat = (id: string, targetFormat: WritableImageFormat) => {
     optimizerRun.current = null;
-    dispatchedOutputNames.current.clear();
+    preferredNameCounts.current.clear();
     setItems((current) =>
       current.map((item) =>
         item.id === id && item.status !== "cancelled"
@@ -479,7 +486,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const [uploadingItems, setUploadingItems] = useState<Set<string>>(new Set());
   const [uploadFailedItems, setUploadFailedItems] = useState<Map<string, string>>(new Map());
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
-  const uploadCancelledRef = useRef(false);
 
   const executeUploads = async (
     uploadItems: OptimizeItem[],
@@ -491,7 +497,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     const failed = new Map<string, string>();
 
     for (const item of uploadItems) {
-      if (uploadCancelledRef.current) break;
 
       const outputFileName = item.outputFileName ?? "image.webp";
       const ext = item.settings.targetFormat;
@@ -536,7 +541,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
     setUploadError(null);
     setUploadFailedItems(new Map());
-    uploadCancelledRef.current = false;
     const prefix = activeProfile.defaultPrefix || "images";
     const compressedItems = items.filter((item) => item.status === "compressed" && item.outputPath);
     if (compressedItems.length === 0) {
@@ -569,7 +573,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       return;
     }
     setUploadError(null);
-    uploadCancelledRef.current = false;
     const prefix = activeProfile.defaultPrefix || "images";
     const failedItems = items.filter(
       (item) => item.status === "compressed" && item.outputPath && uploadFailedItems.has(item.id),

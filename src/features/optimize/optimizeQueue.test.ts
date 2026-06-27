@@ -6,6 +6,7 @@ import {
   getCompressionConcurrency,
   makeOutputFileName,
   makeUniqueOutputFileNames,
+  trackDispatchedNames,
   shouldRequeueForGlobalSettings,
 } from "./optimizeQueue";
 import type { OptimizeItem } from "../../types";
@@ -53,17 +54,62 @@ describe("optimizeQueue", () => {
   });
 
   it("disambiguates duplicate output filenames", () => {
-    expect(
-      makeUniqueOutputFileNames([
+    const outputNames = makeUniqueOutputFileNames(
+      [
         { id: "a", fileName: "photo.jpg", targetFormat: "webp" },
         { id: "b", fileName: "photo.png", targetFormat: "webp" },
         { id: "c", fileName: "photo.jpg", targetFormat: "jpg" },
-      ]),
-    ).toEqual({
+      ],
+      new Map(),
+    );
+    expect(outputNames).toEqual({
       a: "photo.webp",
       b: "photo-2.webp",
       c: "photo.jpg",
     });
+  });
+
+  it("does not reuse names from prior batches (cross-batch uniqueness)", () => {
+    const counts = new Map<string, number>();
+
+    // Batch 1: dispatch two items with same preferred name
+    const batch1Names = makeUniqueOutputFileNames(
+      [
+        { id: "p1", fileName: "photo.jpg", targetFormat: "webp" },
+        { id: "p2", fileName: "photo.jpg", targetFormat: "webp" },
+      ],
+      counts,
+    );
+    expect(batch1Names).toEqual({ p1: "photo.webp", p2: "photo-2.webp" });
+
+    // Only track the dispatched names (simulating concurrency=1, dispatching p1 only)
+    trackDispatchedNames(
+      [{ fileName: "photo.jpg", targetFormat: "webp" }],
+      counts,
+    );
+    expect(counts.get("photo.webp")).toBe(1);
+
+    // Batch 2: dispatch p2 with updated counts
+    const batch2Names = makeUniqueOutputFileNames(
+      [{ id: "p2", fileName: "photo.jpg", targetFormat: "webp" }],
+      counts,
+    );
+    expect(batch2Names.p2).toBe("photo-2.webp");
+
+    // Track p2 dispatched
+    trackDispatchedNames(
+      [{ fileName: "photo.jpg", targetFormat: "webp" }],
+      counts,
+    );
+    expect(counts.get("photo.webp")).toBe(2);
+
+    // Batch 3: third item with same preferred name
+    const batch3Names = makeUniqueOutputFileNames(
+      [{ id: "p3", fileName: "photo.jpg", targetFormat: "webp" }],
+      counts,
+    );
+    // Must NOT collide with p1's "photo.webp" or p2's "photo-2.webp"
+    expect(batch3Names.p3).toBe("photo-3.webp");
   });
 
   it("requeues only active items for global setting changes", () => {

@@ -29,7 +29,7 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
             className="size-8 bg-primary-container rounded-xs flex items-center justify-center text-lg shrink-0"
             aria-hidden="true"
           >
-            🎵
+            🖼️
           </div>
           <h1 className="text-headline font-semibold text-on-surface text-balance">Pic Piper</h1>
         </div>

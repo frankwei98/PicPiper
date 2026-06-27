@@ -42,7 +42,10 @@ async fn client_for(profile: &S3Profile, secret: String) -> Client {
 /// segment so the AWS SDK can add it back via path-style or virtual-hosted
 /// addressing as configured.
 ///
-/// If the endpoint does not end with `/<bucket>`, it is returned as-is.
+/// Stripping only happens when removing `/<bucket>` would leave a bare origin
+/// (scheme + host with no remaining path segments), which prevents false
+/// matches when the endpoint path genuinely contains a segment that happens
+/// to equal the bucket name (e.g. `https://s3.example.com/shared/images`).
 fn endpoint_url(profile: &S3Profile) -> String {
     let endpoint = profile.endpoint.trim_end_matches('/');
     let bucket = profile.bucket.trim_matches('/');
@@ -50,10 +53,36 @@ fn endpoint_url(profile: &S3Profile) -> String {
         return endpoint.to_string();
     }
 
-    endpoint
+    let stripped = endpoint
         .strip_suffix(&format!("/{bucket}"))
-        .unwrap_or(endpoint)
-        .to_string()
+        .unwrap_or(endpoint);
+    if stripped == endpoint {
+        return endpoint.to_string();
+    }
+
+    // Only accept the strip if the remainder is a bare origin (scheme +
+    // authority with no extra path segments). We check this by finding the
+    // end of the authority (after "scheme://" → first "/" or end of string)
+    // and verifying nothing meaningful follows.
+    if is_bare_origin(stripped) {
+        return stripped.to_string();
+    }
+
+    endpoint.to_string()
+}
+
+/// Returns true if `url` is just a scheme + authority with no path beyond "/".
+fn is_bare_origin(url: &str) -> bool {
+    // Strip scheme (e.g. "https://")
+    let after_scheme = url.find("://").map(|i| &url[i + 3..]).unwrap_or(url);
+    // Find where the authority ends (first '/' or '?' or '#')
+    let authority_end = after_scheme
+        .find('/')
+        .or_else(|| after_scheme.find('?'))
+        .or_else(|| after_scheme.find('#'))
+        .unwrap_or(after_scheme.len());
+    let remainder = &after_scheme[authority_end..];
+    remainder.is_empty() || remainder == "/"
 }
 
 /// Percent-encode a single path segment for use in URLs.
@@ -347,6 +376,33 @@ mod tests {
         p.endpoint = "https://account.r2.cloudflarestorage.com/images/".to_string();
         p.bucket = "images".to_string();
         p.path_style = true;
+
+        assert_eq!(
+            endpoint_url(&p),
+            "https://account.r2.cloudflarestorage.com".to_string()
+        );
+    }
+
+    #[test]
+    fn endpoint_url_does_not_strip_when_path_has_extra_segments() {
+        let mut p = profile(Some("https://cdn.example.com"));
+        p.endpoint = "https://s3.example.com/shared/images".to_string();
+        p.bucket = "images".to_string();
+        p.path_style = true;
+
+        // "shared" is a real path segment, not part of the bucket URL —
+        // stripping would produce an incorrect endpoint.
+        assert_eq!(
+            endpoint_url(&p),
+            "https://s3.example.com/shared/images".to_string()
+        );
+    }
+
+    #[test]
+    fn endpoint_url_strips_bucket_with_trailing_slash() {
+        let mut p = profile(Some("https://cdn.example.com"));
+        p.endpoint = "https://account.r2.cloudflarestorage.com/bucket/".to_string();
+        p.bucket = "bucket".to_string();
 
         assert_eq!(
             endpoint_url(&p),
