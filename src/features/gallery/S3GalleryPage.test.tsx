@@ -322,7 +322,7 @@ describe("S3GalleryPage", () => {
     const user = userEvent.setup();
     render(
       <S3GalleryPage
-        galleryFocus={{ profile, prefix: "", highlightedKeys: [] }}
+        galleryFocus={{ profileId: "p1", prefix: "", highlightedKeys: [] }}
         profiles={[profile, profile2]}
       />,
     );
@@ -336,6 +336,35 @@ describe("S3GalleryPage", () => {
     await user.selectOptions(select, "p2");
 
     // Should reload with profile 2 and its defaultPrefix
+    expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
+  });
+
+  it("syncs selected profile when galleryFocus.profileId changes", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    const { rerender } = render(
+      <S3GalleryPage
+        galleryFocus={{ profileId: "p1", prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    expect(listObjects).toHaveBeenCalledWith({ profile, prefix: "2026/06" });
+
+    // Simulate external navigation changing the gallery focus
+    rerender(
+      <S3GalleryPage
+        galleryFocus={{ profileId: "p2", prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    expect(await screen.findByText("images/photo.webp")).toBeInTheDocument();
     expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
   });
 

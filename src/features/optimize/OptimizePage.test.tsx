@@ -305,7 +305,7 @@ describe("OptimizePage", () => {
       }),
     );
     expect(onUploadedToS3).toHaveBeenCalledWith({
-      profile,
+      profileId: "p1",
       prefix: "images/2026/06",
       highlightedKeys: ["images/2026/06/real-photo-abcdef12.jpg"],
     });

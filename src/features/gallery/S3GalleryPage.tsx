@@ -24,7 +24,7 @@ interface S3GalleryPageProps {
 
 export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryPageProps) {
   const [selectedProfileId, setSelectedProfileId] = useState(
-    galleryFocus.profile?.id ?? profiles[0]?.id ?? "",
+    galleryFocus.profileId ?? profiles[0]?.id ?? "",
   );
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.id === selectedProfileId) ?? profiles[0],
@@ -33,6 +33,20 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
   const [prefix, setPrefix] = useState(
     galleryFocus.prefix || selectedProfile?.defaultPrefix || "",
   );
+
+  // Sync profile and prefix when galleryFocus changes externally
+  useEffect(() => {
+    if (galleryFocus.profileId) {
+      setSelectedProfileId(galleryFocus.profileId);
+      const p = profiles.find((pr) => pr.id === galleryFocus.profileId);
+      if (p && !galleryFocus.prefix) {
+        setPrefix(p.defaultPrefix || "");
+      }
+    }
+    if (galleryFocus.prefix) {
+      setPrefix(galleryFocus.prefix);
+    }
+  }, [galleryFocus.profileId, galleryFocus.prefix, profiles]);
   const [objects, setObjects] = useState<GalleryObject[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

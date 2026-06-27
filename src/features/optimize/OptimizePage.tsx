@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { CompressionSettings, ImageFormat, OptimizeItem, S3Profile } from "../../types";
+import type { GalleryFocus } from "../../state/appState";
 import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 import { cn } from "../../utils/cn";
 import { Slider } from "../../components/ui/Slider";
@@ -23,11 +24,7 @@ const DEFAULT_SETTINGS: CompressionSettings = {
 };
 
 interface OptimizePageProps {
-  onUploadedToS3?: (focus: {
-    profile: S3Profile;
-    prefix: string;
-    highlightedKeys: string[];
-  }) => void;
+  onUploadedToS3?: (focus: GalleryFocus) => void;
   activeProfile?: S3Profile;
   namingTemplate: string;
 }
@@ -523,7 +520,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
     if (failed.size === 0) {
       onUploadedToS3?.({
-        profile: activeProfile,
+        profileId: activeProfile.id,
         prefix,
         highlightedKeys: uploaded.map((object) => object.key),
       });
