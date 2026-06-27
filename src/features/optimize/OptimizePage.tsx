@@ -61,6 +61,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const activeTasks = useRef(new Set<string>());
   const dispatchedOutputNames = useRef(new Map<string, number>());
   const optimizerRun = useRef<{ runId: string; outputDir: string } | null>(null);
+  const tauriDragDropActive = useRef(false);
   const debounceRef = useRef<number | undefined>(undefined);
   const qualityRef = useRef(quality);
   const removeGpsRef = useRef(removeGps);
@@ -131,7 +132,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   const importImages = useCallback(async (paths: string[]) => {
     setImporting(true);
-    dispatchedOutputNames.current.clear();
     setDropError(null);
 
     const pendingItems: OptimizeItem[] = paths.map((path) => ({
@@ -174,6 +174,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const handleDrop = useCallback(async (event: React.DragEvent) => {
     event.preventDefault();
     setDragging(false);
+
+    // Skip DOM drop when Tauri webview drag/drop is handling it
+    if (tauriDragDropActive.current) return;
 
     const files = Array.from(event.dataTransfer.files);
     const paths: string[] = [];
@@ -228,6 +231,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
             cleanup();
             return;
           }
+          tauriDragDropActive.current = true;
           unlisten = cleanup;
         })
         .catch(() => {});
@@ -235,6 +239,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
     return () => {
       disposed = true;
+      tauriDragDropActive.current = false;
       unlisten?.();
     };
   }, [importImages]);
@@ -383,6 +388,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   // --- Per-item actions ---
   const updateFormat = (id: string, targetFormat: WritableImageFormat) => {
     optimizerRun.current = null;
+    dispatchedOutputNames.current.clear();
     setItems((current) =>
       current.map((item) =>
         item.id === id && item.status !== "cancelled"
@@ -478,27 +484,15 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const uploadCancelledRef = useRef(false);
 
-  const uploadToS3 = async () => {
-    if (!activeProfile) {
-      setUploadError("Configure and select an S3 profile before uploading.");
-      return;
-    }
-    setUploadError(null);
-    setUploadFailedItems(new Map());
-    uploadCancelledRef.current = false;
-    const prefix = activeProfile.defaultPrefix || "images";
-    const compressedItems = items.filter((item) => item.status === "compressed" && item.outputPath);
-    if (compressedItems.length === 0) {
-      setUploadError("No compressed outputs to upload.");
-      return;
-    }
-
-    setUploadingItems(new Set(compressedItems.map((item) => item.id)));
-
+  const executeUploads = async (
+    uploadItems: OptimizeItem[],
+    prefix: string,
+  ): Promise<{ newlyUploaded: string[]; failed: Map<string, string> }> => {
+    setUploadingItems(new Set(uploadItems.map((item) => item.id)));
     const newlyUploaded: string[] = [];
     const failed = new Map<string, string>();
 
-    for (const item of compressedItems) {
+    for (const item of uploadItems) {
       if (uploadCancelledRef.current) break;
 
       const outputFileName = item.outputFileName ?? "image.webp";
@@ -513,7 +507,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         });
 
         const result = await uploadApi.uploadObject({
-          profile: activeProfile,
+          profile: activeProfile!,
           sourcePath: item.outputPath as string,
           objectKey,
           contentType: contentTypeFor(ext),
@@ -530,9 +524,27 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
 
     setUploadingItems(new Set());
+    return { newlyUploaded, failed };
+  };
+
+  const uploadToS3 = async () => {
+    if (!activeProfile) {
+      setUploadError("Configure and select an S3 profile before uploading.");
+      return;
+    }
+    setUploadError(null);
+    setUploadFailedItems(new Map());
+    uploadCancelledRef.current = false;
+    const prefix = activeProfile.defaultPrefix || "images";
+    const compressedItems = items.filter((item) => item.status === "compressed" && item.outputPath);
+    if (compressedItems.length === 0) {
+      setUploadError("No compressed outputs to upload.");
+      return;
+    }
+
+    const { newlyUploaded, failed } = await executeUploads(compressedItems, prefix);
     setUploadFailedItems(failed);
 
-    // Accumulate all uploaded keys across retries
     const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
     setUploadedKeys(allUploadedKeys);
 
@@ -550,7 +562,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const retryUploads = async () => {
-    // Only retry items that failed, skip already uploaded ones
     if (!activeProfile) {
       setUploadError("Configure and select an S3 profile before uploading.");
       return;
@@ -566,52 +577,15 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       return;
     }
 
-    setUploadingItems(new Set(failedItems.map((item) => item.id)));
-
-    const newlyUploaded: string[] = [];
-    const stillFailed = new Map<string, string>();
-
-    for (const item of failedItems) {
-      if (uploadCancelledRef.current) break;
-
-      const outputFileName = item.outputFileName ?? "image.webp";
-      const ext = item.settings.targetFormat;
-      try {
-        const { objectKey } = await namingApi.generateObjectKey({
-          sourcePath: item.outputPath as string,
-          outputFileName,
-          prefix,
-          namingTemplate,
-          ext,
-        });
-
-        const result = await uploadApi.uploadObject({
-          profile: activeProfile,
-          sourcePath: item.outputPath as string,
-          objectKey,
-          contentType: contentTypeFor(ext),
-          sourceFilename: item.fileName,
-          outputFilename: outputFileName,
-          originalBytes: item.originalBytes,
-          targetFormat: ext,
-        });
-
-        newlyUploaded.push(result.key);
-      } catch (err) {
-        stillFailed.set(item.id, err instanceof Error ? err.message : "Upload failed");
-      }
-    }
-
-    setUploadingItems(new Set());
+    const { newlyUploaded, failed: stillFailed } = await executeUploads(failedItems, prefix);
     setUploadFailedItems(stillFailed);
 
-    // Accumulate all uploaded keys across retries
     const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
     setUploadedKeys(allUploadedKeys);
 
     if (stillFailed.size === 0) {
       onUploadedToS3?.({
-        profileId: activeProfile?.id,
+        profileId: activeProfile.id,
         prefix,
         highlightedKeys: allUploadedKeys,
       });

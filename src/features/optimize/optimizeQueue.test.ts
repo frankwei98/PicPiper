@@ -78,6 +78,13 @@ describe("optimizeQueue", () => {
   it("formats bytes for UI", () => {
     expect(formatBytes(1_200_000)).toBe("1.2 MB");
     expect(formatBytes(240_000)).toBe("240 KB");
-    expect(formatBytes(0)).toBe("0 KB");
+    expect(formatBytes(0)).toBe("0 B");
+  });
+
+  it("shows bytes for values below 1000", () => {
+    expect(formatBytes(499)).toBe("499 B");
+    expect(formatBytes(999)).toBe("999 B");
+    expect(formatBytes(1)).toBe("1 B");
+    expect(formatBytes(1000)).toBe("1 KB");
   });
 });

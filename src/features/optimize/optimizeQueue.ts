@@ -50,7 +50,8 @@ export function shouldRequeueForGlobalSettings(item: OptimizeItem): boolean {
 
 export function formatBytes(bytes: number): string {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
-  return `${Math.round(bytes / 1_000)} KB`;
+  if (bytes >= 1_000) return `${Math.round(bytes / 1_000)} KB`;
+  return `${bytes} B`;
 }
 
 export function savingsPercent(originalBytes: number, outputBytes: number): number {

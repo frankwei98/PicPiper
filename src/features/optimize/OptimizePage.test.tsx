@@ -276,6 +276,26 @@ describe("OptimizePage", () => {
     );
   });
 
+  it("changing format after compression does not produce stale -2 suffix", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Import and compress
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText(/1.2 MB.*240 KB/);
+    compressImage.mockClear();
+
+    // Change format - should use fresh filename claim, not stale -2
+    await user.selectOptions(screen.getByLabelText(/format for real-photo\.jpg/i), "webp");
+
+    expect(compressImage).toHaveBeenCalledTimes(1);
+    expect(compressImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputFileName: "real-photo.webp",
+      }),
+    );
+  });
+
   it("warns when selected PNG output ignores quality", async () => {
     inspectImage.mockImplementation(async () => ({
       id: "real-photo",
@@ -357,6 +377,66 @@ describe("OptimizePage", () => {
       "photo.jpg",
       "photo-2.jpg",
     ]);
+  });
+
+  it("appending a same-named image after compression uses a unique output name", async () => {
+    let importCount = 0;
+    mockDialogOpen.mockImplementation(async (...args: unknown[]) => {
+      const opts = args[0] as { directory?: boolean } | undefined;
+      if (opts?.directory) return "/tmp/saved" as unknown as string[];
+      importCount++;
+      return importCount === 1 ? ["/tmp/first/photo.jpg"] : ["/tmp/second/photo.jpg"];
+    });
+    inspectImage.mockImplementation(async (...args: unknown[]) => {
+      const request = args[0] as { path: string };
+      return {
+        id: request.path,
+        sourcePath: request.path,
+        fileName: "photo.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_200_000,
+        estimatedBytes: 260_000,
+        status: "queued",
+        settings: {
+          targetFormat: "jpg",
+          quality: 85,
+          removeGps: true,
+        },
+      };
+    });
+    compressImage.mockImplementation(async (...args: unknown[]) => {
+      const request = args[0] as { sourcePath: string; outputFileName: string; outputDir: string };
+      return {
+        sourcePath: request.sourcePath,
+        outputPath: `${request.outputDir}/${request.outputFileName}`,
+        outputFileName: request.outputFileName,
+        originalBytes: 1_200_000,
+        outputBytes: 240_000,
+        targetFormat: "jpg",
+      };
+    });
+
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // First import: photo.jpg -> compresses to photo.jpg
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await waitFor(() => {
+      expect(compressImage).toHaveBeenCalledTimes(1);
+    });
+    expect(compressImage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ outputFileName: "photo.jpg" }),
+    );
+
+    // Second import: another photo.jpg appended
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await waitFor(() => {
+      expect(compressImage).toHaveBeenCalledTimes(2);
+    });
+
+    // The second import should use photo-2.jpg, not overwrite photo.jpg
+    const calls = compressImage.mock.calls as unknown as Array<[{ outputFileName: string }]>;
+    expect(calls[1][0].outputFileName).toBe("photo-2.jpg");
   });
 
   it("does not queue an inspecting placeholder when global settings change", async () => {
@@ -786,6 +866,53 @@ describe("OptimizePage", () => {
     expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
     expect(inspectImage).toHaveBeenCalledWith({
       path: "/tmp/tauri-dropped-photo.jpg",
+      settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
+    });
+  });
+
+  it("does not duplicate imports when both DOM drop and Tauri drop fire", async () => {
+    // The default mock already simulates Tauri registering successfully
+    // (mockOnDragDropEvent resolves with a cleanup function)
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Wait for Tauri registration
+    await waitFor(() => {
+      expect(mockOnDragDropEvent).toHaveBeenCalled();
+    });
+
+    // Wait a tick for the Tauri registration promise to resolve
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Now simulate a DOM drop - should be skipped since Tauri is active
+    const dropZone = document.querySelector("[data-testid='drop-zone']")!;
+    const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });
+    Object.defineProperty(file, "path", { value: "/tmp/dom-dropped.jpg" });
+    const fileList = Object.assign([file], { item: (i: number) => (fileList as unknown as File[])[i] });
+    const event = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", {
+      value: { files: fileList },
+    });
+    dropZone.dispatchEvent(event);
+
+    // Wait a bit - inspectImage should NOT be called since DOM drop was skipped
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(inspectImage).not.toHaveBeenCalled();
+
+    // Now simulate Tauri drop via the registered handler - this should work
+    const calls = mockOnDragDropEvent.mock.calls as unknown as Array<[(event: {
+      payload: { type: string; paths: string[] };
+    }) => Promise<void>]>;
+    await calls[0][0]({
+      payload: {
+        type: "drop",
+        paths: ["/tmp/tauri-dropped.jpg"],
+      },
+    });
+
+    expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
+    expect(inspectImage).toHaveBeenCalledTimes(1);
+    expect(inspectImage).toHaveBeenCalledWith({
+      path: "/tmp/tauri-dropped.jpg",
       settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
     });
   });
