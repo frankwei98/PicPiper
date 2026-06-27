@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex;
 
 use tauri::Manager;
@@ -16,22 +17,35 @@ pub struct AppPaths {
 
 /// Thread-safe wrapper around history file access. Serializes read-modify-write
 /// to prevent lost updates when multiple uploads complete concurrently.
+///
+/// The `append_async` method runs the entire lock + I/O sequence on a blocking
+/// thread pool to avoid blocking the Tokio runtime.
 pub struct HistoryStore {
     path: PathBuf,
-    lock: Mutex<()>,
+    lock: Arc<Mutex<()>>,
 }
 
 impl HistoryStore {
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
-            lock: Mutex::new(()),
+            lock: Arc::new(Mutex::new(())),
         }
     }
 
-    pub fn append(&self, entry: UploadHistoryEntry) -> AppResult<()> {
-        let _guard = self.lock.lock().expect("history lock poisoned");
-        crate::history::append_history(&self.path, entry)
+    /// Append a history entry without blocking the async runtime.
+    ///
+    /// Both the mutex acquisition and file I/O run on `spawn_blocking`,
+    /// keeping Tokio worker threads free.
+    pub async fn append_async(&self, entry: UploadHistoryEntry) -> AppResult<()> {
+        let path = self.path.clone();
+        let lock = self.lock.clone();
+        tokio::task::spawn_blocking(move || {
+            let _guard = lock.lock().expect("history lock poisoned");
+            crate::history::append_history(&path, entry)
+        })
+        .await
+        .map_err(|err| AppError::new("historyJoinFailed", err.to_string()))?
     }
 }
 
@@ -70,28 +84,29 @@ mod tests {
         }
     }
 
-    #[test]
-    fn history_store_concurrent_appends_all_recorded() {
+    #[tokio::test]
+    async fn history_store_concurrent_appends_all_recorded() {
         use std::sync::Arc;
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("history.json");
         let store = Arc::new(HistoryStore::new(path.clone()));
 
-        // Simulate concurrent appends from multiple threads
+        // Simulate concurrent appends from multiple async tasks
         let handles: Vec<_> = (0..10)
             .map(|i| {
                 let store = Arc::clone(&store);
-                std::thread::spawn(move || {
+                tokio::spawn(async move {
                     store
-                        .append(sample_entry(&format!("file-{}.webp", i)))
+                        .append_async(sample_entry(&format!("file-{}.webp", i)))
+                        .await
                         .unwrap();
                 })
             })
             .collect();
 
         for h in handles {
-            h.join().unwrap();
+            h.await.unwrap();
         }
 
         let entries = crate::history::load_history(&path).unwrap();

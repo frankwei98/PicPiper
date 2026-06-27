@@ -135,7 +135,7 @@ async fn upload_gallery_object(
             uploaded_bytes: result.size,
             target_format,
         };
-        if let Err(err) = history.append(entry) {
+        if let Err(err) = history.append_async(entry).await {
             eprintln!(
                 "[history] warning: failed to append upload history: {}",
                 err

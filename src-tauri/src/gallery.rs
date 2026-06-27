@@ -34,6 +34,15 @@ async fn client_for(profile: &S3Profile, secret: String) -> Client {
     Client::from_conf(builder.build())
 }
 
+/// Extract the base endpoint URL, stripping the bucket name suffix if present.
+///
+/// Some S3-compatible providers include the bucket name in the endpoint URL
+/// (e.g., `https://account.r2.cloudflarestorage.com/bucket-name`). This
+/// function normalizes such endpoints by removing the trailing `/<bucket>`
+/// segment so the AWS SDK can add it back via path-style or virtual-hosted
+/// addressing as configured.
+///
+/// If the endpoint does not end with `/<bucket>`, it is returned as-is.
 fn endpoint_url(profile: &S3Profile) -> String {
     let endpoint = profile.endpoint.trim_end_matches('/');
     let bucket = profile.bucket.trim_matches('/');
@@ -249,7 +258,8 @@ pub async fn upload_object(
         .await
         .map_err(|err| AppError::new("s3UploadFailed", err.to_string()))?;
 
-    let size = std::fs::metadata(&request.source_path)
+    let size = tokio::fs::metadata(&request.source_path)
+        .await
         .map_err(|err| AppError::new("uploadReadFailed", err.to_string()))?
         .len();
     Ok(object_from_parts(
