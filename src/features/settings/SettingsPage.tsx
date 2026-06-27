@@ -3,7 +3,7 @@ import { settingsApi } from "../../api/tauri";
 import type { AppSettings } from "../../api/tauri";
 import type { S3Profile } from "../../types";
 import { StatusMessage } from "../../components/ui/Toast";
-import { cn } from "../../utils/cn";
+import { btnPrimary, inputClass, labelClass } from "../../components/ui/buttonStyles";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -19,12 +19,6 @@ function upsertProfile(profiles: S3Profile[], profile: S3Profile): S3Profile[] {
   next[index] = profile;
   return next;
 }
-
-const btnBase = "border-none rounded-md cursor-pointer text-callout font-medium px-5 py-2.5 transition-[background-color,box-shadow,filter] duration-150 ease-out inline-flex items-center justify-center gap-sm leading-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-38 disabled:cursor-not-allowed disabled:pointer-events-none";
-const btnPrimary = cn(btnBase, "bg-primary-container text-on-primary-container font-semibold hover:shadow-[0_1px_3px_rgba(0,0,0,0.3)] hover:brightness-110");
-
-const inputClass = "rounded-md border border-outline-variant bg-surface-container text-on-surface p-2.5 text-body transition-[border-color,box-shadow] duration-150 ease-out focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 w-full";
-const labelClass = "grid gap-xs text-footnote font-medium text-on-surface-variant";
 
 export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) {
   const [editingProfileId, setEditingProfileId] = useState(

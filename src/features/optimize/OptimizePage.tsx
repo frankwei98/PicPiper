@@ -7,6 +7,7 @@ import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 import { cn } from "../../utils/cn";
 import { Slider } from "../../components/ui/Slider";
 import { Dialog } from "../../components/ui/Dialog";
+import { btnPrimary, btnSecondary, btnTertiary } from "../../components/ui/buttonStyles";
 import {
   AVAILABLE_OUTPUT_FORMATS,
   defaultTargetFormat,
@@ -45,11 +46,6 @@ function contentTypeFor(format: string) {
       return "application/octet-stream";
   }
 }
-
-const btnBase = "border-none rounded-md cursor-pointer text-callout font-medium px-5 py-2.5 transition-[background-color,box-shadow,filter] duration-150 ease-out inline-flex items-center justify-center gap-sm leading-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-38 disabled:cursor-not-allowed disabled:pointer-events-none";
-const btnPrimary = cn(btnBase, "bg-primary-container text-on-primary-container font-semibold hover:shadow-[0_1px_3px_rgba(0,0,0,0.3)] hover:brightness-110");
-const btnSecondary = cn(btnBase, "bg-white/5 border border-outline-variant text-on-surface hover:bg-white/10 hover:border-outline");
-const btnTertiary = cn(btnBase, "bg-transparent text-primary px-3 hover:bg-[rgba(255,189,127,0.1)]");
 
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
@@ -655,10 +651,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                 <button className={btnTertiary} type="button" aria-label={`Cancel ${item.fileName}`} onClick={() => cancelItem(item.id)}>Cancel</button>
               )}
               {(item.status === "failed" || item.status === "cancelled") && (
-                <button className={btnTertiary} type="button" onClick={() => retryItem(item.id)}>Retry</button>
+                <button className={btnTertiary} type="button" aria-label={`Retry ${item.fileName}`} onClick={() => retryItem(item.id)}>Retry</button>
               )}
               {(item.status === "compressed" || item.status === "failed" || item.status === "cancelled") && (
-                <button className={btnTertiary} type="button" onClick={() => removeItem(item.id)}>Remove</button>
+                <button className={btnTertiary} type="button" aria-label={`Remove ${item.fileName}`} onClick={() => removeItem(item.id)}>Remove</button>
               )}
             </div>
           </article>
