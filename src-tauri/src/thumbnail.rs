@@ -7,6 +7,44 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use image::codecs::jpeg::JpegEncoder;
 use std::path::PathBuf;
 
+/// Encode RGBA thumbnail bytes as a data URL. If any alpha byte is less than
+/// 255, the image is encoded as PNG to preserve transparency. Otherwise it is
+/// encoded as JPEG for smaller output.
+fn encode_thumbnail_data_url(width: u32, height: u32, rgba: &[u8]) -> AppResult<String> {
+    let has_alpha = rgba.chunks_exact(4).any(|px| px[3] < 255);
+
+    if has_alpha {
+        let img = image::DynamicImage::ImageRgba8(
+            image::ImageBuffer::from_raw(width, height, rgba.to_vec()).ok_or_else(|| {
+                AppError::new("thumbnailEncodeFailed", "RGBA buffer size mismatch")
+            })?,
+        );
+        let mut png_buf = Vec::new();
+        let cursor = std::io::Cursor::new(&mut png_buf);
+        img.write_to(cursor, image::ImageFormat::Png)
+            .map_err(|err| AppError::new("thumbnailEncodeFailed", err.to_string()))?;
+        let encoded = BASE64_STANDARD.encode(&png_buf);
+        Ok(format!("data:image/png;base64,{}", encoded))
+    } else {
+        let rgb: Vec<u8> = rgba
+            .chunks_exact(4)
+            .flat_map(|px| [px[0], px[1], px[2]])
+            .collect();
+        let mut jpeg_buf = Vec::new();
+        let cursor = std::io::Cursor::new(&mut jpeg_buf);
+        let mut encoder = JpegEncoder::new_with_quality(cursor, 75);
+        encoder
+            .encode_image(&image::DynamicImage::ImageRgb8(
+                image::ImageBuffer::from_raw(width, height, rgb).ok_or_else(|| {
+                    AppError::new("thumbnailEncodeFailed", "RGB buffer size mismatch")
+                })?,
+            ))
+            .map_err(|err| AppError::new("thumbnailEncodeFailed", err.to_string()))?;
+        let encoded = BASE64_STANDARD.encode(&jpeg_buf);
+        Ok(format!("data:image/jpeg;base64,{}", encoded))
+    }
+}
+
 pub fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailResponse> {
     let max_size = request.max_size.unwrap_or(256).clamp(16, 1024);
 
@@ -125,25 +163,7 @@ fn read_thumbnail_macos(path: &str, max_size: u32) -> AppResult<ReadThumbnailRes
         let data = ctx.data();
         let rgba: Vec<u8> = data.to_vec();
 
-        // Convert RGBA → RGB (drop alpha) and encode as JPEG.
-        let rgb: Vec<u8> = rgba
-            .chunks_exact(4)
-            .flat_map(|px| [px[0], px[1], px[2]])
-            .collect();
-
-        let mut jpeg_buf = Vec::new();
-        let cursor = std::io::Cursor::new(&mut jpeg_buf);
-        let mut encoder = JpegEncoder::new_with_quality(cursor, 75);
-        encoder
-            .encode_image(&image::DynamicImage::ImageRgb8(
-                image::ImageBuffer::from_raw(width as u32, height as u32, rgb).ok_or_else(
-                    || AppError::new("thumbnailEncodeFailed", "RGBA buffer size mismatch"),
-                )?,
-            ))
-            .map_err(|err| AppError::new("thumbnailEncodeFailed", err.to_string()))?;
-
-        let encoded = BASE64_STANDARD.encode(&jpeg_buf);
-        let data_url = format!("data:image/jpeg;base64,{}", encoded);
+        let data_url = encode_thumbnail_data_url(width as u32, height as u32, &rgba)?;
 
         Ok(ReadThumbnailResponse { data_url })
     }
@@ -203,6 +223,42 @@ mod tests {
             image::Rgb([x as u8, y as u8, 128])
         }));
         img.save(path).unwrap();
+    }
+
+    #[test]
+    fn encode_thumbnail_data_url_opaque_is_jpeg() {
+        // 2x2 fully opaque RGBA pixels
+        let rgba = vec![
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255,
+        ];
+        let data_url = encode_thumbnail_data_url(2, 2, &rgba).unwrap();
+        assert!(
+            data_url.starts_with("data:image/jpeg;base64,"),
+            "opaque pixels should produce JPEG, got: {}",
+            &data_url[..30]
+        );
+    }
+
+    #[test]
+    fn encode_thumbnail_data_url_alpha_is_png() {
+        // 2x2 RGBA pixels with one semi-transparent pixel
+        let rgba = vec![
+            255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 255, 255, 255, 0, 255,
+        ];
+        let data_url = encode_thumbnail_data_url(2, 2, &rgba).unwrap();
+        assert!(
+            data_url.starts_with("data:image/png;base64,"),
+            "alpha pixels should produce PNG, got: {}",
+            &data_url[..29]
+        );
+    }
+
+    #[test]
+    fn encode_thumbnail_data_url_fully_transparent_is_png() {
+        // 1x1 fully transparent pixel
+        let rgba = vec![0, 0, 0, 0];
+        let data_url = encode_thumbnail_data_url(1, 1, &rgba).unwrap();
+        assert!(data_url.starts_with("data:image/png;base64,"));
     }
 
     #[test]
