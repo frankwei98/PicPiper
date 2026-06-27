@@ -37,7 +37,6 @@ hex = "0.4"
 base64 = "0.22"
 slug = "0.1"
 tauri-plugin-dialog = "2"
-rayon = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

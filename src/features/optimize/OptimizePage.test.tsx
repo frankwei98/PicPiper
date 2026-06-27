@@ -507,6 +507,19 @@ describe("OptimizePage", () => {
     });
   });
 
+  it("uses per-item compressImage and never calls compressBatch", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText(/1.2 MB.*240 KB/);
+
+    // compressImage was called (per-item API)
+    expect(compressImage).toHaveBeenCalled();
+    // The mock does not expose compressBatch — if OptimizePage tried to call
+    // it, the test would fail with "compressBatch is not a function".
+  });
+
   it("dropping file without usable path shows error and does not call inspectImage", async () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 

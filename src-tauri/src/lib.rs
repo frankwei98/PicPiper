@@ -11,12 +11,11 @@ mod thumbnail;
 
 use error::AppResult;
 use models::{
-    AppSettings, CompressBatchRequest, CompressBatchResponse, CompressImageRequest,
-    CompressImageResult, CopyOutputsRequest, CreateOptimizerRunResponse, DeleteObjectRequest,
-    DownloadObjectRequest, GalleryObject, GenerateObjectKeyRequest, GenerateObjectKeyResponse,
-    ImageInspection, InspectImageRequest, ListObjectsRequest, ReadThumbnailRequest,
-    ReadThumbnailResponse, SaveCredentialRequest, SaveCredentialResponse, SaveSettingsRequest,
-    UploadHistoryEntry, UploadObjectRequest,
+    AppSettings, CompressImageRequest, CompressImageResult, CopyOutputsRequest,
+    CreateOptimizerRunResponse, DeleteObjectRequest, DownloadObjectRequest, GalleryObject,
+    GenerateObjectKeyRequest, GenerateObjectKeyResponse, ImageInspection, InspectImageRequest,
+    ListObjectsRequest, ReadThumbnailRequest, ReadThumbnailResponse, SaveCredentialRequest,
+    SaveCredentialResponse, SaveSettingsRequest, UploadHistoryEntry, UploadObjectRequest,
 };
 use sha2::{Digest, Sha256};
 use state::AppPaths;
@@ -195,17 +194,6 @@ fn save_s3_secret(
 }
 
 #[tauri::command]
-async fn compress_batch(
-    paths: State<'_, AppPaths>,
-    request: CompressBatchRequest,
-) -> AppResult<CompressBatchResponse> {
-    let data_dir = paths.data_dir.clone();
-    tokio::task::spawn_blocking(move || optimizer::compress_batch(&data_dir, request))
-        .await
-        .map_err(|err| error::AppError::new("compressBatchJoinFailed", err.to_string()))?
-}
-
-#[tauri::command]
 async fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
     tokio::task::spawn_blocking(move || optimizer::copy_outputs_to_dir(request))
         .await
@@ -227,7 +215,6 @@ pub fn run() {
             inspect_image,
             create_optimizer_run,
             compress_image,
-            compress_batch,
             copy_outputs_to_dir,
             read_thumbnail,
             list_gallery_objects,
