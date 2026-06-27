@@ -68,6 +68,7 @@ function App() {
           galleryFocus={navigation.galleryFocus}
           profiles={settings.profiles}
           defaultProfileId={settings.defaultProfileId}
+          namingTemplate={settings.namingTemplate}
           onNavigate={(view) => setNavigation((prev) => ({ ...prev, view }))}
         />
       )}

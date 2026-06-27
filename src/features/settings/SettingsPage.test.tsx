@@ -423,4 +423,31 @@ describe("SettingsPage", () => {
     expect(screen.getByText(/must not contain query strings or fragments/i)).toBeInTheDocument();
     expect(saveSettings).not.toHaveBeenCalled();
   });
+
+  it("rejects Public Base URL with javascript: protocol", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Profile name"), "Test");
+    await user.type(screen.getByLabelText("Endpoint"), "https://s3.example.com");
+    await user.type(screen.getByLabelText("Bucket"), "images");
+    await user.type(screen.getByLabelText("Access key ID"), "key");
+    await user.type(screen.getByLabelText("Secret access key"), "secret");
+    await user.type(screen.getByLabelText("Public Base URL"), "javascript:alert(1)");
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(screen.getByText(/must use http: or https: protocol/i)).toBeInTheDocument();
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
 });

@@ -24,8 +24,9 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [editingProfileId, setEditingProfileId] = useState(
     settings.defaultProfileId ?? settings.profiles[0]?.id ?? "",
   );
+  const [creatingNew, setCreatingNew] = useState(false);
 
-  const profile = settings.profiles.find((p) => p.id === editingProfileId);
+  const profile = creatingNew ? undefined : settings.profiles.find((p) => p.id === editingProfileId);
 
   const [name, setName] = useState(profile?.name ?? "Personal S3");
   const [endpoint, setEndpoint] = useState(profile?.endpoint ?? "");
@@ -43,8 +44,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
 
   // Re-populate form fields when the selected profile changes
   useEffect(() => {
-    const p = settings.profiles.find((pr) => pr.id === editingProfileId);
-    if (!p) {
+    if (creatingNew) {
       // Clear form for new profile
       setName("");
       setEndpoint("");
@@ -58,6 +58,8 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       setPathStyle(true);
       return;
     }
+    const p = settings.profiles.find((pr) => pr.id === editingProfileId);
+    if (!p) return;
     setName(p.name);
     setEndpoint(p.endpoint);
     setRegion(p.region);
@@ -68,7 +70,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     setPublicBaseUrl(p.publicBaseUrl ?? "");
     setDefaultPrefix(p.defaultPrefix);
     setPathStyle(p.pathStyle ?? true);
-  }, [editingProfileId, settings.profiles]);
+  }, [editingProfileId, creatingNew, settings.profiles]);
 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -94,6 +96,11 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
           if (parsed.search || parsed.hash) {
             setSaving(false);
             setSaveError("Public Base URL must not contain query strings or fragments.");
+            return;
+          }
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            setSaving(false);
+            setSaveError("Public Base URL must use http: or https: protocol.");
             return;
           }
         } catch {
@@ -142,6 +149,8 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       setSecretAccessKey("");
       setSaving(false);
       setSaveMessage("Profile saved.");
+      setCreatingNew(false);
+      setEditingProfileId(profileId);
     } catch (error) {
       setSaving(false);
       setSaveError(error instanceof Error ? error.message : String(error));
@@ -231,7 +240,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
               <button
                 className={btnSecondary}
                 type="button"
-                onClick={() => setEditingProfileId("")}
+                onClick={() => setCreatingNew(true)}
               >
                 Add profile
               </button>

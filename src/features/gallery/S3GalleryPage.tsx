@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 import type { AppView } from "../../types";
-import { galleryApi, namingApi, settingsApi, uploadApi } from "../../api/tauri";
+import { galleryApi, namingApi, uploadApi } from "../../api/tauri";
 import { AlertDialog } from "../../components/ui/Dialog";
 import { cn } from "../../utils/cn";
 import { StatusMessage } from "../../components/ui/Toast";
@@ -13,10 +13,11 @@ interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
   profiles: S3Profile[];
   defaultProfileId?: string;
+  namingTemplate?: string;
   onNavigate?: (view: AppView) => void;
 }
 
-export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, onNavigate }: S3GalleryPageProps) {
+export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, namingTemplate: namingTemplateProp, onNavigate }: S3GalleryPageProps) {
   const resolveDefaultId = () =>
     galleryFocus.profileId ?? defaultProfileId ?? profiles[0]?.id ?? "";
   const [selectedProfileId, setSelectedProfileId] = useState(resolveDefaultId);
@@ -66,7 +67,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, onNavi
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
-  const [namingTemplate, setNamingTemplate] = useState("{yyyy}/{mm}/{slug}-{hash}.{ext}");
+  const namingTemplate = namingTemplateProp ?? "{yyyy}/{mm}/{slug}-{hash}.{ext}";
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
@@ -95,10 +96,6 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, onNavi
   useEffect(() => {
     loadObjects();
   }, [loadObjects]);
-
-  useEffect(() => {
-    settingsApi.loadSettings().then((s) => setNamingTemplate(s.namingTemplate)).catch(() => {});
-  }, []);
 
   const handleUploadLocal = async () => {
     if (!selectedProfile) return;
@@ -351,10 +348,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, onNavi
                     loading="lazy"
                     onError={() => setImgErrors((prev) => new Set(prev).add(obj.key))}
                   />
-                ) : null}
-                <span className="text-caption opacity-60">
-                  {!obj.isImage ? "File" : "Image"}
-                </span>
+                ) : (
+                  <span className="text-caption opacity-60">
+                    {!obj.isImage ? "File" : "Image"}
+                  </span>
+                )}
               </div>
               <p className="text-caption text-on-surface-variant overflow-hidden text-ellipsis whitespace-nowrap text-pretty tabular-nums">{obj.key}</p>
               <div className="grid gap-1 grid-cols-2">

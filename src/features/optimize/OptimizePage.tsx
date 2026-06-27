@@ -485,7 +485,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     uploadItems: OptimizeItem[],
     prefix: string,
   ): Promise<{ newlyUploaded: string[]; failed: Map<string, string> }> => {
-    setUploadingItems(new Set(uploadItems.map((item) => item.id)));
+    const itemIds = new Set(uploadItems.map((item) => item.id));
+    setUploadingItems(itemIds);
     const newlyUploaded: string[] = [];
     const failed = new Map<string, string>();
 
@@ -518,6 +519,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       } catch (err) {
         failed.set(item.id, err instanceof Error ? err.message : "Upload failed");
       }
+
+      // Remove completed item from uploading set
+      itemIds.delete(item.id);
+      setUploadingItems(new Set(itemIds));
     }
 
     setUploadingItems(new Set());
