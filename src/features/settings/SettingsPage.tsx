@@ -42,7 +42,9 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [defaultPrefix, setDefaultPrefix] = useState(profile?.defaultPrefix ?? "");
   const [pathStyle, setPathStyle] = useState(profile?.pathStyle ?? true);
 
-  // Re-populate form fields when the selected profile changes
+  // Re-populate form fields when the selected profile changes OR when the
+  // parent asynchronously delivers the real settings (App.tsx loads settings
+  // after mount, so the initial render sees namingTemplate defaults).
   useEffect(() => {
     if (creatingNew) {
       // Clear form for new profile
@@ -71,6 +73,12 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     setDefaultPrefix(p.defaultPrefix);
     setPathStyle(p.pathStyle ?? true);
   }, [editingProfileId, creatingNew, settings.profiles]);
+
+  // Sync naming template separately — it is app-level, not profile-level, and
+  // arrives asynchronously after App's initial render with defaults.
+  useEffect(() => {
+    setNamingTemplate(settings.namingTemplate);
+  }, [settings.namingTemplate]);
 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);

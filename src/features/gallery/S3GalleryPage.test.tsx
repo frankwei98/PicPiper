@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { S3GalleryPage } from "./S3GalleryPage";
 
-const { listObjects, deleteObject, downloadObject, mockDialogOpen, uploadObject, generateObjectKey, loadSettings } = vi.hoisted(() => {
+const { listObjects, deleteObject, downloadObject, mockDialogOpen, mockOpenUrl, uploadObject, generateObjectKey, loadSettings } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async () => "/tmp/downloads");
   return {
     listObjects: vi.fn(async () => [
@@ -17,6 +17,7 @@ const { listObjects, deleteObject, downloadObject, mockDialogOpen, uploadObject,
     deleteObject: vi.fn(async () => {}),
     downloadObject: vi.fn(async () => "/tmp/downloads/photo.webp"),
     mockDialogOpen,
+    mockOpenUrl: vi.fn(async () => {}),
     uploadObject: vi.fn(async (req: { objectKey: string }) => ({
       key: req.objectKey,
       size: 100_000,
@@ -35,6 +36,10 @@ const { listObjects, deleteObject, downloadObject, mockDialogOpen, uploadObject,
 
 vi.mock("@tauri-apps/plugin-dialog", async () => ({
   open: mockDialogOpen,
+}));
+
+vi.mock("@tauri-apps/plugin-opener", async () => ({
+  openUrl: mockOpenUrl,
 }));
 
 vi.mock("../../api/tauri", async () => ({
@@ -262,9 +267,7 @@ describe("S3GalleryPage", () => {
     expect(screen.getByText(/public base url/i)).toBeInTheDocument();
   });
 
-  it("opens public URL in new tab when View is clicked", async () => {
-    const open = vi.fn();
-    Object.assign(window, { open });
+  it("opens public URL via the opener plugin when View is clicked", async () => {
     const user = userEvent.setup();
     render(
       <S3GalleryPage
@@ -276,7 +279,7 @@ describe("S3GalleryPage", () => {
     await screen.findByText("images/photo.webp");
     await user.click(screen.getByRole("button", { name: /view/i }));
 
-    expect(open).toHaveBeenCalledWith("https://cdn.example.com/images/photo.webp", "_blank");
+    expect(mockOpenUrl).toHaveBeenCalledWith("https://cdn.example.com/images/photo.webp");
   });
 
   it("downloads object to chosen directory and shows saved path", async () => {
@@ -456,6 +459,54 @@ describe("S3GalleryPage", () => {
         contentType: "image/heic",
       }),
     );
+  });
+
+  it("lowercases extension before looking up content type for .HEIC uploads", async () => {
+    mockDialogOpen.mockResolvedValueOnce(["/tmp/photo.HEIC"] as unknown as string);
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /upload local images/i }));
+
+    expect(uploadObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentType: "image/heic",
+      }),
+    );
+    const lastCall = uploadObject.mock.calls[uploadObject.mock.calls.length - 1] as unknown as
+      | [{ contentType?: string }]
+      | undefined;
+    expect(lastCall?.[0]?.contentType).not.toBe("application/octet-stream");
+  });
+
+  it("auto-clears copyMessage after a few seconds", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(navigator.clipboard, "writeText").mockImplementation(writeText);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /copy url/i }));
+    expect(await screen.findByText("URL copied")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.queryByText("URL copied")).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("uses defaultProfileId when galleryFocus.profileId is not set", async () => {

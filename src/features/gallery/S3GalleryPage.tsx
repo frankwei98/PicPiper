@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 import type { AppView } from "../../types";
@@ -75,6 +76,21 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
   const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
+  const statusTimersRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-dismiss transient status messages after a few seconds so stale
+  // "URL copied" / "Saved to ..." banners don't linger across view changes.
+  useEffect(() => {
+    if (!copyMessage && !uploadStatus) return;
+    if (statusTimersRef.current) clearTimeout(statusTimersRef.current);
+    statusTimersRef.current = setTimeout(() => {
+      setCopyMessage(null);
+      if (!uploading) setUploadStatus(null);
+    }, 4000);
+    return () => {
+      if (statusTimersRef.current) clearTimeout(statusTimersRef.current);
+    };
+  }, [copyMessage, uploadStatus, uploading]);
 
   const loadObjects = useCallback(async () => {
     if (!selectedProfile) return;
@@ -121,7 +137,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       for (const filePath of paths) {
         const fileName = filePath.split("/").pop() ?? "image";
         const dotIndex = fileName.lastIndexOf(".");
-        const ext = dotIndex > 0 ? fileName.substring(dotIndex + 1) : "jpg";
+        const ext = dotIndex > 0 ? fileName.substring(dotIndex + 1).toLowerCase() : "jpg";
 
         const { objectKey } = await namingApi.generateObjectKey({
           sourcePath: filePath,
@@ -185,9 +201,12 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     }
   };
 
-  const handleView = (obj: GalleryObject) => {
-    if (obj.publicUrl) {
-      window.open(obj.publicUrl, "_blank");
+  const handleView = async (obj: GalleryObject) => {
+    if (!obj.publicUrl) return;
+    try {
+      await openUrl(obj.publicUrl);
+    } catch (err) {
+      setCopyMessage(err instanceof Error ? `View failed: ${err.message}` : "View failed");
     }
   };
 

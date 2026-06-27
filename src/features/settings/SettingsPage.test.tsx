@@ -450,4 +450,34 @@ describe("SettingsPage", () => {
     expect(screen.getByText(/must use http: or https: protocol/i)).toBeInTheDocument();
     expect(saveSettings).not.toHaveBeenCalled();
   });
+
+  it("updates the naming template input when settings.namingTemplate arrives asynchronously", () => {
+    // App.tsx loads settings after mount. First render receives default naming
+    // template; real settings arrive on rerender.
+    const { rerender } = render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText("Naming template")).toHaveValue(
+      "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+    );
+
+    rerender(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText("Naming template")).toHaveValue("{slug}-{hash}.{ext}");
+  });
 });

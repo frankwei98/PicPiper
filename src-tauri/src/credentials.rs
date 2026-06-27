@@ -67,6 +67,10 @@ fn save_secret_with_keyring(
 
     if !keyring_disabled() {
         if try_save_keyring(&key_ref, &request.secret_access_key) {
+            // Best-effort: remove any stale fallback file so a later keyring
+            // outage doesn't surface an old (possibly rotated-away) secret.
+            let stale = fallback_dir.join(format!("{}.secret", request.profile_id));
+            let _ = fs::remove_file(&stale);
             return Ok(SaveCredentialResponse {
                 credential_ref: key_ref,
                 insecure_fallback_used: false,
@@ -305,6 +309,33 @@ mod tests {
         unsafe {
             env::remove_var("PIC_PIPER_NO_KEYCHAIN");
         }
+    }
+
+    #[test]
+    fn successful_keychain_save_removes_stale_fallback_file() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+
+        // Simulate prior insecure fallback from earlier session.
+        std::fs::write(dir.path().join("rotated.secret"), "old-secret").unwrap();
+
+        // Now keychain succeeds for the same profile id — fallback file should be removed.
+        let resp = save_secret_with_keyring(
+            dir.path(),
+            SaveCredentialRequest {
+                profile_id: "rotated".to_string(),
+                secret_access_key: "new-secret".to_string(),
+                allow_insecure_fallback: true,
+            },
+            |_key_ref, _secret| true,
+        )
+        .expect("save should succeed when keyring returns true");
+
+        assert!(!resp.insecure_fallback_used);
+        assert!(
+            !dir.path().join("rotated.secret").exists(),
+            "stale fallback file must be removed after keychain save"
+        );
     }
 
     #[test]

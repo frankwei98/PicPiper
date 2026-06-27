@@ -161,7 +161,11 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       filters: [
         {
           name: "Images",
-          extensions: ["jpg", "jpeg", "png", "webp", "avif", "heif", "heic"],
+          // HEIF/HEIC intentionally excluded: the built-in optimizer decoder
+          // cannot decode them on any platform, so importing them would just
+          // surface a confusing "imageDecodeFailed" error. Raw upload via the
+          // S3 Gallery still accepts HEIC.
+          extensions: ["jpg", "jpeg", "png", "webp", "avif"],
         },
       ],
     });
