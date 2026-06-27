@@ -7,14 +7,7 @@ import { galleryApi, namingApi, settingsApi, uploadApi } from "../../api/tauri";
 import { AlertDialog } from "../../components/ui/Dialog";
 import { cn } from "../../utils/cn";
 import { StatusMessage } from "../../components/ui/Toast";
-
-const btnBase = "border-none rounded-md cursor-pointer text-callout font-medium px-5 py-2.5 transition-[background-color,box-shadow,filter] duration-150 ease-out inline-flex items-center justify-center gap-sm leading-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-38 disabled:cursor-not-allowed disabled:pointer-events-none";
-const btnPrimary = cn(btnBase, "bg-primary-container text-on-primary-container font-semibold hover:shadow-[0_1px_3px_rgba(0,0,0,0.3)] hover:brightness-110");
-const btnSecondary = cn(btnBase, "bg-white/5 border border-outline-variant text-on-surface hover:bg-white/10 hover:border-outline");
-const btnDanger = cn(btnBase, "bg-error-container text-on-error-container hover:brightness-115");
-const btnSm = "text-footnote px-3 py-1.5 rounded-md";
-
-const inputClass = "rounded-md border border-outline-variant bg-surface-container text-on-surface p-2.5 text-body transition-[border-color,box-shadow] duration-150 ease-out focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 w-full";
+import { btnPrimary, btnSecondary, btnDanger, btnSm, inputClass } from "../../components/ui/buttonStyles";
 
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
@@ -24,7 +17,7 @@ interface S3GalleryPageProps {
 
 export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryPageProps) {
   const [selectedProfileId, setSelectedProfileId] = useState(
-    galleryFocus.profile?.id ?? profiles[0]?.id ?? "",
+    galleryFocus.profileId ?? profiles[0]?.id ?? "",
   );
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.id === selectedProfileId) ?? profiles[0],
@@ -33,6 +26,20 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
   const [prefix, setPrefix] = useState(
     galleryFocus.prefix || selectedProfile?.defaultPrefix || "",
   );
+
+  // Sync profile and prefix when galleryFocus changes externally
+  useEffect(() => {
+    if (galleryFocus.profileId) {
+      setSelectedProfileId(galleryFocus.profileId);
+      const p = profiles.find((pr) => pr.id === galleryFocus.profileId);
+      if (p && !galleryFocus.prefix) {
+        setPrefix(p.defaultPrefix || "");
+      }
+    }
+    if (galleryFocus.prefix) {
+      setPrefix(galleryFocus.prefix);
+    }
+  }, [galleryFocus.profileId, galleryFocus.prefix, profiles]);
   const [objects, setObjects] = useState<GalleryObject[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -181,13 +188,19 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
     setDeleteTarget(obj);
   };
 
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const handleDeleteConfirm = async () => {
     if (!selectedProfile || !deleteTarget) return;
-    setDeletingKey(deleteTarget.key);
+    const targetKey = deleteTarget.key;
+    setDeletingKey(targetKey);
     setDeleteTarget(null);
+    setDeleteError(null);
     try {
-      await galleryApi.deleteObject({ profile: selectedProfile, key: deleteTarget.key });
+      await galleryApi.deleteObject({ profile: selectedProfile, key: targetKey });
       await loadObjects();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setDeletingKey(null);
     }
@@ -274,6 +287,7 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
       )}
       {deletingKey && <StatusMessage>Deleting {deletingKey}...</StatusMessage>}
       {downloadingKey && <StatusMessage>Downloading {downloadingKey}...</StatusMessage>}
+      {deleteError && <StatusMessage variant="error">{deleteError}</StatusMessage>}
       {error && <StatusMessage variant="error">{error}</StatusMessage>}
       {!loading && !error && filteredObjects.length === 0 && (
         <section className="border border-dashed border-outline-variant rounded-lg bg-surface-container-low p-2xl text-center text-on-surface-variant text-callout">

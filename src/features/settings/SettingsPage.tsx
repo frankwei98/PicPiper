@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { settingsApi } from "../../api/tauri";
 import type { AppSettings } from "../../api/tauri";
 import type { S3Profile } from "../../types";
 import { StatusMessage } from "../../components/ui/Toast";
-import { cn } from "../../utils/cn";
+import { btnPrimary, inputClass, labelClass } from "../../components/ui/buttonStyles";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -20,14 +20,12 @@ function upsertProfile(profiles: S3Profile[], profile: S3Profile): S3Profile[] {
   return next;
 }
 
-const btnBase = "border-none rounded-md cursor-pointer text-callout font-medium px-5 py-2.5 transition-[background-color,box-shadow,filter] duration-150 ease-out inline-flex items-center justify-center gap-sm leading-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 disabled:opacity-38 disabled:cursor-not-allowed disabled:pointer-events-none";
-const btnPrimary = cn(btnBase, "bg-primary-container text-on-primary-container font-semibold hover:shadow-[0_1px_3px_rgba(0,0,0,0.3)] hover:brightness-110");
-
-const inputClass = "rounded-md border border-outline-variant bg-surface-container text-on-surface p-2.5 text-body transition-[border-color,box-shadow] duration-150 ease-out focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 w-full";
-const labelClass = "grid gap-xs text-footnote font-medium text-on-surface-variant";
-
 export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) {
-  const profile = settings.profiles[0];
+  const [editingProfileId, setEditingProfileId] = useState(
+    settings.defaultProfileId ?? settings.profiles[0]?.id ?? "",
+  );
+
+  const profile = settings.profiles.find((p) => p.id === editingProfileId) ?? settings.profiles[0];
 
   const [name, setName] = useState(profile?.name ?? "Personal S3");
   const [endpoint, setEndpoint] = useState(profile?.endpoint ?? "");
@@ -42,6 +40,21 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [publicBaseUrl, setPublicBaseUrl] = useState(profile?.publicBaseUrl ?? "");
   const [defaultPrefix, setDefaultPrefix] = useState(profile?.defaultPrefix ?? "");
   const [pathStyle] = useState(profile?.pathStyle ?? true);
+
+  // Re-populate form fields when the selected profile changes
+  useEffect(() => {
+    const p = settings.profiles.find((pr) => pr.id === editingProfileId) ?? settings.profiles[0];
+    if (!p) return;
+    setName(p.name);
+    setEndpoint(p.endpoint);
+    setRegion(p.region);
+    setBucket(p.bucket);
+    setAccessKeyId(p.accessKeyId);
+    setSecretAccessKey("");
+    setAllowInsecureFallback(p.insecureSecretFallback);
+    setPublicBaseUrl(p.publicBaseUrl ?? "");
+    setDefaultPrefix(p.defaultPrefix);
+  }, [editingProfileId, settings.profiles]);
 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -114,6 +127,20 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         </div>
       </header>
       <section className="grid gap-lg max-w-[980px]">
+        {settings.profiles.length > 1 && (
+          <label className={labelClass}>
+            Editing profile
+            <select
+              className={inputClass}
+              value={editingProfileId}
+              onChange={(e) => setEditingProfileId(e.target.value)}
+            >
+              {settings.profiles.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <article className="border border-outline-variant rounded-lg bg-surface-container p-lg transition-[border-color] duration-200 hover:border-outline">
           <h3 className="text-title-2 font-semibold text-on-surface text-balance mb-md">Profile</h3>
           <form className="grid gap-md grid-cols-2 max-lg:grid-cols-1" onSubmit={handleSaveProfile}>

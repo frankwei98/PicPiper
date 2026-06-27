@@ -181,6 +181,27 @@ describe("S3GalleryPage", () => {
     expect(listObjects).toHaveBeenCalledTimes(2);
   });
 
+  it("shows an error when delete rejects", async () => {
+    deleteObject.mockRejectedValueOnce(new Error("Access denied"));
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /delete/i }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /delete/i }));
+
+    expect(await screen.findByText(/access denied/i)).toBeInTheDocument();
+    // listObjects should only be called once (initial load), not refreshed after failed delete
+    expect(listObjects).toHaveBeenCalledTimes(1);
+  });
+
   it("does not delete when confirmation is cancelled", async () => {
     const user = userEvent.setup();
     render(
@@ -302,7 +323,7 @@ describe("S3GalleryPage", () => {
     const user = userEvent.setup();
     render(
       <S3GalleryPage
-        galleryFocus={{ profile, prefix: "", highlightedKeys: [] }}
+        galleryFocus={{ profileId: "p1", prefix: "", highlightedKeys: [] }}
         profiles={[profile, profile2]}
       />,
     );
@@ -316,6 +337,35 @@ describe("S3GalleryPage", () => {
     await user.selectOptions(select, "p2");
 
     // Should reload with profile 2 and its defaultPrefix
+    expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
+  });
+
+  it("syncs selected profile when galleryFocus.profileId changes", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    const { rerender } = render(
+      <S3GalleryPage
+        galleryFocus={{ profileId: "p1", prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    expect(listObjects).toHaveBeenCalledWith({ profile, prefix: "2026/06" });
+
+    // Simulate external navigation changing the gallery focus
+    rerender(
+      <S3GalleryPage
+        galleryFocus={{ profileId: "p2", prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    expect(await screen.findByText("images/photo.webp")).toBeInTheDocument();
     expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
   });
 

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { saveSettings, saveS3Secret } = vi.hoisted(() => ({
   saveSettings: vi.fn(async () => {}),
@@ -121,6 +121,58 @@ describe("SettingsPage", () => {
     });
     expect(saveSettings).toHaveBeenCalled();
     expect(onSettingsChange).toHaveBeenCalled();
+  });
+
+  it("shows profile selector when multiple profiles exist and allows editing the second profile", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    const profile1 = {
+      id: "p1",
+      name: "Personal S3",
+      endpoint: "https://s3.example.com",
+      region: "auto",
+      bucket: "personal",
+      accessKeyId: "key1",
+      credentialRef: "s3:p1",
+      pathStyle: true,
+      defaultPrefix: "images",
+      insecureSecretFallback: false,
+    };
+    const profile2 = {
+      id: "p2",
+      name: "Work S3",
+      endpoint: "https://work.s3.example.com",
+      region: "us-east-1",
+      bucket: "work-bucket",
+      accessKeyId: "key2",
+      credentialRef: "s3:p2",
+      pathStyle: true,
+      defaultPrefix: "work/images",
+      insecureSecretFallback: false,
+    };
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [profile1, profile2],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+          defaultProfileId: "p1",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    // Profile selector should be visible
+    const select = screen.getByRole("combobox");
+    expect(select).toBeInTheDocument();
+
+    // Switch to second profile
+    await user.selectOptions(select, "p2");
+
+    // Form should show second profile's values
+    expect(screen.getByLabelText("Profile name")).toHaveValue("Work S3");
+    expect(screen.getByLabelText("Endpoint")).toHaveValue("https://work.s3.example.com");
+    expect(screen.getByLabelText("Bucket")).toHaveValue("work-bucket");
   });
 
   it("preserves the existing credential when editing a profile without re-entering the secret", async () => {

@@ -27,7 +27,7 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
         <div className="flex items-center gap-sm">
           <div
             className="size-8 bg-primary-container rounded-xs flex items-center justify-center text-lg shrink-0"
-            aria-label="Pic Piper"
+            aria-hidden="true"
           >
             🎵
           </div>
