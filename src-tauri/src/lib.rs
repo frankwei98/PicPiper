@@ -138,7 +138,10 @@ async fn upload_gallery_object(
             target_format,
         };
         if let Err(err) = history::append_history(&paths.history_path, entry) {
-            eprintln!("[history] warning: failed to append upload history: {}", err);
+            eprintln!(
+                "[history] warning: failed to append upload history: {}",
+                err
+            );
         }
     }
 

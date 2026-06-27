@@ -420,8 +420,14 @@ mod tests {
         let warning_false = gps_warning(false);
 
         assert!(warning_true.is_some(), "gps_warning(true) should warn");
-        assert!(warning_false.is_some(), "gps_warning(false) should also warn since metadata is always stripped");
-        assert_eq!(warning_true, warning_false, "warning should be the same regardless of flag");
+        assert!(
+            warning_false.is_some(),
+            "gps_warning(false) should also warn since metadata is always stripped"
+        );
+        assert_eq!(
+            warning_true, warning_false,
+            "warning should be the same regardless of flag"
+        );
     }
 
     #[test]
@@ -443,7 +449,11 @@ mod tests {
         .unwrap();
 
         assert!(
-            result.warning.as_deref().unwrap_or("").contains("EXIF metadata"),
+            result
+                .warning
+                .as_deref()
+                .unwrap_or("")
+                .contains("EXIF metadata"),
             "Compressed output should include metadata warning, got: {:?}",
             result.warning
         );

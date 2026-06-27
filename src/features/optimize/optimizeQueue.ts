@@ -23,8 +23,9 @@ export function makeOutputFileName(fileName: string, targetFormat: WritableImage
 
 export function makeUniqueOutputFileNames(
   items: Array<{ id: string; fileName: string; targetFormat: WritableImageFormat }>,
+  alreadyClaimed?: Map<string, number>,
 ): Record<string, string> {
-  const seen = new Map<string, number>();
+  const seen = new Map<string, number>(alreadyClaimed);
   const outputNames: Record<string, string> = {};
 
   for (const item of items) {

@@ -59,6 +59,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const activeTasks = useRef(new Set<string>());
+  const dispatchedOutputNames = useRef(new Map<string, number>());
   const optimizerRun = useRef<{ runId: string; outputDir: string } | null>(null);
   const debounceRef = useRef<number | undefined>(undefined);
   const qualityRef = useRef(quality);
@@ -130,6 +131,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   const importImages = useCallback(async (paths: string[]) => {
     setImporting(true);
+    dispatchedOutputNames.current.clear();
     setDropError(null);
 
     const pendingItems: OptimizeItem[] = paths.map((path) => ({
@@ -328,12 +330,16 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         fileName: item.fileName,
         targetFormat: item.settings.targetFormat,
       })),
+      dispatchedOutputNames.current,
     );
 
     const nextItems = queuedItems.slice(0, availableSlots);
     for (const item of nextItems) {
       activeTasks.current.add(item.id);
-      void runCompressionTask(item, outputNames[item.id]);
+      // Track the output name to prevent duplicates across scheduler runs
+      const outputName = outputNames[item.id];
+      dispatchedOutputNames.current.set(outputName, (dispatchedOutputNames.current.get(outputName) ?? 0) + 1);
+      void runCompressionTask(item, outputName);
     }
   }, [items, runCompressionTask]);
 
@@ -342,6 +348,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       optimizerRun.current = null;
+      dispatchedOutputNames.current.clear();
       setItems((current) =>
         current.map((item) =>
           shouldRequeueForGlobalSettings(item)
@@ -604,7 +611,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
     if (stillFailed.size === 0) {
       onUploadedToS3?.({
-        profile: activeProfile,
+        profileId: activeProfile?.id,
         prefix,
         highlightedKeys: allUploadedKeys,
       });
