@@ -372,6 +372,162 @@ describe("OptimizePage", () => {
     });
   });
 
+  it("retry only uploads failed items and skips already uploaded ones", async () => {
+    const profile = {
+      id: "p1",
+      name: "Personal S3",
+      bucket: "images",
+      endpoint: "https://s3.example.com",
+      region: "auto",
+      accessKeyId: "AKIAEXAMPLE",
+      pathStyle: false,
+      defaultPrefix: "images/2026/06",
+      publicBaseUrl: "https://cdn.example.com",
+      insecureSecretFallback: false,
+    };
+    const onUploadedToS3 = vi.fn();
+
+    // Mock dialog to return 3 files
+    mockDialogOpen.mockImplementation(async () => [
+      "/tmp/photo-a.jpg",
+      "/tmp/photo-b.jpg",
+      "/tmp/photo-c.jpg",
+    ]);
+
+    // Mock inspectImage to return different items
+    inspectImage
+      .mockImplementationOnce(async () => ({
+        id: "item-a",
+        sourcePath: "/tmp/photo-a.jpg",
+        fileName: "photo-a.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_000_000,
+        estimatedBytes: 200_000,
+        status: "queued",
+        settings: { targetFormat: "jpg", quality: 85, removeGps: true },
+      }))
+      .mockImplementationOnce(async () => ({
+        id: "item-b",
+        sourcePath: "/tmp/photo-b.jpg",
+        fileName: "photo-b.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_000_000,
+        estimatedBytes: 200_000,
+        status: "queued",
+        settings: { targetFormat: "jpg", quality: 85, removeGps: true },
+      }))
+      .mockImplementationOnce(async () => ({
+        id: "item-c",
+        sourcePath: "/tmp/photo-c.jpg",
+        fileName: "photo-c.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_000_000,
+        estimatedBytes: 200_000,
+        status: "queued",
+        settings: { targetFormat: "jpg", quality: 85, removeGps: true },
+      }));
+
+    // Mock compressImage to return success for all
+    compressImage
+      .mockImplementationOnce(async () => ({
+        sourcePath: "/tmp/photo-a.jpg",
+        outputPath: "/tmp/pic-piper/run-1/photo-a.jpg",
+        outputFileName: "photo-a.jpg",
+        originalBytes: 1_000_000,
+        outputBytes: 200_000,
+        targetFormat: "jpg",
+      }))
+      .mockImplementationOnce(async () => ({
+        sourcePath: "/tmp/photo-b.jpg",
+        outputPath: "/tmp/pic-piper/run-1/photo-b.jpg",
+        outputFileName: "photo-b.jpg",
+        originalBytes: 1_000_000,
+        outputBytes: 200_000,
+        targetFormat: "jpg",
+      }))
+      .mockImplementationOnce(async () => ({
+        sourcePath: "/tmp/photo-c.jpg",
+        outputPath: "/tmp/pic-piper/run-1/photo-c.jpg",
+        outputFileName: "photo-c.jpg",
+        originalBytes: 1_000_000,
+        outputBytes: 200_000,
+        targetFormat: "jpg",
+      }));
+
+    // Mock uploadObject: first succeeds, second fails, third succeeds
+    uploadObject
+      .mockImplementationOnce(async () => ({
+        key: "images/2026/06/photo-a-abc.jpg",
+        size: 200_000,
+        publicUrl: "https://cdn.example.com/images/2026/06/photo-a-abc.jpg",
+        isImage: true,
+      }))
+      .mockImplementationOnce(async () => {
+        throw new Error("Network error");
+      })
+      .mockImplementationOnce(async () => ({
+        key: "images/2026/06/photo-c-abc.jpg",
+        size: 200_000,
+        publicUrl: "https://cdn.example.com/images/2026/06/photo-c-abc.jpg",
+        isImage: true,
+      }));
+
+    const user = userEvent.setup();
+    render(
+      <OptimizePage
+        activeProfile={profile}
+        namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}"
+        onUploadedToS3={onUploadedToS3}
+      />,
+    );
+
+    // Import and wait for compression
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/upload to s3/i)).toBeInTheDocument();
+    });
+
+    // Click Upload to S3
+    await user.click(screen.getByRole("button", { name: "Upload to S3" }));
+
+    // Wait for upload to complete (some succeed, some fail)
+    await waitFor(() => {
+      expect(screen.getByText(/1 of 3 upload\(s\) failed/i)).toBeInTheDocument();
+    });
+
+    // Verify retry button appears
+    expect(screen.getByRole("button", { name: /retry 1 failed upload/i })).toBeInTheDocument();
+
+    // uploadObject should have been called 3 times (a, b, c)
+    expect(uploadObject).toHaveBeenCalledTimes(3);
+
+    // Now mock the retry to succeed
+    uploadObject.mockClear();
+    uploadObject.mockImplementationOnce(async () => ({
+      key: "images/2026/06/photo-b-retry.jpg",
+      size: 200_000,
+      publicUrl: "https://cdn.example.com/images/2026/06/photo-b-retry.jpg",
+      isImage: true,
+    }));
+
+    // Click retry
+    await user.click(screen.getByRole("button", { name: /retry 1 failed upload/i }));
+
+    // Wait for retry to complete
+    await waitFor(() => {
+      expect(onUploadedToS3).toHaveBeenCalled();
+    });
+
+    // uploadObject should only be called once (for the failed item b)
+    expect(uploadObject).toHaveBeenCalledTimes(1);
+
+    // Verify highlightedKeys includes both previous successes and new retry
+    const lastCall = onUploadedToS3.mock.calls[onUploadedToS3.mock.calls.length - 1][0];
+    expect(lastCall.highlightedKeys).toContain("images/2026/06/photo-a-abc.jpg");
+    expect(lastCall.highlightedKeys).toContain("images/2026/06/photo-b-retry.jpg");
+    expect(lastCall.highlightedKeys).toContain("images/2026/06/photo-c-abc.jpg");
+  });
+
   it("dropping file with usable path calls inspectImage", async () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
