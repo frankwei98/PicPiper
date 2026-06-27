@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
@@ -12,13 +12,14 @@ import { btnPrimary, btnSecondary, btnDanger, btnSm, inputClass } from "../../co
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
   profiles: S3Profile[];
+  defaultProfileId?: string;
   onNavigate?: (view: AppView) => void;
 }
 
-export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryPageProps) {
-  const [selectedProfileId, setSelectedProfileId] = useState(
-    galleryFocus.profileId ?? profiles[0]?.id ?? "",
-  );
+export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, onNavigate }: S3GalleryPageProps) {
+  const resolveDefaultId = () =>
+    galleryFocus.profileId ?? defaultProfileId ?? profiles[0]?.id ?? "";
+  const [selectedProfileId, setSelectedProfileId] = useState(resolveDefaultId);
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.id === selectedProfileId) ?? profiles[0],
     [profiles, selectedProfileId],
@@ -26,6 +27,23 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
   const [prefix, setPrefix] = useState(
     galleryFocus.prefix || selectedProfile?.defaultPrefix || "",
   );
+  const [debouncedPrefix, setDebouncedPrefix] = useState(prefix);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce prefix changes for API calls
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      setDebouncedPrefix(prefix);
+    }, 350);
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [prefix]);
 
   // Sync profile and prefix when galleryFocus changes externally
   useEffect(() => {
@@ -33,11 +51,14 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
       setSelectedProfileId(galleryFocus.profileId);
       const p = profiles.find((pr) => pr.id === galleryFocus.profileId);
       if (p && !galleryFocus.prefix) {
-        setPrefix(p.defaultPrefix || "");
+        const newPrefix = p.defaultPrefix || "";
+        setPrefix(newPrefix);
+        setDebouncedPrefix(newPrefix); // immediate for programmatic changes
       }
     }
     if (galleryFocus.prefix) {
       setPrefix(galleryFocus.prefix);
+      setDebouncedPrefix(galleryFocus.prefix); // immediate for programmatic changes
     }
   }, [galleryFocus.profileId, galleryFocus.prefix, profiles]);
   const [objects, setObjects] = useState<GalleryObject[]>([]);
@@ -60,7 +81,7 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
     try {
       const result = await galleryApi.listObjects({
         profile: selectedProfile,
-        prefix,
+        prefix: debouncedPrefix,
       });
       setObjects(result);
       setImgErrors(new Set());
@@ -69,7 +90,7 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
     } finally {
       setLoading(false);
     }
-  }, [selectedProfile, prefix]);
+  }, [selectedProfile, debouncedPrefix]);
 
   useEffect(() => {
     loadObjects();
@@ -245,7 +266,9 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
             const newId = e.target.value;
             setSelectedProfileId(newId);
             const newProfile = profiles.find((p) => p.id === newId);
-            setPrefix(newProfile?.defaultPrefix ?? "");
+            const newPrefix = newProfile?.defaultPrefix ?? "";
+            setPrefix(newPrefix);
+            setDebouncedPrefix(newPrefix); // immediate for programmatic changes
           }}
         >
           {profiles.map((p) => (

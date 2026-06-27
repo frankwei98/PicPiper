@@ -67,6 +67,7 @@ function App() {
         <S3GalleryPage
           galleryFocus={navigation.galleryFocus}
           profiles={settings.profiles}
+          defaultProfileId={settings.defaultProfileId}
           onNavigate={(view) => setNavigation((prev) => ({ ...prev, view }))}
         />
       )}
