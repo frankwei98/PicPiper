@@ -1,6 +1,13 @@
 export type AppView = "optimize" | "gallery" | "settings";
 
-export type ImageFormat = "jpg" | "png" | "webp" | "avif" | "heif";
+/** Formats that the built-in encoder can write to. */
+export type WritableImageFormat = "jpg" | "png" | "webp" | "avif";
+
+/** Formats that can be read/imported (superset of writable). */
+export type ReadableImageFormat = WritableImageFormat | "heif";
+
+/** Union of all image formats the app understands. */
+export type ImageFormat = ReadableImageFormat;
 
 export type ImageStatus =
   | "inspecting"
@@ -11,8 +18,20 @@ export type ImageStatus =
   | "failed"
   | "cancelled";
 
+/** Response from the Rust inspect_image command. */
+export interface ImageInspection {
+  path: string;
+  fileName: string;
+  sourceFormat: ReadableImageFormat | null;
+  originalBytes: number;
+  width: number;
+  height: number;
+  estimatedBytes: number | null;
+  warning: string | null;
+}
+
 export interface CompressionSettings {
-  targetFormat: ImageFormat;
+  targetFormat: WritableImageFormat;
   quality: number;
   removeGps: boolean;
 }
@@ -21,7 +40,7 @@ export interface OptimizeItem {
   id: string;
   sourcePath: string;
   fileName: string;
-  sourceFormat: ImageFormat | "unknown";
+  sourceFormat: ReadableImageFormat | "unknown";
   originalBytes: number;
   estimatedBytes?: number;
   outputBytes?: number;

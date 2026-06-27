@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import type { CompressionSettings, ImageFormat, OptimizeItem, S3Profile } from "../../types";
+import type { CompressionSettings, ImageInspection, OptimizeItem, S3Profile, WritableImageFormat } from "../../types";
 import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 import { cn } from "../../utils/cn";
 import { Slider } from "../../components/ui/Slider";
@@ -84,15 +84,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     );
 
     try {
-      const raw = (await tauriApi.inspectImage({
+      const inspection: ImageInspection = await tauriApi.inspectImage({
         path: sourcePath,
         settings: { ...DEFAULT_SETTINGS, quality, removeGps },
-      })) as unknown as Record<string, unknown>;
+      });
 
-      const fileName = (raw.fileName as string) ?? (raw.file_name as string) ?? sourcePath.split("/").pop() ?? "unknown";
-      const sourceFormat = (raw.sourceFormat as OptimizeItem["sourceFormat"]) ?? (raw.source_format as OptimizeItem["sourceFormat"]) ?? "unknown";
-      const originalBytes = (raw.originalBytes as number) ?? (raw.original_bytes as number) ?? 0;
-      const estimatedBytes = (raw.estimatedBytes as number) ?? (raw.estimated_bytes as number) ?? 0;
+      const sourceFormat = inspection.sourceFormat ?? "unknown";
       const targetFormat = defaultTargetFormat(sourceFormat);
 
       setItems((current) =>
@@ -100,11 +97,11 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           ci.id === itemId
             ? {
                 ...ci,
-                fileName,
+                fileName: inspection.fileName,
                 sourceFormat,
-                originalBytes,
-                estimatedBytes,
-                warning: raw.warning as string | undefined,
+                originalBytes: inspection.originalBytes,
+                estimatedBytes: inspection.estimatedBytes ?? undefined,
+                warning: inspection.warning ?? undefined,
                 status: "queued" as const,
                 settings: { targetFormat, quality, removeGps },
               }
@@ -376,7 +373,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   // --- Per-item actions ---
-  const updateFormat = (id: string, targetFormat: ImageFormat) => {
+  const updateFormat = (id: string, targetFormat: WritableImageFormat) => {
     setItems((current) =>
       current.map((item) =>
         item.id === id && item.status !== "cancelled"
@@ -638,7 +635,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                   <select
                     aria-label={`Format for ${item.fileName}`}
                     value={item.settings.targetFormat}
-                    onChange={(event) => updateFormat(item.id, event.target.value as ImageFormat)}
+                    onChange={(event) => updateFormat(item.id, event.target.value as WritableImageFormat)}
                   >
                     {AVAILABLE_OUTPUT_FORMATS.map((format) => (
                       <option key={format} value={format}>
