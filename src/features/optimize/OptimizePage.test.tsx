@@ -96,10 +96,11 @@ function installDefaultMocks() {
     },
   }));
   compressImage.mockImplementation(async (...args: unknown[]) => {
-    const request = args[0] as { sourcePath?: string; outputFileName?: string } | undefined;
+    const request = args[0] as { sourcePath?: string; outputDir?: string; outputFileName?: string } | undefined;
+    const outputDir = request?.outputDir ?? "/tmp/pic-piper/run-1";
     return {
       sourcePath: request?.sourcePath ?? "/tmp/real-photo.jpg",
-      outputPath: `/tmp/pic-piper/run-1/${request?.outputFileName ?? "real-photo.jpg"}`,
+      outputPath: `${outputDir}/${request?.outputFileName ?? "real-photo.jpg"}`,
       outputFileName: request?.outputFileName ?? "real-photo.jpg",
       originalBytes: 1_200_000,
       outputBytes: 240_000,
@@ -210,6 +211,42 @@ describe("OptimizePage", () => {
     });
   });
 
+  it("updates the displayed compressed size after global quality recompression finishes", async () => {
+    createOptimizerRun
+      .mockResolvedValueOnce({ runId: "run-1", outputDir: "/tmp/pic-piper/run-1" })
+      .mockResolvedValueOnce({ runId: "run-2", outputDir: "/tmp/pic-piper/run-2" });
+    compressImage.mockImplementation(async (...args: unknown[]) => {
+      const request = args[0] as { sourcePath?: string; outputDir?: string; outputFileName?: string; settings?: { quality: number } } | undefined;
+      const outputDir = request?.outputDir ?? "/tmp/pic-piper/run-1";
+      const outputBytes = request?.settings?.quality === 60 ? 120_000 : 240_000;
+      return {
+        sourcePath: request?.sourcePath ?? "/tmp/real-photo.jpg",
+        outputPath: `${outputDir}/${request?.outputFileName ?? "real-photo.jpg"}`,
+        outputFileName: request?.outputFileName ?? "real-photo.jpg",
+        originalBytes: 1_200_000,
+        outputBytes,
+        targetFormat: "jpg",
+      };
+    });
+
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    expect(await screen.findByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+
+    expect(await screen.findByText(/1.2 MB.*120 KB/)).toBeInTheDocument();
+    expect(screen.queryByText(/1.2 MB.*240 KB/)).not.toBeInTheDocument();
+    expect(createOptimizerRun).toHaveBeenCalledTimes(2);
+    expect(compressImage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        outputDir: "/tmp/pic-piper/run-2",
+      }),
+    );
+  });
+
   it("changing one card format recompresses only that item", async () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
@@ -227,6 +264,35 @@ describe("OptimizePage", () => {
         settings: expect.objectContaining({ targetFormat: "webp" }),
       }),
     );
+  });
+
+  it("warns when selected PNG output ignores quality", async () => {
+    inspectImage.mockImplementation(async () => ({
+      id: "real-photo",
+      sourcePath: "/tmp/real-photo.png",
+      fileName: "real-photo.png",
+      sourceFormat: "png",
+      originalBytes: 1_200_000,
+      estimatedBytes: 260_000,
+      status: "queued",
+      settings: {
+        targetFormat: "png",
+        quality: 85,
+        removeGps: true,
+      },
+    }));
+    mockDialogOpen.mockImplementation(async (...args: unknown[]) => {
+      const opts = args[0] as { directory?: boolean } | undefined;
+      if (opts?.directory) return "/tmp/saved" as unknown as string[];
+      return ["/tmp/real-photo.png"];
+    });
+
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+
+    expect(await screen.findByText(/quality does not apply to png output/i)).toBeInTheDocument();
   });
 
   it("keeps duplicate output filenames unique across sequential scheduler batches", async () => {

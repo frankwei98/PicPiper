@@ -284,6 +284,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           outputBytes: result.outputBytes,
           outputPath: result.outputPath,
           outputFileName: result.outputFileName,
+          warning: result.warning ?? ci.warning,
         };
       });
 
@@ -344,6 +345,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const scheduleGlobalRequeue = (nextQuality: number, nextRemoveGps: boolean) => {
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
+      optimizerRun.current = null;
       setItems((current) =>
         current.map((item) =>
           shouldRequeueForGlobalSettings(item)
@@ -383,6 +385,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   // --- Per-item actions ---
   const updateFormat = (id: string, targetFormat: ImageFormat) => {
+    optimizerRun.current = null;
     setItems((current) =>
       current.map((item) =>
         item.id === id && item.status !== "cancelled"
@@ -639,6 +642,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                 </p>
               ) : null}
               {item.warning && <p className="text-on-tertiary text-caption mt-0.5">{item.warning}</p>}
+              {item.settings.targetFormat === "png" && (
+                <p className="text-on-tertiary text-caption mt-0.5">Quality does not apply to PNG output.</p>
+              )}
               {item.status !== "inspecting" && item.status !== "cancelled" && !item.error && (
                 <label className="flex flex-col mt-xs text-footnote text-on-surface-variant">
                   <select
