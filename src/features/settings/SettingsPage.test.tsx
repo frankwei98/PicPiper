@@ -1,9 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { AppSettings } from "../../api/tauri";
 
 const { saveSettings, saveS3Secret } = vi.hoisted(() => ({
-  saveSettings: vi.fn(async () => {}),
+  saveSettings: vi.fn(async (_settings?: AppSettings) => {}),
   saveS3Secret: vi.fn(async () => ({
     credentialRef: "s3:personal",
     insecureFallbackUsed: false,
@@ -360,7 +361,7 @@ describe("SettingsPage", () => {
     await user.click(screen.getByRole("button", { name: /save profile/i }));
 
     expect(saveSettings).toHaveBeenCalled();
-    const savedSettings = saveSettings.mock.calls[0][0];
+    const savedSettings = saveSettings.mock.calls[0]![0]!;
     // Both profiles should exist
     expect(savedSettings.profiles).toHaveLength(2);
     expect(savedSettings.profiles[0].id).toBe("existing");

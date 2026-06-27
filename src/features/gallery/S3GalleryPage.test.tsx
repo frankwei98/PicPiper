@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { S3GalleryPage } from "./S3GalleryPage";
@@ -401,5 +401,57 @@ describe("S3GalleryPage", () => {
     );
     // Should refresh the object list after upload
     expect(listObjects).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses defaultProfileId when galleryFocus.profileId is not set", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+        defaultProfileId="p2"
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    // Should use profile2 (the default) not profile (the first)
+    expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
+  });
+
+  it("debounces prefix changes and only calls listObjects once", async () => {
+    vi.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    const initialCalls = listObjects.mock.calls.length;
+
+    // Type multiple characters quickly
+    const prefixInput = screen.getByLabelText("Prefix");
+    await user.type(prefixInput, "images/20");
+
+    // listObjects should not have been called again yet (debounced)
+    expect(listObjects).toHaveBeenCalledTimes(initialCalls);
+
+    // Advance timers past the debounce period
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+
+    // Now listObjects should have been called once more with the final prefix
+    expect(listObjects).toHaveBeenCalledTimes(initialCalls + 1);
+    expect(listObjects).toHaveBeenLastCalledWith({ profile, prefix: "images/20" });
+
+    vi.useRealTimers();
   });
 });
