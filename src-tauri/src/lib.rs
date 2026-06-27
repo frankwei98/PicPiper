@@ -113,7 +113,7 @@ async fn upload_gallery_object(
             format!(
                 "{}/{}",
                 base.trim_end_matches('/'),
-                object_key.trim_start_matches('/')
+                gallery::encode_object_key(object_key.trim_start_matches('/'))
             )
         });
         let entry = UploadHistoryEntry {
@@ -152,16 +152,20 @@ async fn generate_object_key(
         date,
     )?;
 
-    // Prefix the rendered key with the selected prefix if the template doesn't already start with it
-    let prefix_normalized = request.prefix.trim_end_matches('/');
-    let object_key = if !rendered.starts_with(prefix_normalized) && !prefix_normalized.is_empty() {
+    // Prefix the rendered key with the selected prefix if the template doesn't already
+    // start with it as a complete path segment boundary.
+    let prefix_normalized = request.prefix.trim_matches('/');
+    let object_key = if !prefix_normalized.is_empty()
+        && !naming::has_path_prefix(&rendered, prefix_normalized)
+    {
         format!("{}/{}", prefix_normalized, rendered)
     } else {
         rendered
     };
 
-    // Normalize slashes
+    // Normalize slashes and validate
     let object_key = object_key.replace('\\', "/");
+    naming::validate_object_key(&object_key)?;
 
     Ok(GenerateObjectKeyResponse { object_key })
 }

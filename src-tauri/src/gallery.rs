@@ -46,6 +46,34 @@ fn endpoint_url(profile: &S3Profile) -> String {
         .to_string()
 }
 
+/// Percent-encode a single path segment for use in URLs.
+/// Encodes everything that is not an unreserved character (RFC 3986),
+/// preserving the segment boundary (no '/' encoding).
+fn encode_path_segment(segment: &str) -> String {
+    let mut encoded = String::with_capacity(segment.len() * 3);
+    for byte in segment.bytes() {
+        match byte {
+            // Unreserved characters: ALPHA / DIGIT / "-" / "." / "_" / "~"
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push_str(&format!("{:02X}", byte));
+            }
+        }
+    }
+    encoded
+}
+
+/// Percent-encode an object key for use in URLs, preserving '/' separators.
+pub(crate) fn encode_object_key(key: &str) -> String {
+    key.split('/')
+        .map(encode_path_segment)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 pub fn public_url(profile: &S3Profile, key: &str) -> AppResult<String> {
     let base = profile.public_base_url.as_deref().ok_or_else(|| {
         AppError::new(
@@ -53,11 +81,9 @@ pub fn public_url(profile: &S3Profile, key: &str) -> AppResult<String> {
             "Set a Public Base URL before copying object URLs.",
         )
     })?;
-    Ok(format!(
-        "{}/{}",
-        base.trim_end_matches('/'),
-        key.trim_start_matches('/')
-    ))
+    let trimmed_key = key.trim_start_matches('/');
+    let encoded_key = encode_object_key(trimmed_key);
+    Ok(format!("{}/{}", base.trim_end_matches('/'), encoded_key))
 }
 
 pub fn is_supported_image_key(key: &str) -> bool {
@@ -256,6 +282,55 @@ mod tests {
         assert_eq!(
             endpoint_url(&p),
             "https://account.r2.cloudflarestorage.com".to_string()
+        );
+    }
+
+    // --- public_url percent-encoding tests ---
+
+    #[test]
+    fn public_url_encodes_spaces() {
+        let p = profile(Some("https://cdn.example.com"));
+        assert_eq!(
+            public_url(&p, "photos/my file.jpg").unwrap(),
+            "https://cdn.example.com/photos/my%20file.jpg"
+        );
+    }
+
+    #[test]
+    fn public_url_encodes_hash() {
+        let p = profile(Some("https://cdn.example.com"));
+        assert_eq!(
+            public_url(&p, "photos/photo#1.jpg").unwrap(),
+            "https://cdn.example.com/photos/photo%231.jpg"
+        );
+    }
+
+    #[test]
+    fn public_url_encodes_unicode() {
+        let p = profile(Some("https://cdn.example.com"));
+        let url = public_url(&p, "photos/cafe\u{0301}.jpg").unwrap();
+        // Should contain percent-encoded bytes for the Unicode characters
+        assert!(url.contains("photos/"));
+        assert!(url.starts_with("https://cdn.example.com/"));
+        // The encoded URL should not contain the raw unicode combining character
+        assert!(!url.contains('\u{0301}'));
+    }
+
+    #[test]
+    fn public_url_preserves_slashes() {
+        let p = profile(Some("https://cdn.example.com"));
+        assert_eq!(
+            public_url(&p, "a/b/c.jpg").unwrap(),
+            "https://cdn.example.com/a/b/c.jpg"
+        );
+    }
+
+    #[test]
+    fn public_url_encodes_plus_sign() {
+        let p = profile(Some("https://cdn.example.com"));
+        assert_eq!(
+            public_url(&p, "photos/a+b.jpg").unwrap(),
+            "https://cdn.example.com/photos/a%2Bb.jpg"
         );
     }
 }

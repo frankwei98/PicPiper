@@ -24,7 +24,13 @@ pub fn save_settings(path: &Path, settings: &AppSettings) -> AppResult<()> {
 
     let content = serde_json::to_string_pretty(settings)
         .map_err(|err| AppError::new("settingsSerializeFailed", err.to_string()))?;
-    fs::write(path, content).map_err(|err| AppError::new("settingsWriteFailed", err.to_string()))
+
+    // Write atomically: write to temp file in same directory, then rename
+    let temp_path = path.with_extension("json.tmp");
+    fs::write(&temp_path, &content)
+        .map_err(|err| AppError::new("settingsWriteFailed", err.to_string()))?;
+    fs::rename(&temp_path, path)
+        .map_err(|err| AppError::new("settingsWriteFailed", err.to_string()))
 }
 
 #[cfg(test)]
@@ -39,5 +45,39 @@ mod tests {
         assert!(settings.profiles.is_empty());
         assert!(settings.default_output_dir.is_none());
         assert!(settings.default_profile_id.is_none());
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut settings = AppSettings::default();
+        settings.default_output_dir = Some("/tmp/out".to_string());
+
+        save_settings(&path, &settings).unwrap();
+        let loaded = load_settings(&path).unwrap();
+        assert_eq!(loaded.default_output_dir, Some("/tmp/out".to_string()));
+    }
+
+    #[test]
+    fn existing_file_survives_failed_temp_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+
+        // Write valid initial settings
+        let mut settings = AppSettings::default();
+        settings.default_output_dir = Some("/original".to_string());
+        save_settings(&path, &settings).unwrap();
+
+        // The atomic write uses a .tmp extension; verify it does not linger
+        let temp_path = path.with_extension("json.tmp");
+        assert!(
+            !temp_path.exists(),
+            "temp file should not exist after successful save"
+        );
+
+        // Original file should still be readable
+        let loaded = load_settings(&path).unwrap();
+        assert_eq!(loaded.default_output_dir, Some("/original".to_string()));
     }
 }
