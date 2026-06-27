@@ -57,7 +57,8 @@ const btnTertiary = cn(btnBase, "bg-transparent text-primary px-3 hover:bg-[rgba
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [quality, setQuality] = useState(DEFAULT_SETTINGS.quality);
-  const [removeGps, setRemoveGps] = useState(DEFAULT_SETTINGS.removeGps);
+  // removeGps is always true since the encoder always strips metadata
+  const removeGps = true;
   const [compareItemId, setCompareItemId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -370,11 +371,6 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const handleQualityChange = (nextQuality: number) => {
     setQuality(nextQuality);
     scheduleGlobalRequeue(nextQuality, removeGps);
-  };
-
-  const handleRemoveGpsChange = (checked: boolean) => {
-    setRemoveGps(checked);
-    scheduleGlobalRequeue(quality, checked);
   };
 
   // --- Per-item actions ---
@@ -778,7 +774,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         >
           <div className="flex flex-col gap-xs mb-lg text-caption text-on-surface-variant">
             <p>Quality: {compareItem.settings.quality}</p>
-            <p>Remove GPS: {compareItem.settings.removeGps ? "On" : "Off"}</p>
+            <p>Metadata: Removed during compression</p>
             <p>Output format: {compareItem.settings.targetFormat}</p>
           </div>
           <div className="grid grid-cols-2 gap-lg">
