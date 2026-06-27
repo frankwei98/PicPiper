@@ -183,7 +183,7 @@ pub struct GenerateObjectKeyResponse {
 pub struct DownloadObjectRequest {
     pub profile: S3Profile,
     pub key: String,
-    pub output_path: String,
+    pub output_dir: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

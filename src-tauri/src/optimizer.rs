@@ -110,7 +110,7 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
         let file_name = Path::new(src_path)
             .file_name()
             .ok_or_else(|| AppError::new("invalidPath", "Could not extract filename from path"))?;
-        let dest = target.join(file_name);
+        let dest = unique_destination_path(target, &file_name.to_string_lossy());
         fs::copy(src_path, &dest).map_err(|err| {
             AppError::new(
                 "copyFailed",
@@ -121,6 +121,66 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
     }
 
     Ok(copied)
+}
+
+/// Choose a unique file path in `dir` based on `file_name`.
+///
+/// If `dir/file_name` does not exist, returns it as-is. Otherwise appends
+/// `-2`, `-3`, etc. before the extension until a free path is found.
+pub fn unique_destination_path(dir: &Path, file_name: &str) -> PathBuf {
+    let candidate = dir.join(file_name);
+    if !candidate.exists() {
+        return candidate;
+    }
+
+    let (stem, ext) = match file_name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() && !e.is_empty() => (s.to_string(), Some(e.to_string())),
+        _ => (file_name.to_string(), None),
+    };
+
+    for n in 2.. {
+        let name = match &ext {
+            Some(e) => format!("{}-{}.{}", stem, n, e),
+            None => format!("{}-{}", stem, n),
+        };
+        let path = dir.join(&name);
+        if !path.exists() {
+            return path;
+        }
+    }
+    unreachable!()
+}
+
+/// Delete optimizer-cache/run-* directories older than `max_age`.
+/// Returns the number of directories removed. Best-effort: individual
+/// removal failures are silently ignored.
+pub fn cleanup_old_runs(cache_dir: &Path, max_age: std::time::Duration) -> usize {
+    let Ok(entries) = fs::read_dir(cache_dir) else {
+        return 0;
+    };
+
+    let now = std::time::SystemTime::now();
+    let mut removed = 0;
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if !name_str.starts_with("run-") {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        if now.duration_since(modified).unwrap_or_default() > max_age {
+            let _ = fs::remove_dir_all(entry.path());
+            removed += 1;
+        }
+    }
+
+    removed
 }
 
 fn estimate_bytes(original_bytes: u64, quality: u8) -> u64 {
@@ -353,5 +413,93 @@ mod tests {
     fn png_still_warns_about_quality() {
         let warning = quality_format_warning(&ImageFormat::Png);
         assert!(warning.is_some(), "PNG should still warn about quality");
+    }
+
+    #[test]
+    fn unique_destination_path_returns_original_when_free() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = unique_destination_path(dir.path(), "photo.webp");
+        assert_eq!(path, dir.path().join("photo.webp"));
+    }
+
+    #[test]
+    fn unique_destination_path_appends_suffix_when_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("photo.webp"), b"existing").unwrap();
+        let path = unique_destination_path(dir.path(), "photo.webp");
+        assert_eq!(path, dir.path().join("photo-2.webp"));
+    }
+
+    #[test]
+    fn unique_destination_path_skips_existing_suffixes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("photo.webp"), b"1").unwrap();
+        std::fs::write(dir.path().join("photo-2.webp"), b"2").unwrap();
+        let path = unique_destination_path(dir.path(), "photo.webp");
+        assert_eq!(path, dir.path().join("photo-3.webp"));
+    }
+
+    #[test]
+    fn copy_outputs_to_dir_does_not_overwrite_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let target = dir.path().join("target");
+        std::fs::create_dir_all(&target).unwrap();
+
+        // Create source files
+        std::fs::write(src.join("photo.webp"), b"new").unwrap();
+
+        // Pre-existing file in target
+        std::fs::write(target.join("photo.webp"), b"old").unwrap();
+
+        let copied = copy_outputs_to_dir(CopyOutputsRequest {
+            output_paths: vec![src.join("photo.webp").to_string_lossy().to_string()],
+            target_dir: target.to_string_lossy().to_string(),
+        })
+        .unwrap();
+
+        assert_eq!(copied.len(), 1);
+        assert_eq!(copied[0], target.join("photo-2.webp").to_string_lossy());
+        // Original is untouched
+        assert_eq!(std::fs::read(target.join("photo.webp")).unwrap(), b"old");
+        // New file written to unique path
+        assert_eq!(std::fs::read(&copied[0]).unwrap(), b"new");
+    }
+
+    #[test]
+    fn cleanup_old_runs_removes_stale_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("optimizer-cache");
+        std::fs::create_dir_all(cache.join("run-recent")).unwrap();
+        std::fs::create_dir_all(cache.join("run-old")).unwrap();
+
+        // Make "run-old" appear old by backdating its mtime.
+        let old_time = std::time::SystemTime::now() - std::time::Duration::from_secs(8 * 86400);
+        let old_file = cache.join("run-old").join("placeholder");
+        std::fs::write(&old_file, b"x").unwrap();
+        filetime::set_file_mtime(&old_file, filetime::FileTime::from_system_time(old_time))
+            .unwrap();
+        filetime::set_file_mtime(
+            cache.join("run-old"),
+            filetime::FileTime::from_system_time(old_time),
+        )
+        .unwrap();
+
+        let removed = cleanup_old_runs(&cache, std::time::Duration::from_secs(7 * 86400));
+        assert_eq!(removed, 1);
+        assert!(!cache.join("run-old").exists());
+        assert!(cache.join("run-recent").exists());
+    }
+
+    #[test]
+    fn cleanup_old_runs_ignores_non_run_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("optimizer-cache");
+        std::fs::create_dir_all(cache.join("other-stuff")).unwrap();
+
+        let removed = cleanup_old_runs(&cache, std::time::Duration::from_secs(0));
+        assert_eq!(removed, 0);
+        assert!(cache.join("other-stuff").exists());
     }
 }

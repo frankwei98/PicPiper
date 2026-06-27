@@ -10,6 +10,7 @@ use crate::{
         DeleteObjectRequest, DownloadObjectRequest, GalleryObject, ListObjectsRequest, S3Profile,
         UploadObjectRequest,
     },
+    optimizer,
 };
 
 async fn client_for(profile: &S3Profile, secret: String) -> Client {
@@ -113,27 +114,53 @@ pub async fn list_objects(
     secret: String,
 ) -> AppResult<Vec<GalleryObject>> {
     let client = client_for(&request.profile, secret).await;
-    let response = client
-        .list_objects_v2()
-        .bucket(&request.profile.bucket)
-        .prefix(&request.prefix)
-        .send()
-        .await
-        .map_err(|err| AppError::new("s3ListFailed", err.to_string()))?;
+    let mut all_objects: Vec<GalleryObject> = Vec::new();
+    let mut continuation_token: Option<String> = None;
 
-    Ok(response
-        .contents()
+    loop {
+        let mut req = client
+            .list_objects_v2()
+            .bucket(&request.profile.bucket)
+            .prefix(&request.prefix);
+
+        if let Some(token) = &continuation_token {
+            req = req.continuation_token(token);
+        }
+
+        let response = req
+            .send()
+            .await
+            .map_err(|err| AppError::new("s3ListFailed", err.to_string()))?;
+
+        all_objects.extend(map_s3_objects(&request.profile, response.contents()));
+
+        if response.is_truncated().unwrap_or(false) {
+            continuation_token = response.next_continuation_token().map(String::from);
+        } else {
+            break;
+        }
+    }
+
+    Ok(all_objects)
+}
+
+/// Map raw S3 object entries to `GalleryObject`s. Extracted for testability.
+pub fn map_s3_objects(
+    profile: &S3Profile,
+    objects: &[aws_sdk_s3::types::Object],
+) -> Vec<GalleryObject> {
+    objects
         .iter()
         .filter_map(|object| {
             let key = object.key()?.to_string();
             Some(object_from_parts(
-                &request.profile,
+                profile,
                 key,
                 object.size().unwrap_or_default() as u64,
                 object.last_modified().map(|dt| dt.to_string()),
             ))
         })
-        .collect())
+        .collect()
 }
 
 pub async fn delete_object(request: DeleteObjectRequest, secret: String) -> AppResult<()> {
@@ -157,16 +184,39 @@ pub async fn download_object(request: DownloadObjectRequest, secret: String) -> 
         .send()
         .await
         .map_err(|err| AppError::new("s3DownloadFailed", err.to_string()))?;
-    let bytes = response
-        .body
-        .collect()
+
+    let file_name = std::path::Path::new(&request.key)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "download".to_string());
+    let dest_dir = std::path::Path::new(&request.output_dir);
+    tokio::fs::create_dir_all(dest_dir)
         .await
-        .map_err(|err| AppError::new("s3DownloadReadFailed", err.to_string()))?
-        .into_bytes();
-    tokio::fs::write(&request.output_path, bytes)
+        .map_err(|err| AppError::new("downloadDirFailed", err.to_string()))?;
+
+    // Pick a unique path before starting the download so we don't overwrite.
+    let dest = optimizer::unique_destination_path(dest_dir, &file_name);
+
+    // Stream body directly to file instead of buffering the whole object in memory.
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::File::create(&dest)
         .await
         .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
-    Ok(request.output_path)
+    let mut stream = response.body;
+    while let Some(chunk) = stream
+        .try_next()
+        .await
+        .map_err(|err| AppError::new("s3DownloadReadFailed", err.to_string()))?
+    {
+        file.write_all(&chunk)
+            .await
+            .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
+    }
+    file.flush()
+        .await
+        .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
+
+    Ok(dest.to_string_lossy().to_string())
 }
 
 pub async fn upload_object(
@@ -205,6 +255,7 @@ pub async fn upload_object(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_sdk_s3::types::Object;
 
     fn profile(base: Option<&str>) -> S3Profile {
         S3Profile {
@@ -332,5 +383,60 @@ mod tests {
             public_url(&p, "photos/a+b.jpg").unwrap(),
             "https://cdn.example.com/photos/a%2Bb.jpg"
         );
+    }
+
+    fn make_s3_object(key: &str, size: i64, ts_secs: i64) -> Object {
+        let dt = aws_sdk_s3::primitives::DateTime::from_secs(ts_secs);
+        Object::builder()
+            .key(key)
+            .size(size)
+            .last_modified(dt)
+            .build()
+    }
+
+    #[test]
+    fn map_s3_objects_preserves_size_last_modified_and_is_image() {
+        let p = profile(Some("https://cdn.example.com"));
+        let raw = vec![
+            make_s3_object("photos/a.jpg", 2048, 1_700_000_000),
+            make_s3_object("docs/readme.txt", 512, 1_700_000_100),
+        ];
+        let mapped = map_s3_objects(&p, &raw);
+
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(mapped[0].key, "photos/a.jpg");
+        assert_eq!(mapped[0].size, 2048);
+        assert!(mapped[0].is_image);
+        assert!(mapped[0].last_modified.is_some());
+
+        assert_eq!(mapped[1].key, "docs/readme.txt");
+        assert_eq!(mapped[1].size, 512);
+        assert!(!mapped[1].is_image);
+    }
+
+    #[test]
+    fn map_s3_objects_merges_two_pages() {
+        let p = profile(Some("https://cdn.example.com"));
+        let page1 = vec![make_s3_object("img/1.jpg", 100, 1_700_000_000)];
+        let page2 = vec![make_s3_object("img/2.png", 200, 1_700_000_100)];
+
+        let mut all: Vec<GalleryObject> = Vec::new();
+        all.extend(map_s3_objects(&p, &page1));
+        all.extend(map_s3_objects(&p, &page2));
+
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].key, "img/1.jpg");
+        assert_eq!(all[0].size, 100);
+        assert!(all[0].last_modified.is_some());
+        assert_eq!(all[1].key, "img/2.png");
+        assert_eq!(all[1].size, 200);
+        assert!(all[1].last_modified.is_some());
+    }
+
+    #[test]
+    fn map_s3_objects_handles_empty_page() {
+        let p = profile(Some("https://cdn.example.com"));
+        let mapped = map_s3_objects(&p, &[]);
+        assert!(mapped.is_empty());
     }
 }

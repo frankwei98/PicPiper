@@ -258,7 +258,7 @@ describe("S3GalleryPage", () => {
     expect(open).toHaveBeenCalledWith("https://cdn.example.com/images/photo.webp", "_blank");
   });
 
-  it("downloads object to chosen directory", async () => {
+  it("downloads object to chosen directory and shows saved path", async () => {
     const user = userEvent.setup();
     render(
       <S3GalleryPage
@@ -274,8 +274,9 @@ describe("S3GalleryPage", () => {
     expect(downloadObject).toHaveBeenCalledWith({
       profile,
       key: "images/photo.webp",
-      outputPath: "/tmp/downloads/photo.webp",
+      outputDir: "/tmp/downloads",
     });
+    expect(await screen.findByText(/saved to \/tmp\/downloads\/photo\.webp/i)).toBeInTheDocument();
   });
 
   it("does not show rename or move buttons", async () => {

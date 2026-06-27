@@ -166,12 +166,12 @@ export function S3GalleryPage({ galleryFocus, profiles, onNavigate }: S3GalleryP
     try {
       const dir = await open({ directory: true });
       if (!dir) return;
-      const outputPath = `${dir}/${obj.key.split("/").pop()}`;
-      await galleryApi.downloadObject({
+      const resultPath = await galleryApi.downloadObject({
         profile: selectedProfile,
         key: obj.key,
-        outputPath,
+        outputDir: dir,
       });
+      setCopyMessage(`Saved to ${resultPath}`);
     } finally {
       setDownloadingKey(null);
     }

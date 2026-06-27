@@ -41,14 +41,23 @@ async fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnai
 }
 
 #[tauri::command]
-fn create_optimizer_run(paths: State<'_, AppPaths>) -> AppResult<CreateOptimizerRunResponse> {
+async fn create_optimizer_run(paths: State<'_, AppPaths>) -> AppResult<CreateOptimizerRunResponse> {
     let run_id = format!(
         "run-{}",
         chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
     );
-    let output_dir = paths.data_dir.join("optimizer-cache").join(&run_id);
-    std::fs::create_dir_all(&output_dir)
+    let cache_dir = paths.data_dir.join("optimizer-cache");
+    let output_dir = cache_dir.join(&run_id);
+    tokio::fs::create_dir_all(&output_dir)
+        .await
         .map_err(|err| error::AppError::new("outputDirFailed", err.to_string()))?;
+
+    // Opportunistically clean up runs older than 7 days.
+    let cache_dir_clone = cache_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        optimizer::cleanup_old_runs(&cache_dir_clone, std::time::Duration::from_secs(7 * 86400));
+    });
+
     Ok(CreateOptimizerRunResponse {
         run_id,
         output_dir: output_dir.to_string_lossy().to_string(),
@@ -138,7 +147,8 @@ async fn upload_gallery_object(
 async fn generate_object_key(
     request: GenerateObjectKeyRequest,
 ) -> AppResult<GenerateObjectKeyResponse> {
-    let bytes = std::fs::read(&request.source_path)
+    let bytes = tokio::fs::read(&request.source_path)
+        .await
         .map_err(|err| error::AppError::new("readFileFailed", err.to_string()))?;
     let hash = Sha256::digest(&bytes);
     let content_hash = hex::encode(hash);

@@ -68,7 +68,7 @@ export interface DeleteObjectRequest {
 export interface DownloadObjectRequest {
   profile: S3Profile;
   key: string;
-  outputPath: string;
+  outputDir: string;
 }
 
 export const galleryApi = {
