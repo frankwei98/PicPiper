@@ -26,9 +26,15 @@ pub fn append_history(path: &Path, entry: UploadHistoryEntry) -> AppResult<()> {
         fs::create_dir_all(parent)
             .map_err(|err| AppError::new("historyDirFailed", err.to_string()))?;
     }
+
     let content = serde_json::to_string_pretty(&entries)
         .map_err(|err| AppError::new("historySerializeFailed", err.to_string()))?;
-    fs::write(path, content).map_err(|err| AppError::new("historyWriteFailed", err.to_string()))
+
+    // Write atomically: write to temp file in same directory, then rename
+    let temp_path = path.with_extension("json.tmp");
+    fs::write(&temp_path, &content)
+        .map_err(|err| AppError::new("historyWriteFailed", err.to_string()))?;
+    fs::rename(&temp_path, path).map_err(|err| AppError::new("historyWriteFailed", err.to_string()))
 }
 
 #[cfg(test)]
@@ -85,5 +91,26 @@ mod tests {
         assert_eq!(entries.len(), 500);
         assert_eq!(entries[0].object_key, "509.webp");
         assert_eq!(entries[499].object_key, "10.webp");
+    }
+
+    #[test]
+    fn existing_file_survives_failed_temp_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.json");
+
+        // Write initial history
+        append_history(&path, sample_entry("original.webp")).unwrap();
+
+        // Verify temp file does not linger after successful write
+        let temp_path = path.with_extension("json.tmp");
+        assert!(
+            !temp_path.exists(),
+            "temp file should not exist after successful append"
+        );
+
+        // Original file should still be readable
+        let entries = load_history(&path).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].object_key, "original.webp");
     }
 }
