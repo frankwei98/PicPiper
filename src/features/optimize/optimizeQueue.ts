@@ -1,10 +1,10 @@
-import type { ImageFormat, OptimizeItem } from "../../types";
+import type { OptimizeItem, WritableImageFormat } from "../../types";
 
-export const AVAILABLE_OUTPUT_FORMATS = ["jpg", "png", "webp", "avif"] as const satisfies ReadonlyArray<ImageFormat>;
+export const AVAILABLE_OUTPUT_FORMATS = ["jpg", "png", "webp", "avif"] as const satisfies ReadonlyArray<WritableImageFormat>;
 
 export type AvailableOutputFormat = (typeof AVAILABLE_OUTPUT_FORMATS)[number];
 
-export function defaultTargetFormat(sourceFormat: OptimizeItem["sourceFormat"]): ImageFormat {
+export function defaultTargetFormat(sourceFormat: OptimizeItem["sourceFormat"]): WritableImageFormat {
   if (sourceFormat === "jpg" || sourceFormat === "png" || sourceFormat === "webp" || sourceFormat === "avif") {
     return sourceFormat;
   }
@@ -15,14 +15,14 @@ export function getCompressionConcurrency(hardwareConcurrency: number | undefine
   return Math.max(1, (hardwareConcurrency ?? 4) - 1);
 }
 
-export function makeOutputFileName(fileName: string, targetFormat: ImageFormat): string {
+export function makeOutputFileName(fileName: string, targetFormat: WritableImageFormat): string {
   const base = fileName.replace(/\.[^.]+$/, "");
   const stem = base || fileName || "image";
   return `${stem}.${targetFormat}`;
 }
 
 export function makeUniqueOutputFileNames(
-  items: Array<{ id: string; fileName: string; targetFormat: ImageFormat }>,
+  items: Array<{ id: string; fileName: string; targetFormat: WritableImageFormat }>,
 ): Record<string, string> {
   const seen = new Map<string, number>();
   const outputNames: Record<string, string> = {};

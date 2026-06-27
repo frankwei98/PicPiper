@@ -152,8 +152,18 @@ describe("OptimizePage", () => {
 
     expect(screen.queryByLabelText(/preset/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^compress$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /remove gps/i })).toBeChecked();
+    expect(screen.getByText(/metadata.*removed during compression/i)).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: /quality/i })).toBeInTheDocument();
+  });
+
+  it("shows informational text about metadata stripping instead of a Remove GPS checkbox", () => {
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // No checkbox should exist
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+
+    // Informational text about metadata stripping should be visible
+    expect(screen.getByText(/metadata.*removed during compression/i)).toBeInTheDocument();
   });
 
   it("imports selected images and starts single-image compression automatically", async () => {
@@ -425,6 +435,57 @@ describe("OptimizePage", () => {
     expect(screen.queryByText(/1.2 MB.*240 KB/)).not.toBeInTheDocument();
   });
 
+  it("does not dispatch duplicate compression when quality changes during active compression", async () => {
+    // Create a delayed compression that we can control
+    let resolveCompression!: (value: Awaited<ReturnType<typeof compressImage>>) => void;
+    compressImage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCompression = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Import image and wait for compression to start
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText(/compressing/i);
+
+    // compressImage should be called once for the initial compression
+    expect(compressImage).toHaveBeenCalledTimes(1);
+    compressImage.mockClear();
+
+    // Change quality while compression is in progress
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+
+    // Wait a bit for any potential duplicate dispatch
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // compressImage should NOT be called again while the item is still compressing
+    expect(compressImage).not.toHaveBeenCalled();
+
+    // Resolve the original compression
+    resolveCompression({
+      sourcePath: "/tmp/real-photo.jpg",
+      outputPath: "/tmp/pic-piper/run-1/real-photo.jpg",
+      outputFileName: "real-photo.jpg",
+      originalBytes: 1_200_000,
+      outputBytes: 240_000,
+      targetFormat: "jpg",
+    });
+
+    // After debounce (400ms), the quality change should trigger requeue
+    // and then a new compression should be dispatched
+    await waitFor(() => {
+      expect(compressImage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ quality: 60 }),
+        }),
+      );
+    }, { timeout: 1000 });
+  });
+
   it("Save to local folder opens directory picker and copies files", async () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
@@ -527,6 +588,162 @@ describe("OptimizePage", () => {
       prefix: "images/2026/06",
       highlightedKeys: ["images/2026/06/real-photo-abcdef12.jpg"],
     });
+  });
+
+  it("retry only uploads failed items and skips already uploaded ones", async () => {
+    const profile = {
+      id: "p1",
+      name: "Personal S3",
+      bucket: "images",
+      endpoint: "https://s3.example.com",
+      region: "auto",
+      accessKeyId: "AKIAEXAMPLE",
+      pathStyle: false,
+      defaultPrefix: "images/2026/06",
+      publicBaseUrl: "https://cdn.example.com",
+      insecureSecretFallback: false,
+    };
+    const onUploadedToS3 = vi.fn();
+
+    // Mock dialog to return 3 files
+    mockDialogOpen.mockImplementation(async () => [
+      "/tmp/photo-a.jpg",
+      "/tmp/photo-b.jpg",
+      "/tmp/photo-c.jpg",
+    ]);
+
+    // Mock inspectImage to return different items
+    inspectImage
+      .mockImplementationOnce(async () => ({
+        id: "item-a",
+        sourcePath: "/tmp/photo-a.jpg",
+        fileName: "photo-a.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_000_000,
+        estimatedBytes: 200_000,
+        status: "queued",
+        settings: { targetFormat: "jpg", quality: 85, removeGps: true },
+      }))
+      .mockImplementationOnce(async () => ({
+        id: "item-b",
+        sourcePath: "/tmp/photo-b.jpg",
+        fileName: "photo-b.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_000_000,
+        estimatedBytes: 200_000,
+        status: "queued",
+        settings: { targetFormat: "jpg", quality: 85, removeGps: true },
+      }))
+      .mockImplementationOnce(async () => ({
+        id: "item-c",
+        sourcePath: "/tmp/photo-c.jpg",
+        fileName: "photo-c.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_000_000,
+        estimatedBytes: 200_000,
+        status: "queued",
+        settings: { targetFormat: "jpg", quality: 85, removeGps: true },
+      }));
+
+    // Mock compressImage to return success for all
+    compressImage
+      .mockImplementationOnce(async () => ({
+        sourcePath: "/tmp/photo-a.jpg",
+        outputPath: "/tmp/pic-piper/run-1/photo-a.jpg",
+        outputFileName: "photo-a.jpg",
+        originalBytes: 1_000_000,
+        outputBytes: 200_000,
+        targetFormat: "jpg",
+      }))
+      .mockImplementationOnce(async () => ({
+        sourcePath: "/tmp/photo-b.jpg",
+        outputPath: "/tmp/pic-piper/run-1/photo-b.jpg",
+        outputFileName: "photo-b.jpg",
+        originalBytes: 1_000_000,
+        outputBytes: 200_000,
+        targetFormat: "jpg",
+      }))
+      .mockImplementationOnce(async () => ({
+        sourcePath: "/tmp/photo-c.jpg",
+        outputPath: "/tmp/pic-piper/run-1/photo-c.jpg",
+        outputFileName: "photo-c.jpg",
+        originalBytes: 1_000_000,
+        outputBytes: 200_000,
+        targetFormat: "jpg",
+      }));
+
+    // Mock uploadObject: first succeeds, second fails, third succeeds
+    uploadObject
+      .mockImplementationOnce(async () => ({
+        key: "images/2026/06/photo-a-abc.jpg",
+        size: 200_000,
+        publicUrl: "https://cdn.example.com/images/2026/06/photo-a-abc.jpg",
+        isImage: true,
+      }))
+      .mockImplementationOnce(async () => {
+        throw new Error("Network error");
+      })
+      .mockImplementationOnce(async () => ({
+        key: "images/2026/06/photo-c-abc.jpg",
+        size: 200_000,
+        publicUrl: "https://cdn.example.com/images/2026/06/photo-c-abc.jpg",
+        isImage: true,
+      }));
+
+    const user = userEvent.setup();
+    render(
+      <OptimizePage
+        activeProfile={profile}
+        namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}"
+        onUploadedToS3={onUploadedToS3}
+      />,
+    );
+
+    // Import and wait for compression
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/upload to s3/i)).toBeInTheDocument();
+    });
+
+    // Click Upload to S3
+    await user.click(screen.getByRole("button", { name: "Upload to S3" }));
+
+    // Wait for upload to complete (some succeed, some fail)
+    await waitFor(() => {
+      expect(screen.getByText(/1 of 3 upload\(s\) failed/i)).toBeInTheDocument();
+    });
+
+    // Verify retry button appears
+    expect(screen.getByRole("button", { name: /retry 1 failed upload/i })).toBeInTheDocument();
+
+    // uploadObject should have been called 3 times (a, b, c)
+    expect(uploadObject).toHaveBeenCalledTimes(3);
+
+    // Now mock the retry to succeed
+    uploadObject.mockClear();
+    uploadObject.mockImplementationOnce(async () => ({
+      key: "images/2026/06/photo-b-retry.jpg",
+      size: 200_000,
+      publicUrl: "https://cdn.example.com/images/2026/06/photo-b-retry.jpg",
+      isImage: true,
+    }));
+
+    // Click retry
+    await user.click(screen.getByRole("button", { name: /retry 1 failed upload/i }));
+
+    // Wait for retry to complete
+    await waitFor(() => {
+      expect(onUploadedToS3).toHaveBeenCalled();
+    });
+
+    // uploadObject should only be called once (for the failed item b)
+    expect(uploadObject).toHaveBeenCalledTimes(1);
+
+    // Verify highlightedKeys includes both previous successes and new retry
+    const lastCall = onUploadedToS3.mock.calls[onUploadedToS3.mock.calls.length - 1][0];
+    expect(lastCall.highlightedKeys).toContain("images/2026/06/photo-a-abc.jpg");
+    expect(lastCall.highlightedKeys).toContain("images/2026/06/photo-b-retry.jpg");
+    expect(lastCall.highlightedKeys).toContain("images/2026/06/photo-c-abc.jpg");
   });
 
   it("dropping file with usable path calls inspectImage", async () => {

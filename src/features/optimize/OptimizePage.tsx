@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import type { CompressionSettings, ImageFormat, OptimizeItem, S3Profile } from "../../types";
+import type { CompressionSettings, ImageInspection, OptimizeItem, S3Profile, WritableImageFormat } from "../../types";
 import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 import { cn } from "../../utils/cn";
 import { Slider } from "../../components/ui/Slider";
@@ -57,7 +57,8 @@ const btnTertiary = cn(btnBase, "bg-transparent text-primary px-3 hover:bg-[rgba
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [quality, setQuality] = useState(DEFAULT_SETTINGS.quality);
-  const [removeGps, setRemoveGps] = useState(DEFAULT_SETTINGS.removeGps);
+  // removeGps is always true since the encoder always strips metadata
+  const removeGps = true;
   const [compareItemId, setCompareItemId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -86,15 +87,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     );
 
     try {
-      const raw = (await tauriApi.inspectImage({
+      const inspection: ImageInspection = await tauriApi.inspectImage({
         path: sourcePath,
         settings: { ...DEFAULT_SETTINGS, quality: qualityRef.current, removeGps: removeGpsRef.current },
-      })) as unknown as Record<string, unknown>;
+      });
 
-      const fileName = (raw.fileName as string) ?? (raw.file_name as string) ?? sourcePath.split("/").pop() ?? "unknown";
-      const sourceFormat = (raw.sourceFormat as OptimizeItem["sourceFormat"]) ?? (raw.source_format as OptimizeItem["sourceFormat"]) ?? "unknown";
-      const originalBytes = (raw.originalBytes as number) ?? (raw.original_bytes as number) ?? 0;
-      const estimatedBytes = (raw.estimatedBytes as number) ?? (raw.estimated_bytes as number) ?? 0;
+      const sourceFormat = inspection.sourceFormat ?? "unknown";
       const targetFormat = defaultTargetFormat(sourceFormat);
       const currentQuality = qualityRef.current;
       const currentRemoveGps = removeGpsRef.current;
@@ -104,11 +102,11 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           ci.id === itemId
             ? {
                 ...ci,
-                fileName,
+                fileName: inspection.fileName,
                 sourceFormat,
-                originalBytes,
-                estimatedBytes,
-                warning: raw.warning as string | undefined,
+                originalBytes: inspection.originalBytes,
+                estimatedBytes: inspection.estimatedBytes ?? undefined,
+                warning: inspection.warning ?? undefined,
                 status: "queued" as const,
                 settings: { targetFormat, quality: currentQuality, removeGps: currentRemoveGps },
               }
@@ -324,22 +322,27 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     const availableSlots = concurrency - activeTasks.current.size;
     if (availableSlots <= 0) return;
 
-    const outputNames = makeUniqueOutputFileNames(
-      items
-        .filter((item) => item.status !== "failed" && item.status !== "cancelled" && item.originalBytes > 0)
-        .map((item) => ({
-          id: item.id,
-          fileName: item.fileName,
-          targetFormat: item.settings.targetFormat,
-        })),
+    // Filter out items already being processed to prevent duplicate dispatch
+    const queuedItems = items.filter(
+      (item) => item.status === "queued" && !activeTasks.current.has(item.id),
     );
 
-    const nextItems = items.filter((item) => item.status === "queued").slice(0, availableSlots);
+    if (queuedItems.length === 0) return;
+
+    const outputNames = makeUniqueOutputFileNames(
+      queuedItems.map((item) => ({
+        id: item.id,
+        fileName: item.fileName,
+        targetFormat: item.settings.targetFormat,
+      })),
+    );
+
+    const nextItems = queuedItems.slice(0, availableSlots);
     for (const item of nextItems) {
       activeTasks.current.add(item.id);
       void runCompressionTask(item, outputNames[item.id]);
     }
-  }, [items, quality, removeGps, runCompressionTask]);
+  }, [items, runCompressionTask]);
 
   // --- Global settings requeue with debounce ---
   const scheduleGlobalRequeue = (nextQuality: number, nextRemoveGps: boolean) => {
@@ -377,14 +380,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     scheduleGlobalRequeue(nextQuality, removeGpsRef.current);
   };
 
-  const handleRemoveGpsChange = (checked: boolean) => {
-    removeGpsRef.current = checked;
-    setRemoveGps(checked);
-    scheduleGlobalRequeue(qualityRef.current, checked);
-  };
-
   // --- Per-item actions ---
-  const updateFormat = (id: string, targetFormat: ImageFormat) => {
+  const updateFormat = (id: string, targetFormat: WritableImageFormat) => {
     optimizerRun.current = null;
     setItems((current) =>
       current.map((item) =>
@@ -478,6 +475,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   const [uploadingItems, setUploadingItems] = useState<Set<string>>(new Set());
   const [uploadFailedItems, setUploadFailedItems] = useState<Map<string, string>>(new Map());
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
+  const uploadCancelledRef = useRef(false);
 
   const uploadToS3 = async () => {
     if (!activeProfile) {
@@ -486,6 +485,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
     setUploadError(null);
     setUploadFailedItems(new Map());
+    uploadCancelledRef.current = false;
     const prefix = activeProfile.defaultPrefix || "images";
     const compressedItems = items.filter((item) => item.status === "compressed" && item.outputPath);
     if (compressedItems.length === 0) {
@@ -495,10 +495,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
     setUploadingItems(new Set(compressedItems.map((item) => item.id)));
 
-    const uploaded: { key: string }[] = [];
+    const newlyUploaded: string[] = [];
     const failed = new Map<string, string>();
 
     for (const item of compressedItems) {
+      if (uploadCancelledRef.current) break;
+
       const outputFileName = item.outputFileName ?? "image.webp";
       const ext = item.settings.targetFormat;
       try {
@@ -521,7 +523,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           targetFormat: ext,
         });
 
-        uploaded.push(result);
+        newlyUploaded.push(result.key);
       } catch (err) {
         failed.set(item.id, err instanceof Error ? err.message : "Upload failed");
       }
@@ -530,15 +532,92 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     setUploadingItems(new Set());
     setUploadFailedItems(failed);
 
+    // Accumulate all uploaded keys across retries
+    const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
+    setUploadedKeys(allUploadedKeys);
+
     if (failed.size === 0) {
       onUploadedToS3?.({
         profile: activeProfile,
         prefix,
-        highlightedKeys: uploaded.map((object) => object.key),
+        highlightedKeys: allUploadedKeys,
       });
     } else {
       setUploadError(
         `${failed.size} of ${compressedItems.length} upload(s) failed. Fix and retry.`,
+      );
+    }
+  };
+
+  const retryUploads = async () => {
+    // Only retry items that failed, skip already uploaded ones
+    if (!activeProfile) {
+      setUploadError("Configure and select an S3 profile before uploading.");
+      return;
+    }
+    setUploadError(null);
+    uploadCancelledRef.current = false;
+    const prefix = activeProfile.defaultPrefix || "images";
+    const failedItems = items.filter(
+      (item) => item.status === "compressed" && item.outputPath && uploadFailedItems.has(item.id),
+    );
+    if (failedItems.length === 0) {
+      setUploadError("No failed uploads to retry.");
+      return;
+    }
+
+    setUploadingItems(new Set(failedItems.map((item) => item.id)));
+
+    const newlyUploaded: string[] = [];
+    const stillFailed = new Map<string, string>();
+
+    for (const item of failedItems) {
+      if (uploadCancelledRef.current) break;
+
+      const outputFileName = item.outputFileName ?? "image.webp";
+      const ext = item.settings.targetFormat;
+      try {
+        const { objectKey } = await namingApi.generateObjectKey({
+          sourcePath: item.outputPath as string,
+          outputFileName,
+          prefix,
+          namingTemplate,
+          ext,
+        });
+
+        const result = await uploadApi.uploadObject({
+          profile: activeProfile,
+          sourcePath: item.outputPath as string,
+          objectKey,
+          contentType: contentTypeFor(ext),
+          sourceFilename: item.fileName,
+          outputFilename: outputFileName,
+          originalBytes: item.originalBytes,
+          targetFormat: ext,
+        });
+
+        newlyUploaded.push(result.key);
+      } catch (err) {
+        stillFailed.set(item.id, err instanceof Error ? err.message : "Upload failed");
+      }
+    }
+
+    setUploadingItems(new Set());
+    setUploadFailedItems(stillFailed);
+
+    // Accumulate all uploaded keys across retries
+    const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
+    setUploadedKeys(allUploadedKeys);
+
+    if (stillFailed.size === 0) {
+      onUploadedToS3?.({
+        profile: activeProfile,
+        prefix,
+        highlightedKeys: allUploadedKeys,
+      });
+    } else {
+      setUploadError(
+        `${stillFailed.size} of ${failedItems.length} upload(s) failed. Fix and retry.`,
       );
     }
   };
@@ -553,10 +632,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           <p className="text-on-surface-variant mt-xs text-body text-pretty">Drop images to compress automatically.</p>
         </div>
         <div className="flex gap-md items-end flex-wrap">
-          <label className="flex items-center gap-sm text-footnote font-medium text-on-surface-variant">
-            <input type="checkbox" checked={removeGps} onChange={(e) => handleRemoveGpsChange(e.target.checked)} />
-            Remove GPS
-          </label>
+          <span className="text-footnote text-on-surface-variant opacity-70">
+            Metadata (including GPS) is removed during compression
+          </span>
           <label className="grid gap-xs min-w-[220px] text-footnote font-medium text-on-surface-variant">
             Quality {quality}%
             <Slider aria-label="Quality" value={quality} onValueChange={handleQualityChange} min={1} max={100} />
@@ -650,7 +728,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                   <select
                     aria-label={`Format for ${item.fileName}`}
                     value={item.settings.targetFormat}
-                    onChange={(event) => updateFormat(item.id, event.target.value as ImageFormat)}
+                    onChange={(event) => updateFormat(item.id, event.target.value as WritableImageFormat)}
                   >
                     {AVAILABLE_OUTPUT_FORMATS.map((format) => (
                       <option key={format} value={format}>
@@ -689,7 +767,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       {items.some((item) => item.status === "compressed") && (
         <div className="flex gap-sm flex-wrap">
           <button className={btnPrimary} type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>
-          <button className={btnPrimary} type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
+          {uploadFailedItems.size > 0 ? (
+            <button className={btnPrimary} type="button" onClick={retryUploads} disabled={saving || uploadingItems.size > 0}>
+              Retry {uploadFailedItems.size} failed upload(s)
+            </button>
+          ) : (
+            <button className={btnPrimary} type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
+          )}
         </div>
       )}
 
@@ -701,7 +785,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         >
           <div className="flex flex-col gap-xs mb-lg text-caption text-on-surface-variant">
             <p>Quality: {compareItem.settings.quality}</p>
-            <p>Remove GPS: {compareItem.settings.removeGps ? "On" : "Off"}</p>
+            <p>Metadata: Removed during compression</p>
             <p>Output format: {compareItem.settings.targetFormat}</p>
           </div>
           <div className="grid grid-cols-2 gap-lg">

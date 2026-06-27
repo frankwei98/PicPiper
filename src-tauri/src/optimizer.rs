@@ -231,12 +231,10 @@ fn map_codec_format(format: CodecFormat) -> Option<ImageFormat> {
     }
 }
 
-fn gps_warning(remove_gps: bool) -> Option<String> {
-    if remove_gps {
-        Some("EXIF metadata was not preserved during re-encoding.".to_string())
-    } else {
-        None
-    }
+fn gps_warning(_remove_gps: bool) -> Option<String> {
+    // The built-in encoder always re-encodes pixel data, which strips all
+    // EXIF/IPTC/XMP metadata (including GPS) regardless of this flag.
+    Some("EXIF metadata (including GPS) was stripped during re-encoding.".to_string())
 }
 
 fn quality_format_warning(target_format: &ImageFormat) -> Option<String> {
@@ -413,6 +411,42 @@ mod tests {
     fn png_still_warns_about_quality() {
         let warning = quality_format_warning(&ImageFormat::Png);
         assert!(warning.is_some(), "PNG should still warn about quality");
+    }
+
+    #[test]
+    fn gps_warning_always_warns_regardless_of_flag() {
+        // Metadata stripping happens during re-encoding regardless of the flag
+        let warning_true = gps_warning(true);
+        let warning_false = gps_warning(false);
+
+        assert!(warning_true.is_some(), "gps_warning(true) should warn");
+        assert!(warning_false.is_some(), "gps_warning(false) should also warn since metadata is always stripped");
+        assert_eq!(warning_true, warning_false, "warning should be the same regardless of flag");
+    }
+
+    #[test]
+    fn compress_image_includes_metadata_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("test.png");
+        create_test_image(32, 32).save(&input).unwrap();
+
+        let result = compress_image(CompressImageRequest {
+            source_path: input.to_string_lossy().to_string(),
+            output_dir: dir.path().to_string_lossy().to_string(),
+            output_file_name: "output.jpg".to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Jpg,
+                quality: 75,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+
+        assert!(
+            result.warning.as_deref().unwrap_or("").contains("EXIF metadata"),
+            "Compressed output should include metadata warning, got: {:?}",
+            result.warning
+        );
     }
 
     #[test]

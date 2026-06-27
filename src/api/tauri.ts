@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CompressionSettings, GalleryObject, OptimizeItem, S3Profile } from "../types";
+import type { CompressionSettings, GalleryObject, ImageInspection, S3Profile, WritableImageFormat } from "../types";
 
 export interface InspectImageRequest {
   path: string;
@@ -44,7 +44,7 @@ export interface ReadThumbnailResponse {
 
 export const tauriApi = {
   inspectImage: (request: InspectImageRequest) =>
-    invoke<OptimizeItem>("inspect_image", { request }),
+    invoke<ImageInspection>("inspect_image", { request }),
   createOptimizerRun: () =>
     invoke<CreateOptimizerRunResponse>("create_optimizer_run"),
   compressImage: (request: CompressImageRequest) =>
@@ -88,7 +88,7 @@ export interface UploadObjectRequest {
   sourceFilename?: string;
   outputFilename?: string;
   originalBytes?: number;
-  targetFormat?: string;
+  targetFormat?: WritableImageFormat;
 }
 
 export const uploadApi = {
