@@ -217,6 +217,57 @@ describe("OptimizePage", () => {
     expect(screen.queryByText(/1.2 MB.*240 KB/)).not.toBeInTheDocument();
   });
 
+  it("does not dispatch duplicate compression when quality changes during active compression", async () => {
+    // Create a delayed compression that we can control
+    let resolveCompression!: (value: Awaited<ReturnType<typeof compressImage>>) => void;
+    compressImage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCompression = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // Import image and wait for compression to start
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText(/compressing/i);
+
+    // compressImage should be called once for the initial compression
+    expect(compressImage).toHaveBeenCalledTimes(1);
+    compressImage.mockClear();
+
+    // Change quality while compression is in progress
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+
+    // Wait a bit for any potential duplicate dispatch
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // compressImage should NOT be called again while the item is still compressing
+    expect(compressImage).not.toHaveBeenCalled();
+
+    // Resolve the original compression
+    resolveCompression({
+      sourcePath: "/tmp/real-photo.jpg",
+      outputPath: "/tmp/pic-piper/run-1/real-photo.jpg",
+      outputFileName: "real-photo.jpg",
+      originalBytes: 1_200_000,
+      outputBytes: 240_000,
+      targetFormat: "jpg",
+    });
+
+    // After debounce (400ms), the quality change should trigger requeue
+    // and then a new compression should be dispatched
+    await waitFor(() => {
+      expect(compressImage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ quality: 60 }),
+        }),
+      );
+    }, { timeout: 1000 });
+  });
+
   it("Save to local folder opens directory picker and copies files", async () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);

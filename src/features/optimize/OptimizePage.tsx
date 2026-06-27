@@ -316,22 +316,27 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     const availableSlots = concurrency - activeTasks.current.size;
     if (availableSlots <= 0) return;
 
-    const outputNames = makeUniqueOutputFileNames(
-      items
-        .filter((item) => item.status === "queued")
-        .map((item) => ({
-          id: item.id,
-          fileName: item.fileName,
-          targetFormat: item.settings.targetFormat,
-        })),
+    // Filter out items already being processed to prevent duplicate dispatch
+    const queuedItems = items.filter(
+      (item) => item.status === "queued" && !activeTasks.current.has(item.id),
     );
 
-    const nextItems = items.filter((item) => item.status === "queued").slice(0, availableSlots);
+    if (queuedItems.length === 0) return;
+
+    const outputNames = makeUniqueOutputFileNames(
+      queuedItems.map((item) => ({
+        id: item.id,
+        fileName: item.fileName,
+        targetFormat: item.settings.targetFormat,
+      })),
+    );
+
+    const nextItems = queuedItems.slice(0, availableSlots);
     for (const item of nextItems) {
       activeTasks.current.add(item.id);
       void runCompressionTask(item, outputNames[item.id]);
     }
-  }, [items, quality, removeGps, runCompressionTask]);
+  }, [items, runCompressionTask]);
 
   // --- Global settings requeue with debounce ---
   const scheduleGlobalRequeue = (nextQuality: number, nextRemoveGps: boolean) => {
