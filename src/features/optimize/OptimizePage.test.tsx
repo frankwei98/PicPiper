@@ -101,8 +101,18 @@ describe("OptimizePage", () => {
 
     expect(screen.queryByLabelText(/preset/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^compress$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /remove gps/i })).toBeChecked();
+    expect(screen.getByText(/metadata.*removed during compression/i)).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: /quality/i })).toBeInTheDocument();
+  });
+
+  it("shows informational text about metadata stripping instead of a Remove GPS checkbox", () => {
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    // No checkbox should exist
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+
+    // Informational text about metadata stripping should be visible
+    expect(screen.getByText(/metadata.*removed during compression/i)).toBeInTheDocument();
   });
 
   it("imports selected images and starts single-image compression automatically", async () => {

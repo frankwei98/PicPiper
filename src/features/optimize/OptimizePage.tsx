@@ -541,10 +541,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           <p className="text-on-surface-variant mt-xs text-body text-pretty">Drop images to compress automatically.</p>
         </div>
         <div className="flex gap-md items-end flex-wrap">
-          <label className="flex items-center gap-sm text-footnote font-medium text-on-surface-variant">
-            <input type="checkbox" checked={removeGps} onChange={(e) => handleRemoveGpsChange(e.target.checked)} />
-            Remove GPS
-          </label>
+          <span className="text-footnote text-on-surface-variant opacity-70">
+            Metadata (including GPS) is removed during compression
+          </span>
           <label className="grid gap-xs min-w-[220px] text-footnote font-medium text-on-surface-variant">
             Quality {quality}%
             <Slider aria-label="Quality" value={quality} onValueChange={handleQualityChange} min={1} max={100} />
