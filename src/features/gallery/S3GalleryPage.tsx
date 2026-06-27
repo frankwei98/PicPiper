@@ -138,6 +138,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, onNavi
           webp: "image/webp",
           avif: "image/avif",
           heif: "image/heif",
+          heic: "image/heic",
         };
 
         await uploadApi.uploadObject({
@@ -188,18 +189,26 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, onNavi
     }
   };
 
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
   const handleDownload = async (obj: GalleryObject) => {
     if (!selectedProfile) return;
     setDownloadingKey(obj.key);
+    setDownloadError(null);
     try {
       const dir = await open({ directory: true });
-      if (!dir) return;
+      if (!dir) {
+        setDownloadingKey(null);
+        return;
+      }
       const resultPath = await galleryApi.downloadObject({
         profile: selectedProfile,
         key: obj.key,
         outputDir: dir,
       });
       setCopyMessage(`Saved to ${resultPath}`);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "Download failed");
     } finally {
       setDownloadingKey(null);
     }
@@ -221,7 +230,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, onNavi
       await galleryApi.deleteObject({ profile: selectedProfile, key: targetKey });
       await loadObjects();
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Delete failed");
+      setDeleteError(`Failed to delete ${targetKey}: ${err instanceof Error ? err.message : "Delete failed"}`);
     } finally {
       setDeletingKey(null);
     }
@@ -311,6 +320,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, onNavi
       {deletingKey && <StatusMessage>Deleting {deletingKey}...</StatusMessage>}
       {downloadingKey && <StatusMessage>Downloading {downloadingKey}...</StatusMessage>}
       {deleteError && <StatusMessage variant="error">{deleteError}</StatusMessage>}
+      {downloadError && <StatusMessage variant="error">{downloadError}</StatusMessage>}
       {error && <StatusMessage variant="error">{error}</StatusMessage>}
       {!loading && !error && filteredObjects.length === 0 && (
         <section className="border border-dashed border-outline-variant rounded-lg bg-surface-container-low p-2xl text-center text-on-surface-variant text-callout">

@@ -300,6 +300,41 @@ describe("S3GalleryPage", () => {
     expect(await screen.findByText(/saved to \/tmp\/downloads\/photo\.webp/i)).toBeInTheDocument();
   });
 
+  it("shows error when download fails", async () => {
+    downloadObject.mockRejectedValueOnce(new Error("Network timeout"));
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /download/i }));
+
+    expect(await screen.findByText(/network timeout/i)).toBeInTheDocument();
+  });
+
+  it("shows object key in delete error message", async () => {
+    deleteObject.mockRejectedValueOnce(new Error("Access denied"));
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /delete/i }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /delete/i }));
+
+    expect(await screen.findByText(/failed to delete images\/photo\.webp/i)).toBeInTheDocument();
+  });
+
   it("does not show rename or move buttons", async () => {
     render(
       <S3GalleryPage
@@ -401,6 +436,26 @@ describe("S3GalleryPage", () => {
     );
     // Should refresh the object list after upload
     expect(listObjects).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses image/heic content type for .heic uploads", async () => {
+    mockDialogOpen.mockResolvedValueOnce(["/tmp/photo.heic"] as unknown as string);
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /upload local images/i }));
+
+    expect(uploadObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentType: "image/heic",
+      }),
+    );
   });
 
   it("uses defaultProfileId when galleryFocus.profileId is not set", async () => {

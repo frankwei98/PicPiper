@@ -87,6 +87,22 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         return;
       }
 
+      // Validate publicBaseUrl if provided
+      if (publicBaseUrl) {
+        try {
+          const parsed = new URL(publicBaseUrl);
+          if (parsed.search || parsed.hash) {
+            setSaving(false);
+            setSaveError("Public Base URL must not contain query strings or fragments.");
+            return;
+          }
+        } catch {
+          setSaving(false);
+          setSaveError("Public Base URL is not a valid URL.");
+          return;
+        }
+      }
+
       const profileId = profile?.id || crypto.randomUUID();
 
       const secretResult = secretAccessKey

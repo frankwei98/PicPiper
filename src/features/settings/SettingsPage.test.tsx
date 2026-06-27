@@ -369,4 +369,58 @@ describe("SettingsPage", () => {
     expect(savedSettings.profiles[1].name).toBe("New S3");
     expect(savedSettings.profiles[1].id).not.toBe("existing");
   });
+
+  it("rejects Public Base URL with query string", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Profile name"), "Test");
+    await user.type(screen.getByLabelText("Endpoint"), "https://s3.example.com");
+    await user.type(screen.getByLabelText("Bucket"), "images");
+    await user.type(screen.getByLabelText("Access key ID"), "key");
+    await user.type(screen.getByLabelText("Secret access key"), "secret");
+    await user.type(screen.getByLabelText("Public Base URL"), "https://cdn.example.com?v=1");
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(screen.getByText(/must not contain query strings or fragments/i)).toBeInTheDocument();
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
+
+  it("rejects Public Base URL with fragment", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Profile name"), "Test");
+    await user.type(screen.getByLabelText("Endpoint"), "https://s3.example.com");
+    await user.type(screen.getByLabelText("Bucket"), "images");
+    await user.type(screen.getByLabelText("Access key ID"), "key");
+    await user.type(screen.getByLabelText("Secret access key"), "secret");
+    await user.type(screen.getByLabelText("Public Base URL"), "https://cdn.example.com#section");
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(screen.getByText(/must not contain query strings or fragments/i)).toBeInTheDocument();
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
 });
