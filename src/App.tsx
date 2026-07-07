@@ -4,6 +4,7 @@ import { S3GalleryPage } from "./features/gallery/S3GalleryPage";
 import { OptimizePage } from "./features/optimize/OptimizePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { settingsApi } from "./api/tauri";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { AppSettings } from "./api/tauri";
 import type { GalleryFocus } from "./state/appState";
 import { initialNavigationState } from "./state/appState";
@@ -52,9 +53,10 @@ function App() {
       onViewChange={(view) => setNavigation((prev) => ({ ...prev, view }))}
     >
       {settingsError && (
-        <p className="text-footnote mt-sm bg-error-container border border-error rounded-xs px-md py-sm text-on-error-container" role="alert">
-          Could not load settings: {settingsError}
-        </p>
+        <Alert variant="destructive" className="mb-4">
+          <AlertTitle>Could not load settings</AlertTitle>
+          <AlertDescription>{settingsError}</AlertDescription>
+        </Alert>
       )}
       {navigation.view === "optimize" && (
         <OptimizePage

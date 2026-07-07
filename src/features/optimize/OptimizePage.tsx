@@ -4,10 +4,23 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { CompressionSettings, ImageInspection, OptimizeItem, S3Profile, WritableImageFormat } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
-import { cn } from "../../utils/cn";
-import { Slider } from "../../components/ui/Slider";
-import { Dialog } from "../../components/ui/Dialog";
-import { btnPrimary, btnSecondary, btnTertiary, inputClass } from "../../components/ui/buttonStyles";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Slider } from "@/components/ui/slider";
+import { cn } from "@/lib/utils";
+import { XIcon } from "lucide-react";
 import {
   AVAILABLE_OUTPUT_FORMATS,
   defaultTargetFormat,
@@ -608,155 +621,171 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const compareItem = compareItemId ? items.find((i) => i.id === compareItemId) : undefined;
 
   return (
-    <div className="grid gap-lg max-w-page">
-      <header className="flex justify-between items-start gap-lg">
+    <div className="grid max-w-6xl gap-6">
+      <header className="flex justify-between items-start gap-6 max-lg:flex-col">
         <div>
-          <h2 className="text-large-title font-bold text-on-surface text-balance">Optimize</h2>
-          <p className="text-on-surface-variant mt-xs text-body text-pretty">Drop images to compress automatically.</p>
+          <h2 className="text-3xl font-semibold tracking-tight text-balance">Optimize</h2>
+          <p className="text-muted-foreground mt-2 text-sm text-pretty">Drop images to compress automatically.</p>
         </div>
-        <div className="flex gap-md items-end flex-wrap">
-          <span className="text-footnote text-on-surface-variant opacity-70">
+        <div className="flex gap-4 items-end flex-wrap">
+          <span className="text-xs text-muted-foreground">
             Metadata (including GPS) is removed during compression
           </span>
-          <label className="grid gap-xs min-w-[220px] text-footnote font-medium text-on-surface-variant">
+          <Label className="grid gap-2 min-w-[220px] items-start">
             Quality {quality}%
             <Slider aria-label="Quality" value={quality} onValueChange={handleQualityChange} min={1} max={100} />
-          </label>
+          </Label>
         </div>
       </header>
 
       <section
         data-testid="drop-zone"
         className={cn(
-          "border-2 border-dashed border-outline-variant rounded-lg bg-surface-container-low p-2xl px-xl text-center text-on-surface-variant text-callout",
+          "border-2 border-dashed rounded-xl bg-muted/40 p-12 px-8 text-center text-muted-foreground text-sm",
           "transition-[border-color,background-color] duration-150 ease-out cursor-pointer",
-          "hover:border-outline hover:bg-surface-container",
-          dragging && "border-primary bg-primary/10 border-solid",
+          "hover:border-foreground/30 hover:bg-muted/60",
+          dragging && "border-primary bg-primary/10 border-solid text-foreground",
         )}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        <div className="text-headline font-medium text-on-surface mb-sm">Drop images here</div>
-        <div className="text-footnote text-on-surface-variant opacity-70">
+        <div className="text-base font-medium text-foreground mb-2">Drop images here</div>
+        <div className="text-sm text-muted-foreground">
           or{" "}
-          <button className={btnTertiary} type="button" onClick={handleChooseImages} disabled={importing}>
+          <Button variant="link" className="h-auto px-1 py-0" type="button" onClick={handleChooseImages} disabled={importing}>
             Choose images
-          </button>
+          </Button>
         </div>
       </section>
 
-      {dropError && <p className="text-error text-footnote" role="alert">{dropError}</p>}
+      {dropError && (
+        <Alert variant="destructive">
+          <AlertDescription>{dropError}</AlertDescription>
+        </Alert>
+      )}
       {importing && (
-        <section className="grid gap-sm grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Importing images">
+        <section className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Importing images">
           {Array.from({ length: 3 }, (_, i) => (
-            <article key={i} className="relative bg-surface-container border border-outline-variant rounded-md flex flex-col gap-sm p-md">
-              <div className="w-full aspect-square rounded-[calc(var(--radius-md)-2px)] overflow-hidden bg-surface-container-high flex items-center justify-center" aria-hidden="true" />
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <strong className="h-[var(--text-callout)] bg-surface-container-high rounded-xs">&nbsp;</strong>
-                <p className="h-[var(--text-footnote)] bg-surface-container-high rounded-xs mt-1">&nbsp;</p>
-              </div>
-            </article>
+            <Card key={i}>
+              <CardContent className="grid gap-3">
+                <Skeleton className="aspect-square w-full" aria-hidden="true" />
+                <Skeleton className="h-4 w-4/5" aria-hidden="true" />
+                <Skeleton className="h-3 w-2/3" aria-hidden="true" />
+              </CardContent>
+            </Card>
           ))}
         </section>
       )}
 
-      <section className="grid gap-sm grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Images to optimize">
+      <section className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Images to optimize">
         {items.map((item) => (
-          <article className="group relative bg-surface-container border border-outline-variant rounded-md flex flex-col gap-sm p-md transition-[border-color,background-color] duration-150 ease-out hover:border-outline hover:bg-surface-container-high" key={item.id}>
-            <button
-              type="button"
-              className="absolute top-1 right-1 size-[22px] border-none rounded-full bg-surface-container-high text-on-surface-variant text-base leading-none p-0 cursor-pointer flex items-center justify-center opacity-0 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-surface-container-highest hover:text-on-surface"
-              aria-label={`Remove ${item.fileName} from queue`}
-              onClick={() => removeItem(item.id)}
-            >
-              x
-            </button>
-            <div className="w-full aspect-square rounded-[calc(var(--radius-md)-2px)] overflow-hidden bg-surface-container-low flex items-center justify-center">
-              {item.status === "compressed" && item.compressedPreviewUrl ? (
-                <button type="button" aria-label={`Compare ${item.fileName}`} onClick={() => setCompareItemId(item.id)}>
-                  <img src={item.compressedPreviewUrl} alt="" loading="lazy" className="w-full h-full object-cover block" />
-                </button>
-              ) : item.originalPreviewUrl ? (
-                <img src={item.originalPreviewUrl} alt="" loading="lazy" className="w-full h-full object-cover block" />
-              ) : (
-                <span className="w-full h-full bg-surface-container-high" aria-hidden="true" />
-              )}
-            </div>
-            <div className="flex flex-col gap-0.5 min-w-0">
-              <strong className="text-callout font-semibold text-on-surface overflow-hidden text-ellipsis whitespace-nowrap">{item.fileName}</strong>
+          <Card className="group relative transition-[transform,box-shadow] hover:-translate-y-px" key={item.id}>
+            <CardContent className="grid gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                aria-label={`Remove ${item.fileName} from queue`}
+                onClick={() => removeItem(item.id)}
+              >
+                <XIcon className="size-3" />
+              </Button>
+              <div className="w-full aspect-square rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+                {item.status === "compressed" && item.compressedPreviewUrl ? (
+                  <Button className="h-full w-full rounded-none p-0" variant="ghost" type="button" aria-label={`Compare ${item.fileName}`} onClick={() => setCompareItemId(item.id)}>
+                    <img src={item.compressedPreviewUrl} alt="" loading="lazy" className="w-full h-full object-cover block" />
+                  </Button>
+                ) : item.originalPreviewUrl ? (
+                  <img src={item.originalPreviewUrl} alt="" loading="lazy" className="w-full h-full object-cover block" />
+                ) : (
+                  <Skeleton className="h-full w-full" aria-hidden="true" />
+                )}
+              </div>
+              <div className="flex flex-col gap-1 min-w-0">
+                <strong className="text-sm font-semibold overflow-hidden text-ellipsis whitespace-nowrap">{item.fileName}</strong>
               {item.error ? (
-                <p className="text-error text-caption mt-0.5">{item.error}</p>
+                <p className="text-destructive text-xs mt-0.5">{item.error}</p>
               ) : item.status === "cancelled" ? (
-                <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty">Cancelled</p>
+                <p className="text-muted-foreground mt-0.5 text-xs text-pretty">Cancelled</p>
               ) : item.status === "compressing" || item.status === "loadingPreview" ? (
-                <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty tabular-nums">Compressing...</p>
+                <p className="text-muted-foreground mt-0.5 text-xs text-pretty tabular-nums">Compressing...</p>
               ) : item.status === "compressed" ? (
-                <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty tabular-nums">
+                <p className="text-muted-foreground mt-0.5 text-xs text-pretty tabular-nums">
                   {formatBytes(item.originalBytes)} {String.fromCodePoint(0x2192)} {formatBytes(item.outputBytes ?? 0)}{" "}
                   ({savingsPercent(item.originalBytes, item.outputBytes ?? 0)}% saved)
                 </p>
               ) : item.originalBytes > 0 ? (
-                <p className="text-on-surface-variant mt-0.5 text-footnote text-pretty tabular-nums">
+                <p className="text-muted-foreground mt-0.5 text-xs text-pretty tabular-nums">
                   {item.sourceFormat.toUpperCase()} {String.fromCodePoint(0x2192)} {item.settings.targetFormat.toUpperCase()} |{" "}
                   {formatBytes(item.originalBytes)}
                 </p>
               ) : null}
-              {item.warning && <p className="text-tertiary text-caption mt-0.5">{item.warning}</p>}
+              {item.warning && <p className="text-muted-foreground text-xs mt-0.5">{item.warning}</p>}
               {item.settings.targetFormat === "png" && (
-                <p className="text-tertiary text-caption mt-0.5">Quality does not apply to PNG output.</p>
+                <p className="text-muted-foreground text-xs mt-0.5">Quality does not apply to PNG output.</p>
               )}
               {item.status !== "inspecting" && item.status !== "cancelled" && !item.error && (
-                <label className="flex flex-col mt-xs text-footnote text-on-surface-variant">
-                  <select
+                <Label className="flex flex-col items-start gap-2 mt-2 text-xs text-muted-foreground">
+                  <NativeSelect
                     aria-label={`Format for ${item.fileName}`}
-                    className={inputClass}
+                    className="w-full"
                     value={item.settings.targetFormat}
                     onChange={(event) => updateFormat(item.id, event.target.value as WritableImageFormat)}
                   >
                     {AVAILABLE_OUTPUT_FORMATS.map((format) => (
-                      <option key={format} value={format}>
+                      <NativeSelectOption key={format} value={format}>
                         {format.toUpperCase()}
-                      </option>
+                      </NativeSelectOption>
                     ))}
-                  </select>
-                </label>
+                  </NativeSelect>
+                </Label>
               )}
               {uploadFailedItems.has(item.id) && (
-                <p className="text-error text-caption mt-0.5">{uploadFailedItems.get(item.id)}</p>
+                <p className="text-destructive text-xs mt-0.5">{uploadFailedItems.get(item.id)}</p>
               )}
               {uploadingItems.has(item.id) && (
-                <p className="text-on-surface-variant text-caption mt-0.5">Uploading...</p>
+                <p className="text-muted-foreground text-xs mt-0.5">Uploading...</p>
               )}
               {(item.status === "inspecting" || item.status === "queued" || item.status === "compressing" || item.status === "loadingPreview") && (
-                <button className={btnTertiary} type="button" aria-label={`Cancel ${item.fileName}`} onClick={() => cancelItem(item.id)}>Cancel</button>
+                <Button variant="ghost" size="sm" type="button" aria-label={`Cancel ${item.fileName}`} onClick={() => cancelItem(item.id)}>Cancel</Button>
               )}
               {(item.status === "failed" || item.status === "cancelled") && (
-                <button className={btnTertiary} type="button" aria-label={`Retry ${item.fileName}`} onClick={() => retryItem(item.id)}>Retry</button>
+                <Button variant="ghost" size="sm" type="button" aria-label={`Retry ${item.fileName}`} onClick={() => retryItem(item.id)}>Retry</Button>
               )}
               {(item.status === "compressed" || item.status === "failed" || item.status === "cancelled") && (
-                <button className={btnTertiary} type="button" aria-label={`Remove ${item.fileName}`} onClick={() => removeItem(item.id)}>Remove</button>
+                <Button variant="ghost" size="sm" type="button" aria-label={`Remove ${item.fileName}`} onClick={() => removeItem(item.id)}>Remove</Button>
               )}
-            </div>
-          </article>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </section>
 
-      {saving && <p className="text-on-surface-variant text-footnote">Saving files...</p>}
-      {uploadingItems.size > 0 && <p className="text-on-surface-variant text-footnote">Uploading {uploadingItems.size} image(s)...</p>}
-      {uploadError && <p className="text-error text-footnote">{uploadError}</p>}
-      {saveError && <p className="text-error text-footnote">{saveError}</p>}
-      {saveSuccess && <p className="text-on-surface-variant text-footnote">{saveSuccess}</p>}
+      {saving && <p className="text-sm text-muted-foreground" role="status">Saving files...</p>}
+      {uploadingItems.size > 0 && <p className="text-sm text-muted-foreground" role="status">Uploading {uploadingItems.size} image(s)...</p>}
+      {uploadError && (
+        <Alert variant="destructive">
+          <AlertDescription>{uploadError}</AlertDescription>
+        </Alert>
+      )}
+      {saveError && (
+        <Alert variant="destructive">
+          <AlertDescription>{saveError}</AlertDescription>
+        </Alert>
+      )}
+      {saveSuccess && <p className="text-sm text-muted-foreground" role="status">{saveSuccess}</p>}
 
       {items.some((item) => item.status === "compressed") && (
-        <div className="flex gap-sm flex-wrap">
-          <button className={btnPrimary} type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</button>
+        <div className="flex gap-2 flex-wrap">
+          <Button type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</Button>
           {uploadFailedItems.size > 0 ? (
-            <button className={btnPrimary} type="button" onClick={retryUploads} disabled={saving || uploadingItems.size > 0}>
+            <Button type="button" onClick={retryUploads} disabled={saving || uploadingItems.size > 0}>
               Retry {uploadFailedItems.size} failed upload(s)
-            </button>
+            </Button>
           ) : (
-            <button className={btnPrimary} type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</button>
+            <Button type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</Button>
           )}
         </div>
       )}
@@ -765,30 +794,36 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         <Dialog
           open
           onOpenChange={(open) => { if (!open) setCompareItemId(null); }}
-          title={`Compare ${compareItem.fileName}`}
         >
-          <div className="flex flex-col gap-xs mb-lg text-caption text-on-surface-variant">
-            <p>Quality: {compareItem.settings.quality}</p>
-            <p>Metadata: Removed during compression</p>
-            <p>Output format: {compareItem.settings.targetFormat}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-lg">
-            <div>
-              <p className="text-footnote font-medium text-on-surface-variant mb-sm">Original</p>
-              {compareItem.originalPreviewUrl && (
-                <img src={compareItem.originalPreviewUrl} alt="" className="w-full rounded-md" />
-              )}
-              <p className="text-caption text-on-surface-variant mt-xs">{formatBytes(compareItem.originalBytes)}</p>
+          <DialogContent className="sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>{`Compare ${compareItem.fileName}`}</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+              <p>Quality: {compareItem.settings.quality}</p>
+              <p>Metadata: Removed during compression</p>
+              <p>Output format: {compareItem.settings.targetFormat}</p>
             </div>
-            <div>
-              <p className="text-footnote font-medium text-on-surface-variant mb-sm">Compressed</p>
-              {compareItem.compressedPreviewUrl && (
-                <img src={compareItem.compressedPreviewUrl} alt="" className="w-full rounded-md" />
-              )}
-              <p className="text-caption text-on-surface-variant mt-xs">{formatBytes(compareItem.outputBytes ?? 0)}</p>
+            <div className="grid grid-cols-2 gap-6 max-md:grid-cols-1">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Original</p>
+                {compareItem.originalPreviewUrl && (
+                  <img src={compareItem.originalPreviewUrl} alt="" className="w-full rounded-lg border" />
+                )}
+                <p className="text-xs text-muted-foreground mt-2">{formatBytes(compareItem.originalBytes)}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-2">Compressed</p>
+                {compareItem.compressedPreviewUrl && (
+                  <img src={compareItem.compressedPreviewUrl} alt="" className="w-full rounded-lg border" />
+                )}
+                <p className="text-xs text-muted-foreground mt-2">{formatBytes(compareItem.outputBytes ?? 0)}</p>
+              </div>
             </div>
-          </div>
-          <Dialog.Close className={cn(btnSecondary, "mt-lg")}>Close</Dialog.Close>
+            <DialogFooter>
+              <DialogClose render={<Button variant="outline" />}>Close</DialogClose>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
       )}
     </div>
