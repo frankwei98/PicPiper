@@ -2,8 +2,13 @@ import { useEffect, useState } from "react";
 import { settingsApi } from "../../api/tauri";
 import type { AppSettings } from "../../api/tauri";
 import type { S3Profile } from "../../types";
-import { StatusMessage } from "../../components/ui/Toast";
-import { btnPrimary, btnSecondary, inputClass, labelClass } from "../../components/ui/buttonStyles";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Switch } from "@/components/ui/switch";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -166,102 +171,107 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   };
 
   return (
-    <div className="grid gap-lg max-w-page">
-      <header className="flex justify-between items-start gap-lg">
+    <div className="grid max-w-5xl gap-6">
+      <header className="flex justify-between items-start gap-6">
         <div>
-          <h2 className="text-large-title font-bold text-on-surface text-balance">Settings</h2>
-          <p className="text-on-surface-variant mt-xs text-body text-pretty">Manage S3 profiles, naming, and output defaults.</p>
+          <h2 className="text-3xl font-semibold tracking-tight text-balance">Settings</h2>
+          <p className="text-muted-foreground mt-2 text-sm text-pretty">Manage S3 profiles, naming, and output defaults.</p>
         </div>
       </header>
-      <section className="grid gap-lg max-w-[980px]">
+      <section className="grid gap-6">
         {settings.profiles.length > 1 && (
-          <label className={labelClass}>
+          <Label className="grid gap-2 items-start">
             Editing profile
-            <select
-              className={inputClass}
+            <NativeSelect
+              className="w-full max-w-sm"
               value={editingProfileId}
               onChange={(e) => setEditingProfileId(e.target.value)}
             >
               {settings.profiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </Label>
         )}
-        <article className="border border-outline-variant rounded-lg bg-surface-container-low p-lg transition-[border-color] duration-200 hover:border-outline">
-          <h3 className="text-title-2 font-semibold text-on-surface text-balance mb-md">Profile</h3>
-          <form className="grid gap-md grid-cols-2 max-lg:grid-cols-1" onSubmit={handleSaveProfile}>
-            <label className={labelClass}>
-              Profile name
-              <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
-            </label>
-            <label className={labelClass}>
-              Endpoint
-              <input className={inputClass} placeholder="https://s3.example.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-            </label>
-            <label className={labelClass}>
-              Region
-              <input className={inputClass} value={region} onChange={(e) => setRegion(e.target.value)} />
-            </label>
-            <label className={labelClass}>
-              Bucket
-              <input className={inputClass} placeholder="my-image-bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} />
-            </label>
-            <label className={labelClass}>
-              Access key ID
-              <input className={inputClass} value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
-            </label>
-            <label className={labelClass}>
-              Secret access key
-              <input className={inputClass} type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
-            </label>
-            <label className={labelClass}>
-              Allow local secret fallback
-              <input
-                type="checkbox"
-                checked={allowInsecureFallback}
-                onChange={(e) => setAllowInsecureFallback(e.target.checked)}
-              />
-            </label>
-            <label className={labelClass}>
-              Path style addressing
-              <input
-                type="checkbox"
-                checked={pathStyle}
-                onChange={(e) => setPathStyle(e.target.checked)}
-              />
-            </label>
-            <label className={labelClass}>
-              Naming template
-              <input className={inputClass} value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
-            </label>
-            <label className={labelClass}>
-              Public Base URL
-              <input className={inputClass} placeholder="https://cdn.example.com" value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} />
-            </label>
-            <label className={labelClass}>
-              Default prefix
-              <input className={inputClass} placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
-            </label>
-            <div className="col-span-2 flex gap-sm">
-              <button className={btnPrimary} type="submit" disabled={saving}>Save profile</button>
-              <button
-                className={btnSecondary}
-                type="button"
-                onClick={() => setCreatingNew(true)}
-              >
-                Add profile
-              </button>
-            </div>
-          </form>
-          {saving && <StatusMessage>Saving profile...</StatusMessage>}
-          {saveMessage && <StatusMessage>{saveMessage}</StatusMessage>}
-          {saveError && <StatusMessage variant="error">{saveError}</StatusMessage>}
-          {allowInsecureFallback && (
-            <StatusMessage variant="error">Warning: Credential fallback to local storage is enabled. Secrets may be stored insecurely.</StatusMessage>
-          )}
-          <p className="text-on-surface-variant text-footnote text-pretty">Secrets use system secure storage when available. Local fallback must be explicitly allowed.</p>
-        </article>
+        <Card>
+          <CardHeader>
+            <CardTitle>Profile</CardTitle>
+            <CardDescription>Secrets use system secure storage when available. Local fallback must be explicitly allowed.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <form className="grid gap-4 grid-cols-2 max-lg:grid-cols-1" onSubmit={handleSaveProfile}>
+              <Label className="grid gap-2 items-start">
+                Profile name
+                <Input value={name} onChange={(e) => setName(e.target.value)} />
+              </Label>
+              <Label className="grid gap-2 items-start">
+                Endpoint
+                <Input placeholder="https://s3.example.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
+              </Label>
+              <Label className="grid gap-2 items-start">
+                Region
+                <Input value={region} onChange={(e) => setRegion(e.target.value)} />
+              </Label>
+              <Label className="grid gap-2 items-start">
+                Bucket
+                <Input placeholder="my-image-bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} />
+              </Label>
+              <Label className="grid gap-2 items-start">
+                Access key ID
+                <Input value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
+              </Label>
+              <Label className="grid gap-2 items-start">
+                Secret access key
+                <Input type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
+              </Label>
+              <Label className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <span>Allow local secret fallback</span>
+                <Switch
+                  checked={allowInsecureFallback}
+                  onCheckedChange={setAllowInsecureFallback}
+                />
+              </Label>
+              <Label className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <span>Path style addressing</span>
+                <Switch checked={pathStyle} onCheckedChange={setPathStyle} />
+              </Label>
+              <Label className="grid gap-2 items-start">
+                Naming template
+                <Input value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
+              </Label>
+              <Label className="grid gap-2 items-start">
+                Public Base URL
+                <Input placeholder="https://cdn.example.com" value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} />
+              </Label>
+              <Label className="grid gap-2 items-start">
+                Default prefix
+                <Input placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
+              </Label>
+              <div className="col-span-2 flex gap-2 max-lg:col-span-1">
+                <Button type="submit" disabled={saving}>Save profile</Button>
+                <Button
+                  variant="outline"
+                  type="button"
+                  onClick={() => setCreatingNew(true)}
+                >
+                  Add profile
+                </Button>
+              </div>
+            </form>
+            {saving && <p className="text-sm text-muted-foreground">Saving profile...</p>}
+            {saveMessage && <p className="text-sm text-muted-foreground">{saveMessage}</p>}
+            {saveError && (
+              <Alert variant="destructive">
+                <AlertDescription>{saveError}</AlertDescription>
+              </Alert>
+            )}
+            {allowInsecureFallback && (
+              <Alert variant="destructive">
+                <AlertDescription>Warning: Credential fallback to local storage is enabled. Secrets may be stored insecurely.</AlertDescription>
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
       </section>
     </div>
   );

@@ -5,10 +5,25 @@ import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 import type { AppView } from "../../types";
 import { galleryApi, namingApi, uploadApi } from "../../api/tauri";
-import { AlertDialog } from "../../components/ui/Dialog";
-import { cn } from "../../utils/cn";
-import { StatusMessage } from "../../components/ui/Toast";
-import { btnPrimary, btnSecondary, btnDanger, btnSm, inputClass } from "../../components/ui/buttonStyles";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
@@ -259,38 +274,43 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
 
   if (profiles.length === 0) {
     return (
-      <div className="grid gap-lg max-w-page">
-        <header className="flex justify-between items-start gap-lg">
+      <div className="grid max-w-6xl gap-6">
+        <header className="flex justify-between items-start gap-6">
           <div>
-            <h2 className="text-large-title font-bold text-on-surface text-balance">S3 Gallery</h2>
-            <p className="text-on-surface-variant mt-xs text-body text-pretty">Browse a profile and prefix, then copy URLs or manage images.</p>
+            <h2 className="text-3xl font-semibold tracking-tight text-balance">S3 Gallery</h2>
+            <p className="text-muted-foreground mt-2 text-sm text-pretty">Browse a profile and prefix, then copy URLs or manage images.</p>
           </div>
         </header>
-        <section className="border border-dashed border-outline-variant rounded-lg bg-surface-container-low p-2xl text-center text-on-surface-variant text-callout">
-          No profile selected.
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyTitle>No profile selected.</EmptyTitle>
+            <EmptyDescription>Add an S3 profile before browsing images.</EmptyDescription>
+          </EmptyHeader>
           {onNavigate && (
-            <button className={cn(btnPrimary, "mt-md")} type="button" onClick={() => onNavigate("settings")}>
-              Add a profile in Settings
-            </button>
+            <EmptyContent>
+              <Button type="button" onClick={() => onNavigate("settings")}>
+                Add a profile in Settings
+              </Button>
+            </EmptyContent>
           )}
-        </section>
+        </Empty>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-lg max-w-page">
-      <header className="flex justify-between items-start gap-lg">
+    <div className="grid max-w-6xl gap-6">
+      <header className="flex justify-between items-start gap-6 max-sm:flex-col">
         <div>
-          <h2 className="text-large-title font-bold text-on-surface text-balance">S3 Gallery</h2>
-          <p className="text-on-surface-variant mt-xs text-body text-pretty">Browse a profile and prefix, then copy URLs or manage images.</p>
+          <h2 className="text-3xl font-semibold tracking-tight text-balance">S3 Gallery</h2>
+          <p className="text-muted-foreground mt-2 text-sm text-pretty">Browse a profile and prefix, then copy URLs or manage images.</p>
         </div>
-        <button className={btnPrimary} type="button" onClick={handleUploadLocal} disabled={uploading}>{uploading ? "Uploading…" : "Upload local images"}</button>
+        <Button type="button" onClick={handleUploadLocal} disabled={uploading}>{uploading ? "Uploading..." : "Upload local images"}</Button>
       </header>
-      <section className="grid gap-sm grid-cols-3 max-md:grid-cols-1">
-        <select
+      <section className="grid gap-3 grid-cols-3 max-md:grid-cols-1">
+        <NativeSelect
           aria-label="Profile"
-          className={inputClass}
+          className="w-full"
           value={selectedProfile?.id ?? ""}
           onChange={(e) => {
             const newId = e.target.value;
@@ -302,111 +322,144 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           }}
         >
           {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
+            <NativeSelectOption key={p.id} value={p.id}>
               {p.name}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
-        <input
+        </NativeSelect>
+        <Input
           aria-label="Prefix"
-          className={inputClass}
           placeholder="images/2026/06"
           value={prefix}
           onChange={(e) => setPrefix(e.target.value)}
         />
-        <input
+        <Input
           aria-label="Search current prefix"
-          className={inputClass}
           placeholder="Search current prefix"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </section>
       {copyMessage && (
-        <StatusMessage>{copyMessage}</StatusMessage>
+        <p className="text-sm text-muted-foreground" role="status">{copyMessage}</p>
       )}
       {uploadStatus && (
-        <StatusMessage variant={uploadStatus.includes("failed") ? "error" : "default"}>{uploadStatus}</StatusMessage>
+        uploadStatus.includes("failed") ? (
+          <Alert variant="destructive">
+            <AlertDescription>{uploadStatus}</AlertDescription>
+          </Alert>
+        ) : (
+          <p className="text-sm text-muted-foreground" role="status">{uploadStatus}</p>
+        )
       )}
       {loading && (
-        <section className="grid gap-md grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" aria-label="Loading">
+        <section className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" aria-label="Loading">
           {Array.from({ length: 6 }, (_, i) => (
-            <article key={i} className="bg-surface-container border border-outline-variant rounded-md grid gap-sm p-md">
-              <div className="aspect-[4/3] bg-surface-container-high rounded-xs" aria-hidden="true" />
-              <p className="h-[var(--text-caption)] bg-surface-container-high rounded-xs" aria-hidden="true">&nbsp;</p>
-            </article>
+            <Card key={i}>
+              <CardContent className="grid gap-3">
+                <Skeleton className="aspect-[4/3] w-full" aria-hidden="true" />
+                <Skeleton className="h-4 w-3/4" aria-hidden="true" />
+              </CardContent>
+            </Card>
           ))}
         </section>
       )}
-      {deletingKey && <StatusMessage>Deleting {deletingKey}...</StatusMessage>}
-      {downloadingKey && <StatusMessage>Downloading {downloadingKey}...</StatusMessage>}
-      {deleteError && <StatusMessage variant="error">{deleteError}</StatusMessage>}
-      {downloadError && <StatusMessage variant="error">{downloadError}</StatusMessage>}
-      {error && <StatusMessage variant="error">{error}</StatusMessage>}
+      {deletingKey && <p className="text-sm text-muted-foreground" role="status">Deleting {deletingKey}...</p>}
+      {downloadingKey && <p className="text-sm text-muted-foreground" role="status">Downloading {downloadingKey}...</p>}
+      {deleteError && (
+        <Alert variant="destructive">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      )}
+      {downloadError && (
+        <Alert variant="destructive">
+          <AlertDescription>{downloadError}</AlertDescription>
+        </Alert>
+      )}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       {!loading && !error && filteredObjects.length === 0 && (
-        <section className="border border-dashed border-outline-variant rounded-lg bg-surface-container-low p-2xl text-center text-on-surface-variant text-callout">
-          No objects found.
-          <button className={cn(btnPrimary, "mt-md")} type="button" onClick={handleUploadLocal}>
-            Upload local images
-          </button>
-        </section>
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyTitle>No objects found.</EmptyTitle>
+            <EmptyDescription>Upload images or adjust the current prefix.</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button type="button" onClick={handleUploadLocal}>
+              Upload local images
+            </Button>
+          </EmptyContent>
+        </Empty>
       )}
       {!loading && !error && filteredObjects.length > 0 && (
-        <section className="grid gap-md grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
+        <section className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
           {filteredObjects.map((obj) => (
-            <article
+            <Card
               key={obj.key}
               className={cn(
-                "bg-surface-container border border-outline-variant rounded-md grid gap-sm p-md",
-                "transition-[border-color,transform] duration-200 ease-out",
-                "hover:border-outline hover:-translate-y-px",
-                highlightedKeys.has(obj.key) && "border-primary shadow-[0_0_0_1px_var(--primary)]",
+                "transition-[transform,box-shadow] hover:-translate-y-px",
+                highlightedKeys.has(obj.key) && "ring-primary ring-2",
               )}
             >
-              <div className="aspect-[4/3] bg-surface-container-high rounded-xs text-on-surface-variant flex justify-center items-center overflow-hidden text-caption">
-                {obj.isImage && obj.publicUrl && !imgErrors.has(obj.key) ? (
-                  <img
-                    className="w-full h-full object-cover rounded-xs"
-                    src={obj.publicUrl}
-                    alt={obj.key}
-                    loading="lazy"
-                    onError={() => setImgErrors((prev) => new Set(prev).add(obj.key))}
-                  />
-                ) : (
-                  <span className="text-caption opacity-60">
-                    {!obj.isImage ? "File" : "Image"}
-                  </span>
-                )}
-              </div>
-              <p className="text-caption text-on-surface-variant overflow-hidden text-ellipsis whitespace-nowrap text-pretty tabular-nums">{obj.key}</p>
-              <div className="grid gap-1 grid-cols-2">
-                <button className={cn(btnSecondary, btnSm)} type="button" onClick={() => handleCopyUrl(obj)}>
-                  Copy URL
-                </button>
-                <button className={cn(btnSecondary, btnSm)} type="button" onClick={() => handleView(obj)}>
-                  View
-                </button>
-                <button className={cn(btnSecondary, btnSm)} type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
-                  Download
-                </button>
-                <button className={cn(btnDanger, btnSm)} type="button" onClick={() => handleDeleteRequest(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
-                  Delete
-                </button>
-              </div>
-            </article>
+              <CardContent className="grid gap-3">
+                <div className="aspect-[4/3] bg-muted rounded-lg text-muted-foreground flex justify-center items-center overflow-hidden text-xs">
+                  {obj.isImage && obj.publicUrl && !imgErrors.has(obj.key) ? (
+                    <img
+                      className="w-full h-full object-cover"
+                      src={obj.publicUrl}
+                      alt={obj.key}
+                      loading="lazy"
+                      onError={() => setImgErrors((prev) => new Set(prev).add(obj.key))}
+                    />
+                  ) : (
+                    <span className="opacity-70">
+                      {!obj.isImage ? "File" : "Image"}
+                    </span>
+                  )}
+                </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground tabular-nums">{obj.key}</p>
+                  {highlightedKeys.has(obj.key) && <Badge variant="secondary">New</Badge>}
+                </div>
+                <div className="grid gap-1.5 grid-cols-2">
+                  <Button variant="outline" size="sm" type="button" onClick={() => handleCopyUrl(obj)}>
+                    Copy URL
+                  </Button>
+                  <Button variant="outline" size="sm" type="button" onClick={() => handleView(obj)}>
+                    View
+                  </Button>
+                  <Button variant="outline" size="sm" type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
+                    Download
+                  </Button>
+                  <Button variant="destructive" size="sm" type="button" onClick={() => handleDeleteRequest(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
+                    Delete
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </section>
       )}
       <AlertDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
-        title={`Delete ${deleteTarget?.key ?? ""}?`}
-        description="This will permanently remove the object from S3. This action cannot be undone."
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        onConfirm={handleDeleteConfirm}
-        onCancel={() => setDeleteTarget(null)}
-      />
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{`Delete ${deleteTarget?.key ?? ""}?`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the object from S3. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={handleDeleteConfirm}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
