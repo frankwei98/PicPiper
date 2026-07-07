@@ -7,7 +7,6 @@ const { saveSettings, saveS3Secret } = vi.hoisted(() => ({
   saveSettings: vi.fn(async (_settings?: AppSettings) => {}),
   saveS3Secret: vi.fn(async () => ({
     credentialRef: "s3:personal",
-    insecureFallbackUsed: false,
   })),
 }));
 
@@ -118,7 +117,6 @@ describe("SettingsPage", () => {
     expect(saveS3Secret).toHaveBeenCalledWith({
       profileId: expect.any(String),
       secretAccessKey: "secret-key",
-      allowInsecureFallback: false,
     });
     expect(saveSettings).toHaveBeenCalled();
     expect(onSettingsChange).toHaveBeenCalled();
@@ -137,7 +135,6 @@ describe("SettingsPage", () => {
       credentialRef: "s3:p1",
       pathStyle: true,
       defaultPrefix: "images",
-      insecureSecretFallback: false,
     };
     const profile2 = {
       id: "p2",
@@ -149,7 +146,6 @@ describe("SettingsPage", () => {
       credentialRef: "s3:p2",
       pathStyle: true,
       defaultPrefix: "work/images",
-      insecureSecretFallback: false,
     };
 
     render(
@@ -195,7 +191,6 @@ describe("SettingsPage", () => {
               pathStyle: true,
               publicBaseUrl: "https://cdn.example.com",
               defaultPrefix: "images",
-              insecureSecretFallback: false,
             },
           ],
           namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
@@ -224,51 +219,6 @@ describe("SettingsPage", () => {
     expect(onSettingsChange).toHaveBeenCalled();
   });
 
-  it("persists allowInsecureFallback toggle without re-entering the secret", async () => {
-    const user = userEvent.setup();
-    const onSettingsChange = vi.fn();
-
-    render(
-      <SettingsPage
-        settings={{
-          profiles: [
-            {
-              id: "personal",
-              name: "Personal R2",
-              endpoint: "https://example.r2.cloudflarestorage.com",
-              region: "auto",
-              bucket: "images",
-              accessKeyId: "access-key",
-              credentialRef: "s3:personal",
-              pathStyle: true,
-              defaultPrefix: "images",
-              insecureSecretFallback: false,
-            },
-          ],
-          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
-        }}
-        onSettingsChange={onSettingsChange}
-      />,
-    );
-
-    // Toggle the checkbox on without entering a new secret
-    await user.click(screen.getByLabelText("Allow local secret fallback"));
-
-    await user.click(screen.getByRole("button", { name: /save profile/i }));
-
-    expect(saveS3Secret).not.toHaveBeenCalled();
-    expect(saveSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        profiles: expect.arrayContaining([
-          expect.objectContaining({
-            id: "personal",
-            insecureSecretFallback: true,
-          }),
-        ]),
-      }),
-    );
-  });
-
   it("renders and saves path style addressing checkbox", async () => {
     const user = userEvent.setup();
     const onSettingsChange = vi.fn();
@@ -287,7 +237,6 @@ describe("SettingsPage", () => {
               credentialRef: "s3:personal",
               pathStyle: true,
               defaultPrefix: "images",
-              insecureSecretFallback: false,
             },
           ],
           namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
@@ -335,7 +284,6 @@ describe("SettingsPage", () => {
               credentialRef: "s3:existing",
               pathStyle: true,
               defaultPrefix: "images",
-              insecureSecretFallback: false,
             },
           ],
           namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
@@ -368,6 +316,20 @@ describe("SettingsPage", () => {
     expect(savedSettings.profiles[0].name).toBe("Existing S3");
     expect(savedSettings.profiles[1].name).toBe("New S3");
     expect(savedSettings.profiles[1].id).not.toBe("existing");
+  });
+
+  it("renders local credential storage copy", () => {
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/stored locally on this device/i)).toBeInTheDocument();
   });
 
   it("rejects Public Base URL with query string", async () => {

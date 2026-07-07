@@ -328,7 +328,6 @@ mod tests {
             path_style: true,
             public_base_url: base.map(str::to_string),
             default_prefix: "images".to_string(),
-            insecure_secret_fallback: false,
         }
     }
 

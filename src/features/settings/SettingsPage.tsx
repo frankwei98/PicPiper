@@ -39,9 +39,6 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [bucket, setBucket] = useState(profile?.bucket ?? "");
   const [accessKeyId, setAccessKeyId] = useState(profile?.accessKeyId ?? "");
   const [secretAccessKey, setSecretAccessKey] = useState("");
-  const [allowInsecureFallback, setAllowInsecureFallback] = useState(
-    profile?.insecureSecretFallback ?? false,
-  );
   const [namingTemplate, setNamingTemplate] = useState(settings.namingTemplate);
   const [publicBaseUrl, setPublicBaseUrl] = useState(profile?.publicBaseUrl ?? "");
   const [defaultPrefix, setDefaultPrefix] = useState(profile?.defaultPrefix ?? "");
@@ -59,7 +56,6 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       setBucket("");
       setAccessKeyId("");
       setSecretAccessKey("");
-      setAllowInsecureFallback(false);
       setPublicBaseUrl("");
       setDefaultPrefix("");
       setPathStyle(true);
@@ -73,7 +69,6 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     setBucket(p.bucket);
     setAccessKeyId(p.accessKeyId);
     setSecretAccessKey("");
-    setAllowInsecureFallback(p.insecureSecretFallback);
     setPublicBaseUrl(p.publicBaseUrl ?? "");
     setDefaultPrefix(p.defaultPrefix);
     setPathStyle(p.pathStyle ?? true);
@@ -129,11 +124,9 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         ? await settingsApi.saveS3Secret({
             profileId,
             secretAccessKey,
-            allowInsecureFallback,
           })
         : {
             credentialRef: profile!.credentialRef!,
-            insecureFallbackUsed: allowInsecureFallback,
           };
 
       const savedProfile: S3Profile = {
@@ -147,7 +140,6 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         pathStyle,
         publicBaseUrl: publicBaseUrl || undefined,
         defaultPrefix,
-        insecureSecretFallback: secretResult.insecureFallbackUsed,
       };
 
       const nextSettings: AppSettings = {
@@ -196,7 +188,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         <Card>
           <CardHeader>
             <CardTitle>Profile</CardTitle>
-            <CardDescription>Secrets use system secure storage when available. Local fallback must be explicitly allowed.</CardDescription>
+            <CardDescription>S3 credentials are stored locally on this device.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <form className="grid gap-4 grid-cols-2 max-lg:grid-cols-1" onSubmit={handleSaveProfile}>
@@ -223,13 +215,6 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
               <Label className="grid gap-2 items-start">
                 Secret access key
                 <Input type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
-              </Label>
-              <Label className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                <span>Allow local secret fallback</span>
-                <Switch
-                  checked={allowInsecureFallback}
-                  onCheckedChange={setAllowInsecureFallback}
-                />
               </Label>
               <Label className="flex items-center justify-between gap-3 rounded-lg border p-3">
                 <span>Path style addressing</span>
@@ -263,11 +248,6 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
             {saveError && (
               <Alert variant="destructive">
                 <AlertDescription>{saveError}</AlertDescription>
-              </Alert>
-            )}
-            {allowInsecureFallback && (
-              <Alert variant="destructive">
-                <AlertDescription>Warning: Credential fallback to local storage is enabled. Secrets may be stored insecurely.</AlertDescription>
               </Alert>
             )}
           </CardContent>

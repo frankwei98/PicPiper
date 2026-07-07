@@ -60,7 +60,6 @@ const profile = {
   pathStyle: false,
   defaultPrefix: "2026/06",
   publicBaseUrl: "https://cdn.example.com",
-  insecureSecretFallback: false,
 };
 
 describe("S3GalleryPage", () => {

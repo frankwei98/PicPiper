@@ -13,7 +13,6 @@ pub struct S3Profile {
     pub path_style: bool,
     pub public_base_url: Option<String>,
     pub default_prefix: String,
-    pub insecure_secret_fallback: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -66,14 +65,12 @@ pub struct UploadHistoryEntry {
 pub struct SaveCredentialRequest {
     pub profile_id: String,
     pub secret_access_key: String,
-    pub allow_insecure_fallback: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveCredentialResponse {
     pub credential_ref: String,
-    pub insecure_fallback_used: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

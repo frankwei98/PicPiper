@@ -23,7 +23,7 @@ Pic Piper is a Tauri desktop app for optimizing images for internet sharing and 
 ### Settings
 
 - Add and edit S3-compatible profiles.
-- Credentials stored in system secure storage (macOS Keychain, Windows Credential Manager, Linux Secret Service) with explicit local fallback.
+- Credentials stored locally on this device.
 - Configure naming template, default prefix, and public base URL.
 - Settings persist across app restarts.
 
@@ -37,7 +37,7 @@ Pic Piper is a Tauri desktop app for optimizing images for internet sharing and 
 
 1. Open Settings.
 2. Enter your S3 endpoint, region, bucket, and access key ID.
-3. Enter the secret access key (stored securely).
+3. Enter the secret access key (stored locally on this device).
 4. Set a Public Base URL for copy-URL functionality (e.g., `https://cdn.example.com`).
 5. Set a default prefix (e.g., `images/2026/06`).
 6. Click "Save profile".
@@ -49,12 +49,6 @@ pnpm install
 pnpm test
 pnpm build
 pnpm tauri dev
-```
-
-To skip macOS Keychain prompts during development (credentials fall back to local file storage):
-
-```bash
-PIC_PIPER_NO_KEYCHAIN=1 pnpm tauri dev
 ```
 
 Rust tests:
