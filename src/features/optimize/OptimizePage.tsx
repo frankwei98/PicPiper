@@ -621,17 +621,17 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const compareItem = compareItemId ? items.find((i) => i.id === compareItemId) : undefined;
 
   return (
-    <div className="grid max-w-6xl gap-6">
-      <header className="flex justify-between items-start gap-6 max-lg:flex-col">
-        <div>
+    <div className="grid w-full max-w-6xl gap-6">
+      <header className="grid gap-5 lg:grid-cols-[minmax(18rem,1fr)_minmax(18rem,24rem)] lg:items-end">
+        <div className="min-w-0">
           <h2 className="text-3xl font-semibold tracking-tight text-balance">Optimize</h2>
-          <p className="text-muted-foreground mt-2 text-sm text-pretty">Drop images to compress automatically.</p>
+          <p className="text-muted-foreground mt-2 max-w-md text-sm text-pretty">Drop images to compress automatically.</p>
         </div>
-        <div className="flex gap-4 items-end flex-wrap">
-          <span className="text-xs text-muted-foreground">
+        <div className="grid min-w-0 gap-3 lg:justify-self-end lg:w-full">
+          <span className="text-xs text-muted-foreground text-pretty">
             Metadata (including GPS) is removed during compression
           </span>
-          <Label className="grid gap-2 min-w-[220px] items-start">
+          <Label className="grid w-full gap-2 items-start">
             Quality {quality}%
             <Slider aria-label="Quality" value={quality} onValueChange={handleQualityChange} min={1} max={100} />
           </Label>
