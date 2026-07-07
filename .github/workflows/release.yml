@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release tag name. Leave empty to use app-v__VERSION__.
+        required: false
+        type: string
+      release_draft:
+        description: Create the release as a draft.
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            runner: macos-15
+            args: --target aarch64-apple-darwin
+            rust-targets: aarch64-apple-darwin
+            apple-signing-identity: "-"
+          - name: macOS x64
+            runner: macos-15-intel
+            args: --target x86_64-apple-darwin
+            rust-targets: x86_64-apple-darwin
+            apple-signing-identity: "-"
+          - name: Linux x64
+            runner: ubuntu-24.04
+            args: ""
+            rust-targets: ""
+            apple-signing-identity: ""
+          - name: Linux arm64
+            runner: ubuntu-24.04-arm
+            args: ""
+            rust-targets: ""
+            apple-signing-identity: ""
+          - name: Windows x64
+            runner: windows-latest
+            args: ""
+            rust-targets: ""
+            apple-signing-identity: ""
+          - name: Windows arm64
+            runner: windows-11-arm
+            args: ""
+            rust-targets: ""
+            apple-signing-identity: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.runner, 'ubuntu-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            wget \
+            xdg-utils
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and upload Tauri bundles
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.apple-signing-identity }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || inputs.tag_name || 'app-v__VERSION__' }}
+          releaseName: pic-piper v__VERSION__
+          releaseBody: Cross-platform Tauri builds for macOS, Linux, and Windows. macOS builds use ad-hoc signing unless Apple signing secrets are configured separately.
+          releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.release_draft || false }}
+          prerelease: false
+          args: ${{ matrix.args }}
