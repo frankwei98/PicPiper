@@ -80,7 +80,7 @@ async fn list_gallery_objects(
     paths: State<'_, AppPaths>,
     request: ListObjectsRequest,
 ) -> AppResult<Vec<GalleryObject>> {
-    let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
+    let secret = credentials::load_secret(&paths.credential_dir, &request.profile.id)?;
     gallery::list_objects(request, secret).await
 }
 
@@ -89,7 +89,7 @@ async fn delete_gallery_object(
     paths: State<'_, AppPaths>,
     request: DeleteObjectRequest,
 ) -> AppResult<()> {
-    let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
+    let secret = credentials::load_secret(&paths.credential_dir, &request.profile.id)?;
     gallery::delete_object(request, secret).await
 }
 
@@ -99,7 +99,7 @@ async fn upload_gallery_object(
     history: State<'_, HistoryStore>,
     request: UploadObjectRequest,
 ) -> AppResult<GalleryObject> {
-    let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
+    let secret = credentials::load_secret(&paths.credential_dir, &request.profile.id)?;
     let object_key = request.object_key.clone();
     let profile_id = request.profile.id.clone();
     let bucket = request.profile.bucket.clone();
@@ -210,7 +210,7 @@ async fn download_gallery_object(
     paths: State<'_, AppPaths>,
     request: DownloadObjectRequest,
 ) -> AppResult<String> {
-    let secret = credentials::load_secret(&paths.credential_fallback_dir, &request.profile.id)?;
+    let secret = credentials::load_secret(&paths.credential_dir, &request.profile.id)?;
     gallery::download_object(request, secret).await
 }
 
@@ -229,7 +229,7 @@ fn save_s3_secret(
     paths: State<'_, AppPaths>,
     request: SaveCredentialRequest,
 ) -> AppResult<SaveCredentialResponse> {
-    credentials::save_secret(&paths.credential_fallback_dir, request)
+    credentials::save_secret(&paths.credential_dir, request)
 }
 
 #[tauri::command]

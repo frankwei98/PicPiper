@@ -1,11 +1,9 @@
-use std::{env, fs, path::Path};
+use std::{fs, path::Path};
 
 use crate::{
     error::{AppError, AppResult},
     models::{SaveCredentialRequest, SaveCredentialResponse},
 };
-
-const SERVICE_NAME: &str = "xyz.frankwei.pic-piper";
 
 /// Validates that a profile_id contains only conservative ASCII characters:
 /// letters, digits, underscores, hyphens, and dots. Rejects empty strings,
@@ -31,68 +29,27 @@ fn validate_profile_id(profile_id: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Returns true when the user has opted out of system keyring via env var.
-/// Set `PIC_PIPER_NO_KEYCHAIN=1` to skip Keychain and use local file fallback.
-fn keyring_disabled() -> bool {
-    env::var("PIC_PIPER_NO_KEYCHAIN")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
-}
-
 pub fn credential_ref(profile_id: &str) -> AppResult<String> {
     validate_profile_id(profile_id)?;
     Ok(format!("s3:{profile_id}"))
 }
 
 pub fn save_secret(
-    fallback_dir: &Path,
+    credential_dir: &Path,
     request: SaveCredentialRequest,
-) -> AppResult<SaveCredentialResponse> {
-    save_secret_with_keyring(fallback_dir, request, |key_ref, secret| {
-        let entry = keyring::Entry::new(SERVICE_NAME, key_ref);
-        if let Ok(entry) = entry {
-            return entry.set_password(secret).is_ok();
-        }
-        false
-    })
-}
-
-fn save_secret_with_keyring(
-    fallback_dir: &Path,
-    request: SaveCredentialRequest,
-    try_save_keyring: impl FnOnce(&str, &str) -> bool,
 ) -> AppResult<SaveCredentialResponse> {
     validate_profile_id(&request.profile_id)?;
     let key_ref = credential_ref(&request.profile_id)?;
 
-    if !keyring_disabled() {
-        if try_save_keyring(&key_ref, &request.secret_access_key) {
-            // Best-effort: remove any stale fallback file so a later keyring
-            // outage doesn't surface an old (possibly rotated-away) secret.
-            let stale = fallback_dir.join(format!("{}.secret", request.profile_id));
-            let _ = fs::remove_file(&stale);
-            return Ok(SaveCredentialResponse {
-                credential_ref: key_ref,
-                insecure_fallback_used: false,
-            });
-        }
-        if !request.allow_insecure_fallback {
-            return Err(AppError::new(
-                "secureCredentialUnavailable",
-                "System credential storage is unavailable. Enable local fallback to save this profile.",
-            ));
-        }
-    }
+    fs::create_dir_all(credential_dir)
+        .map_err(|err| AppError::new("credentialDirFailed", err.to_string()))?;
 
-    fs::create_dir_all(fallback_dir)
-        .map_err(|err| AppError::new("credentialFallbackDirFailed", err.to_string()))?;
-
-    let final_path = fallback_dir.join(format!("{}.secret", request.profile_id));
-    let temp_path = fallback_dir.join(format!("{}.secret.tmp", request.profile_id));
+    let final_path = credential_dir.join(format!("{}.secret", request.profile_id));
+    let temp_path = credential_dir.join(format!("{}.secret.tmp", request.profile_id));
 
     // Write to temp file first, then rename for atomicity
     fs::write(&temp_path, &request.secret_access_key)
-        .map_err(|err| AppError::new("credentialFallbackWriteFailed", err.to_string()))?;
+        .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))?;
 
     // Set file permissions to owner-only read/write on Unix/macOS
     #[cfg(unix)]
@@ -102,28 +59,17 @@ fn save_secret_with_keyring(
     }
 
     fs::rename(&temp_path, &final_path)
-        .map_err(|err| AppError::new("credentialFallbackWriteFailed", err.to_string()))?;
+        .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))?;
 
     Ok(SaveCredentialResponse {
         credential_ref: key_ref,
-        insecure_fallback_used: true,
     })
 }
 
-pub fn load_secret(fallback_dir: &Path, profile_id: &str) -> AppResult<String> {
+pub fn load_secret(credential_dir: &Path, profile_id: &str) -> AppResult<String> {
     validate_profile_id(profile_id)?;
-    let key_ref = credential_ref(profile_id)?;
 
-    if !keyring_disabled() {
-        if let Ok(entry) = keyring::Entry::new(SERVICE_NAME, &key_ref) {
-            if let Ok(secret) = entry.get_password() {
-                return Ok(secret);
-            }
-        }
-    }
-
-    let _ = key_ref; // suppress unused variable warning when keyring is disabled
-    fs::read_to_string(fallback_dir.join(format!("{profile_id}.secret"))).map_err(|_| {
+    fs::read_to_string(credential_dir.join(format!("{profile_id}.secret"))).map_err(|_| {
         AppError::new(
             "credentialMissing",
             "No saved credential found for profile.",
@@ -134,11 +80,6 @@ pub fn load_secret(fallback_dir: &Path, profile_id: &str) -> AppResult<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    // Serialize tests that mutate PIC_PIPER_NO_KEYCHAIN so they don't
-    // interfere with each other when cargo runs tests in parallel.
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn credential_ref_is_stable() {
@@ -180,96 +121,35 @@ mod tests {
     }
 
     #[test]
-    fn no_keychain_env_skips_keyring_and_uses_fallback() {
-        let _guard = ENV_MUTEX.lock().unwrap();
-        // With PIC_PIPER_NO_KEYCHAIN=1, save_secret always uses file fallback.
+    fn save_secret_writes_local_file() {
         let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            env::set_var("PIC_PIPER_NO_KEYCHAIN", "1");
-        }
         let result = save_secret(
             dir.path(),
             SaveCredentialRequest {
                 profile_id: "example".to_string(),
                 secret_access_key: "secret".to_string(),
-                allow_insecure_fallback: false,
             },
         );
-        unsafe {
-            env::remove_var("PIC_PIPER_NO_KEYCHAIN");
-        }
 
-        let resp = result.expect("save_secret should succeed with keyring disabled via env");
-        assert!(resp.insecure_fallback_used);
+        let resp = result.expect("save_secret should succeed with local credential storage");
         assert_eq!(resp.credential_ref, "s3:example");
-    }
-
-    #[test]
-    fn fallback_requires_explicit_permission_without_env() {
-        let _guard = ENV_MUTEX.lock().unwrap();
-        // Without the env var, if keyring fails and allow_insecure_fallback is false,
-        // save_secret should return an error without touching the real OS keyring.
-        let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            env::remove_var("PIC_PIPER_NO_KEYCHAIN");
-        }
-        let result = save_secret_with_keyring(
-            dir.path(),
-            SaveCredentialRequest {
-                profile_id: "example".to_string(),
-                secret_access_key: "secret".to_string(),
-                allow_insecure_fallback: false,
-            },
-            |_key_ref, _secret| false,
+        assert_eq!(
+            fs::read_to_string(dir.path().join("example.secret")).unwrap(),
+            "secret"
         );
-
-        let err = result.expect_err("fallback should require explicit permission");
-        assert_eq!(err.code, "secureCredentialUnavailable");
     }
 
     #[test]
-    fn no_keychain_env_does_not_attempt_keyring() {
-        let _guard = ENV_MUTEX.lock().unwrap();
+    fn credential_file_is_not_world_readable() {
         let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            env::set_var("PIC_PIPER_NO_KEYCHAIN", "1");
-        }
-        let result = save_secret_with_keyring(
-            dir.path(),
-            SaveCredentialRequest {
-                profile_id: "example".to_string(),
-                secret_access_key: "secret".to_string(),
-                allow_insecure_fallback: false,
-            },
-            |_key_ref, _secret| panic!("keyring should be skipped when PIC_PIPER_NO_KEYCHAIN=1"),
-        );
-        unsafe {
-            env::remove_var("PIC_PIPER_NO_KEYCHAIN");
-        }
-
-        let resp = result.expect("save_secret should use file fallback");
-        assert!(resp.insecure_fallback_used);
-    }
-
-    #[test]
-    fn fallback_file_is_not_world_readable() {
-        let _guard = ENV_MUTEX.lock().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            env::set_var("PIC_PIPER_NO_KEYCHAIN", "1");
-        }
         save_secret(
             dir.path(),
             SaveCredentialRequest {
                 profile_id: "testperm".to_string(),
                 secret_access_key: "secret123".to_string(),
-                allow_insecure_fallback: false,
             },
         )
         .unwrap();
-        unsafe {
-            env::remove_var("PIC_PIPER_NO_KEYCHAIN");
-        }
 
         #[cfg(unix)]
         {
@@ -280,7 +160,7 @@ mod tests {
             assert_eq!(
                 mode & 0o777,
                 0o600,
-                "fallback file should have mode 0o600, got {:o}",
+                "credential file should have mode 0o600, got {:o}",
                 mode & 0o777
             );
         }
@@ -288,11 +168,7 @@ mod tests {
 
     #[test]
     fn save_rejects_malicious_profile_id() {
-        let _guard = ENV_MUTEX.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            env::set_var("PIC_PIPER_NO_KEYCHAIN", "1");
-        }
 
         for bad_id in &["../evil", "a/b", "a\\b", "", "a\nb"] {
             let result = save_secret(
@@ -300,42 +176,10 @@ mod tests {
                 SaveCredentialRequest {
                     profile_id: bad_id.to_string(),
                     secret_access_key: "secret".to_string(),
-                    allow_insecure_fallback: false,
                 },
             );
             assert!(result.is_err(), "should reject profile_id: {:?}", bad_id);
         }
-
-        unsafe {
-            env::remove_var("PIC_PIPER_NO_KEYCHAIN");
-        }
-    }
-
-    #[test]
-    fn successful_keychain_save_removes_stale_fallback_file() {
-        let _guard = ENV_MUTEX.lock().unwrap();
-        let dir = tempfile::tempdir().unwrap();
-
-        // Simulate prior insecure fallback from earlier session.
-        std::fs::write(dir.path().join("rotated.secret"), "old-secret").unwrap();
-
-        // Now keychain succeeds for the same profile id — fallback file should be removed.
-        let resp = save_secret_with_keyring(
-            dir.path(),
-            SaveCredentialRequest {
-                profile_id: "rotated".to_string(),
-                secret_access_key: "new-secret".to_string(),
-                allow_insecure_fallback: true,
-            },
-            |_key_ref, _secret| true,
-        )
-        .expect("save should succeed when keyring returns true");
-
-        assert!(!resp.insecure_fallback_used);
-        assert!(
-            !dir.path().join("rotated.secret").exists(),
-            "stale fallback file must be removed after keychain save"
-        );
     }
 
     #[test]

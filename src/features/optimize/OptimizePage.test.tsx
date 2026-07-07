@@ -629,7 +629,6 @@ describe("OptimizePage", () => {
       pathStyle: false,
       defaultPrefix: "images/2026/06",
       publicBaseUrl: "https://cdn.example.com",
-      insecureSecretFallback: false,
     };
     const onUploadedToS3 = vi.fn();
     const user = userEvent.setup();
@@ -681,7 +680,6 @@ describe("OptimizePage", () => {
       pathStyle: false,
       defaultPrefix: "images/2026/06",
       publicBaseUrl: "https://cdn.example.com",
-      insecureSecretFallback: false,
     };
     const onUploadedToS3 = vi.fn();
 

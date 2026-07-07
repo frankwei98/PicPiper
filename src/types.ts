@@ -74,7 +74,6 @@ export interface S3Profile {
   pathStyle: boolean;
   publicBaseUrl?: string;
   defaultPrefix: string;
-  insecureSecretFallback: boolean;
 }
 
 export interface GalleryObject {

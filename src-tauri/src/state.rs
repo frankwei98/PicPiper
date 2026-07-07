@@ -1,6 +1,6 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::{fs, path::PathBuf};
 
 use tauri::Manager;
 
@@ -12,7 +12,7 @@ pub struct AppPaths {
     pub data_dir: PathBuf,
     pub settings_path: PathBuf,
     pub history_path: PathBuf,
-    pub credential_fallback_dir: PathBuf,
+    pub credential_dir: PathBuf,
 }
 
 /// Thread-safe wrapper around history file access. Serializes read-modify-write
@@ -55,10 +55,15 @@ impl AppPaths {
             .path()
             .app_data_dir()
             .map_err(|err| AppError::new("appDataDirFailed", err.to_string()))?;
+        let credential_dir = data_dir.join("credentials");
+        let legacy_credential_dir = data_dir.join("credential-fallback");
+        if !credential_dir.exists() && legacy_credential_dir.exists() {
+            let _ = fs::rename(&legacy_credential_dir, &credential_dir);
+        }
         Ok(Self {
             settings_path: data_dir.join("settings.json"),
             history_path: data_dir.join("upload-history.json"),
-            credential_fallback_dir: data_dir.join("credential-fallback"),
+            credential_dir,
             data_dir,
         })
     }

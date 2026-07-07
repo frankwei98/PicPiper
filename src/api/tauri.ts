@@ -123,7 +123,6 @@ export interface AppSettings {
 export interface SaveS3SecretRequest {
   profileId: string;
   secretAccessKey: string;
-  allowInsecureFallback: boolean;
 }
 
 export const settingsApi = {
@@ -131,5 +130,5 @@ export const settingsApi = {
   saveSettings: (settings: AppSettings) =>
     invoke<void>("save_app_settings", { request: { settings } }),
   saveS3Secret: (request: SaveS3SecretRequest) =>
-    invoke<{ credentialRef: string; insecureFallbackUsed: boolean }>("save_s3_secret", { request }),
+    invoke<{ credentialRef: string }>("save_s3_secret", { request }),
 };
