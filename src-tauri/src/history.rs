@@ -12,8 +12,21 @@ pub fn load_history(path: &Path) -> AppResult<Vec<UploadHistoryEntry>> {
 
     let content = fs::read_to_string(path)
         .map_err(|err| AppError::new("historyReadFailed", err.to_string()))?;
-    serde_json::from_str(&content)
-        .map_err(|err| AppError::new("historyParseFailed", err.to_string()))
+    match serde_json::from_str(&content) {
+        Ok(entries) => Ok(entries),
+        Err(_) => {
+            let corrupt_path = path.with_file_name(format!(
+                "{}.corrupt-{}.json",
+                path.file_stem()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("history"),
+                uuid::Uuid::new_v4()
+            ));
+            fs::rename(path, &corrupt_path)
+                .map_err(|err| AppError::new("historyCorruptMoveFailed", err.to_string()))?;
+            Ok(Vec::new())
+        }
+    }
 }
 
 pub fn append_history(path: &Path, entry: UploadHistoryEntry) -> AppResult<()> {
@@ -94,7 +107,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_file_survives_failed_temp_write() {
+    fn successful_append_leaves_no_temp_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("history.json");
 
@@ -112,5 +125,30 @@ mod tests {
         let entries = load_history(&path).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].object_key, "original.webp");
+    }
+
+    #[test]
+    fn corrupt_history_is_moved_aside_and_append_recovers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("history.json");
+        fs::write(&path, b"{not valid json").unwrap();
+
+        append_history(&path, sample_entry("recovered.webp")).unwrap();
+
+        let entries = load_history(&path).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].object_key, "recovered.webp");
+
+        let corrupt_files = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("history.corrupt-")
+            })
+            .count();
+        assert_eq!(corrupt_files, 1);
     }
 }

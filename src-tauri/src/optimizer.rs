@@ -126,6 +126,54 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
     Ok(copied)
 }
 
+pub fn validate_existing_path_under(
+    base_dir: &Path,
+    candidate: &Path,
+    code: &'static str,
+) -> AppResult<PathBuf> {
+    let base = base_dir
+        .canonicalize()
+        .map_err(|err| AppError::new(code, err.to_string()))?;
+    let candidate = candidate
+        .canonicalize()
+        .map_err(|err| AppError::new(code, err.to_string()))?;
+
+    if !candidate.starts_with(&base) {
+        return Err(AppError::new(
+            code,
+            "Path is outside the optimizer cache directory.",
+        ));
+    }
+
+    Ok(candidate)
+}
+
+pub fn validate_optimizer_output_dir(cache_dir: &Path, output_dir: &str) -> AppResult<()> {
+    let canonical =
+        validate_existing_path_under(cache_dir, Path::new(output_dir), "invalidOutputDir")?;
+    if !canonical.is_dir() {
+        return Err(AppError::new(
+            "invalidOutputDir",
+            "Output path must be a directory in the optimizer cache.",
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_optimizer_output_paths(cache_dir: &Path, output_paths: &[String]) -> AppResult<()> {
+    for output_path in output_paths {
+        let canonical =
+            validate_existing_path_under(cache_dir, Path::new(output_path), "invalidOutputPath")?;
+        if !canonical.is_file() {
+            return Err(AppError::new(
+                "invalidOutputPath",
+                "Output path must be a file in the optimizer cache.",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Choose a unique file path in `dir` based on `file_name`.
 ///
 /// If `dir/file_name` does not exist, returns it as-is. Otherwise appends
@@ -569,6 +617,42 @@ mod tests {
         assert_eq!(std::fs::read(target.join("photo.webp")).unwrap(), b"old");
         // New file written to unique path
         assert_eq!(std::fs::read(&copied[0]).unwrap(), b"new");
+    }
+
+    #[test]
+    fn validates_optimizer_output_dir_under_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("optimizer-cache");
+        let run = cache.join("run-1");
+        std::fs::create_dir_all(&run).unwrap();
+
+        validate_optimizer_output_dir(&cache, &run.to_string_lossy()).unwrap();
+    }
+
+    #[test]
+    fn rejects_optimizer_output_dir_outside_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("optimizer-cache");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        let err = validate_optimizer_output_dir(&cache, &outside.to_string_lossy()).unwrap_err();
+        assert_eq!(err.code, "invalidOutputDir");
+    }
+
+    #[test]
+    fn rejects_copy_output_path_outside_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("optimizer-cache");
+        let run = cache.join("run-1");
+        let outside = dir.path().join("secret.txt");
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(&outside, b"secret").unwrap();
+
+        let err = validate_optimizer_output_paths(&cache, &[outside.to_string_lossy().to_string()])
+            .unwrap_err();
+        assert_eq!(err.code, "invalidOutputPath");
     }
 
     #[test]

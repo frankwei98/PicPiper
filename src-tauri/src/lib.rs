@@ -62,7 +62,14 @@ async fn create_optimizer_run(paths: State<'_, AppPaths>) -> AppResult<CreateOpt
 }
 
 #[tauri::command]
-async fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageResult> {
+async fn compress_image(
+    paths: State<'_, AppPaths>,
+    request: CompressImageRequest,
+) -> AppResult<CompressImageResult> {
+    optimizer::validate_optimizer_output_dir(
+        &paths.data_dir.join("optimizer-cache"),
+        &request.output_dir,
+    )?;
     tokio::task::spawn_blocking(move || optimizer::compress_image(request))
         .await
         .map_err(|err| error::AppError::new("compressJoinFailed", err.to_string()))?
@@ -226,7 +233,14 @@ fn save_s3_secret(
 }
 
 #[tauri::command]
-async fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
+async fn copy_outputs_to_dir(
+    paths: State<'_, AppPaths>,
+    request: CopyOutputsRequest,
+) -> AppResult<Vec<String>> {
+    optimizer::validate_optimizer_output_paths(
+        &paths.data_dir.join("optimizer-cache"),
+        &request.output_paths,
+    )?;
     tokio::task::spawn_blocking(move || optimizer::copy_outputs_to_dir(request))
         .await
         .map_err(|err| error::AppError::new("copyJoinFailed", err.to_string()))?

@@ -13,6 +13,13 @@ use crate::{
     naming, optimizer,
 };
 
+async fn cleanup_partial_on_error(dest: &std::path::Path, result: AppResult<()>) -> AppResult<()> {
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(dest).await;
+    }
+    result
+}
+
 async fn client_for(profile: &S3Profile, secret: String) -> Client {
     let credentials = Credentials::new(
         profile.access_key_id.clone(),
@@ -244,22 +251,27 @@ pub async fn download_object(request: DownloadObjectRequest, secret: String) -> 
 
     // Stream body directly to file instead of buffering the whole object in memory.
     use tokio::io::AsyncWriteExt;
-    let mut file = tokio::fs::File::create(&dest)
-        .await
-        .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
-    let mut stream = response.body;
-    while let Some(chunk) = stream
-        .try_next()
-        .await
-        .map_err(|err| AppError::new("s3DownloadReadFailed", err.to_string()))?
-    {
-        file.write_all(&chunk)
+    let write_result = async {
+        let mut file = tokio::fs::File::create(&dest)
             .await
             .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
+        let mut stream = response.body;
+        while let Some(chunk) = stream
+            .try_next()
+            .await
+            .map_err(|err| AppError::new("s3DownloadReadFailed", err.to_string()))?
+        {
+            file.write_all(&chunk)
+                .await
+                .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
+        }
+        file.flush()
+            .await
+            .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
+        Ok(())
     }
-    file.flush()
-        .await
-        .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
+    .await;
+    cleanup_partial_on_error(&dest, write_result).await?;
 
     Ok(dest.to_string_lossy().to_string())
 }
@@ -512,5 +524,21 @@ mod tests {
         let p = profile(Some("https://cdn.example.com"));
         let mapped = map_s3_objects(&p, &[]);
         assert!(mapped.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cleanup_partial_on_error_removes_partial_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("partial.jpg");
+        tokio::fs::write(&path, b"partial").await.unwrap();
+
+        let result = cleanup_partial_on_error(
+            &path,
+            Err(AppError::new("s3DownloadReadFailed", "network dropped")),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err().code, "s3DownloadReadFailed");
+        assert!(!path.exists());
     }
 }
