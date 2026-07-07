@@ -10,7 +10,7 @@ export const btnPrimary = cn(
 
 export const btnSecondary = cn(
   btnBase,
-  "bg-white/5 border border-outline-variant text-on-surface hover:bg-white/10 hover:border-outline",
+  "bg-surface-container-low border border-outline-variant text-on-surface hover:bg-surface-container-high hover:border-outline",
 );
 
 export const btnDanger = cn(
@@ -20,12 +20,12 @@ export const btnDanger = cn(
 
 export const btnTertiary = cn(
   btnBase,
-  "bg-transparent text-primary px-3 hover:bg-[rgba(255,189,127,0.1)]",
+  "bg-transparent text-primary px-3 hover:bg-primary/10",
 );
 
 export const btnSm = "text-footnote px-3 py-1.5 rounded-md";
 
 export const inputClass =
-  "rounded-md border border-outline-variant bg-surface-container text-on-surface p-2.5 text-body transition-[border-color,box-shadow] duration-150 ease-out focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 w-full";
+  "rounded-md border border-outline-variant bg-surface-container-lowest text-on-surface p-2.5 text-body transition-[border-color,box-shadow] duration-150 ease-out focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 w-full";
 
 export const labelClass = "grid gap-xs text-footnote font-medium text-on-surface-variant";
