@@ -1,6 +1,7 @@
 import type { AppView } from "../types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ImageIcon, Images, Settings, Zap } from "lucide-react";
 
 const NAV_ITEMS: Array<{ id: AppView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -16,15 +17,31 @@ interface LayoutProps {
 }
 
 export function Layout({ activeView, children, onViewChange }: LayoutProps) {
+  const startWindowDrag = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+
+    try {
+      void getCurrentWindow().startDragging().catch(() => {});
+    } catch {
+      // Browser-based previews do not provide Tauri window APIs.
+    }
+  };
+
   return (
-    <main className="grid grid-cols-[220px_minmax(0,1fr)] min-h-dvh max-md:grid-cols-1">
+    <main className="relative grid grid-cols-[220px_minmax(0,1fr)] min-h-dvh max-md:grid-cols-1">
+      <div
+        data-tauri-drag-region
+        className="fixed inset-x-0 top-0 z-20 h-12"
+        aria-hidden="true"
+        onMouseDown={startWindowDrag}
+      />
       <aside className={cn(
         "bg-sidebar text-sidebar-foreground",
         "flex flex-col gap-8",
         "border-r border-sidebar-border",
         "sticky top-0 h-dvh overflow-y-auto",
-        "px-6 py-8",
-        "max-md:relative max-md:h-auto max-md:border-r-0 max-md:border-b max-md:px-5 max-md:py-5",
+        "px-6 pb-8 pt-20",
+        "max-md:relative max-md:h-auto max-md:border-r-0 max-md:border-b max-md:px-5 max-md:pb-5 max-md:pt-20",
       )}>
         <div className="flex items-center gap-2">
           <div
@@ -55,7 +72,7 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
           ))}
         </nav>
       </aside>
-      <section className="min-w-0 overflow-x-hidden py-8 px-10 max-md:py-6 max-md:px-4">
+      <section className="min-w-0 overflow-x-hidden px-10 pb-8 pt-20 max-md:px-4 max-md:pb-6 max-md:pt-6">
         {children}
       </section>
     </main>
