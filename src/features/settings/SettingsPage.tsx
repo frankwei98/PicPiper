@@ -188,7 +188,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
             </select>
           </label>
         )}
-        <article className="border border-outline-variant rounded-lg bg-surface-container p-lg transition-[border-color] duration-200 hover:border-outline">
+        <article className="border border-outline-variant rounded-lg bg-surface-container-low p-lg transition-[border-color] duration-200 hover:border-outline">
           <h3 className="text-title-2 font-semibold text-on-surface text-balance mb-md">Profile</h3>
           <form className="grid gap-md grid-cols-2 max-lg:grid-cols-1" onSubmit={handleSaveProfile}>
             <label className={labelClass}>

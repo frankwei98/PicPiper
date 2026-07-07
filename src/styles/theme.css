@@ -81,6 +81,30 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html,
+body,
+#root {
+  min-height: 100%;
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  color: var(--on-surface);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+select option {
+  background: var(--surface-container);
+  color: var(--on-surface);
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     --background: #ffffff;
@@ -214,6 +238,7 @@
   /* Outline */
   --color-outline: var(--outline);
   --color-outline-variant: var(--outline-variant);
+  --color-surface-tint: var(--surface-tint);
 
   /* Radius — mapped to Tailwind's rounded-* scale */
   --radius-xs: 0.5rem;

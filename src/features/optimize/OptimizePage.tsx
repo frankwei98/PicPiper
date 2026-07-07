@@ -7,7 +7,7 @@ import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
 import { cn } from "../../utils/cn";
 import { Slider } from "../../components/ui/Slider";
 import { Dialog } from "../../components/ui/Dialog";
-import { btnPrimary, btnSecondary, btnTertiary } from "../../components/ui/buttonStyles";
+import { btnPrimary, btnSecondary, btnTertiary, inputClass } from "../../components/ui/buttonStyles";
 import {
   AVAILABLE_OUTPUT_FORMATS,
   defaultTargetFormat,
@@ -628,10 +628,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       <section
         data-testid="drop-zone"
         className={cn(
-          "border-2 border-dashed rounded-lg bg-surface-container-low p-2xl px-xl text-center text-on-surface-variant text-callout",
+          "border-2 border-dashed border-outline-variant rounded-lg bg-surface-container-low p-2xl px-xl text-center text-on-surface-variant text-callout",
           "transition-[border-color,background-color] duration-150 ease-out cursor-pointer",
           "hover:border-outline hover:bg-surface-container",
-          dragging && "border-primary bg-[rgba(255,149,0,0.08)] border-solid",
+          dragging && "border-primary bg-primary/10 border-solid",
         )}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -666,7 +666,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           <article className="group relative bg-surface-container border border-outline-variant rounded-md flex flex-col gap-sm p-md transition-[border-color,background-color] duration-150 ease-out hover:border-outline hover:bg-surface-container-high" key={item.id}>
             <button
               type="button"
-              className="absolute top-1 right-1 size-[22px] border-none rounded-full bg-surface-container-high text-on-surface-variant text-base leading-none p-0 cursor-pointer flex items-center justify-center opacity-0 transition-[opacity,background] duration-150 group-hover:opacity-100 focus-within:opacity-100 hover:bg-outline hover:text-on-surface"
+              className="absolute top-1 right-1 size-[22px] border-none rounded-full bg-surface-container-high text-on-surface-variant text-base leading-none p-0 cursor-pointer flex items-center justify-center opacity-0 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-surface-container-highest hover:text-on-surface"
               aria-label={`Remove ${item.fileName} from queue`}
               onClick={() => removeItem(item.id)}
             >
@@ -702,14 +702,15 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                   {formatBytes(item.originalBytes)}
                 </p>
               ) : null}
-              {item.warning && <p className="text-on-tertiary text-caption mt-0.5">{item.warning}</p>}
+              {item.warning && <p className="text-tertiary text-caption mt-0.5">{item.warning}</p>}
               {item.settings.targetFormat === "png" && (
-                <p className="text-on-tertiary text-caption mt-0.5">Quality does not apply to PNG output.</p>
+                <p className="text-tertiary text-caption mt-0.5">Quality does not apply to PNG output.</p>
               )}
               {item.status !== "inspecting" && item.status !== "cancelled" && !item.error && (
                 <label className="flex flex-col mt-xs text-footnote text-on-surface-variant">
                   <select
                     aria-label={`Format for ${item.fileName}`}
+                    className={inputClass}
                     value={item.settings.targetFormat}
                     onChange={(event) => updateFormat(item.id, event.target.value as WritableImageFormat)}
                   >
