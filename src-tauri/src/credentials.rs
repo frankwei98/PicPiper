@@ -1,4 +1,6 @@
-use std::{fs, path::Path};
+use std::{fs, io::Write, path::Path};
+
+use uuid::Uuid;
 
 use crate::{
     error::{AppError, AppResult},
@@ -44,26 +46,91 @@ pub fn save_secret(
     fs::create_dir_all(credential_dir)
         .map_err(|err| AppError::new("credentialDirFailed", err.to_string()))?;
 
-    let final_path = credential_dir.join(format!("{}.secret", request.profile_id));
-    let temp_path = credential_dir.join(format!("{}.secret.tmp", request.profile_id));
-
-    // Write to temp file first, then rename for atomicity
-    fs::write(&temp_path, &request.secret_access_key)
-        .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))?;
-
-    // Set file permissions to owner-only read/write on Unix/macOS
+    // Credentials live under the app's private data directory. Tighten the
+    // directory mode on Unix as well as the file mode below so newly-created
+    // sibling files cannot accidentally become group/world-readable.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o600));
+        fs::set_permissions(credential_dir, fs::Permissions::from_mode(0o700))
+            .map_err(|err| AppError::new("credentialDirFailed", err.to_string()))?;
     }
 
-    fs::rename(&temp_path, &final_path)
-        .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))?;
+    let final_path = credential_dir.join(format!("{}.secret", request.profile_id));
+    // Use a unique create_new temp file. A fixed `*.tmp` path lets two saves
+    // overwrite each other's secret before either one reaches the rename.
+    let temp_path = credential_dir.join(format!(
+        "{}.secret.tmp-{}",
+        request.profile_id,
+        Uuid::new_v4()
+    ));
+    let write_result = (|| {
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options
+            .open(&temp_path)
+            .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))?;
+        file.write_all(request.secret_access_key.as_bytes())
+            .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))?;
+        file.sync_all()
+            .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))?;
+
+        replace_credential_file(&temp_path, &final_path)?;
+        Ok::<(), AppError>(())
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+    write_result?;
 
     Ok(SaveCredentialResponse {
         credential_ref: key_ref,
     })
+}
+
+fn replace_credential_file(temp_path: &Path, final_path: &Path) -> AppResult<()> {
+    #[cfg(windows)]
+    {
+        use std::iter;
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING};
+
+        let temp_wide: Vec<u16> = temp_path
+            .as_os_str()
+            .encode_wide()
+            .chain(iter::once(0))
+            .collect();
+        let final_wide: Vec<u16> = final_path
+            .as_os_str()
+            .encode_wide()
+            .chain(iter::once(0))
+            .collect();
+        let moved = unsafe {
+            MoveFileExW(
+                temp_wide.as_ptr(),
+                final_wide.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING,
+            )
+        };
+        if moved == 0 {
+            return Err(AppError::new(
+                "credentialWriteFailed",
+                std::io::Error::last_os_error().to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    {
+        fs::rename(temp_path, final_path)
+            .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))
+    }
 }
 
 pub fn load_secret(credential_dir: &Path, profile_id: &str) -> AppResult<String> {
@@ -140,6 +207,24 @@ mod tests {
     }
 
     #[test]
+    fn saving_again_replaces_the_previous_credential() {
+        let dir = tempfile::tempdir().unwrap();
+        let request = |secret: &str| SaveCredentialRequest {
+            profile_id: "example".to_string(),
+            secret_access_key: secret.to_string(),
+        };
+
+        save_secret(dir.path(), request("first-secret")).unwrap();
+        save_secret(dir.path(), request("second-secret")).unwrap();
+
+        assert_eq!(load_secret(dir.path(), "example").unwrap(), "second-secret");
+        assert!(fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .all(|entry| !entry.file_name().to_string_lossy().contains(".tmp-")));
+    }
+
+    #[test]
     fn credential_file_is_not_world_readable() {
         let dir = tempfile::tempdir().unwrap();
         save_secret(
@@ -164,6 +249,26 @@ mod tests {
                 mode & 0o777
             );
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn credential_directory_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let credential_dir = dir.path().join("credentials");
+        save_secret(
+            &credential_dir,
+            SaveCredentialRequest {
+                profile_id: "private".to_string(),
+                secret_access_key: "secret".to_string(),
+            },
+        )
+        .unwrap();
+
+        let mode = fs::metadata(&credential_dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
     }
 
     #[test]

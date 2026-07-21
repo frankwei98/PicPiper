@@ -122,6 +122,33 @@ describe("SettingsPage", () => {
     expect(onSettingsChange).toHaveBeenCalled();
   });
 
+  it("accepts a trusted local HTTP public base URL", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Profile name"), "Local MinIO");
+    await user.type(screen.getByLabelText("Endpoint"), "http://localhost:9000");
+    await user.type(screen.getByLabelText("Bucket"), "images");
+    await user.type(screen.getByLabelText("Access key ID"), "local-key");
+    await user.type(screen.getByLabelText("Secret access key"), "local-secret");
+    await user.type(screen.getByLabelText("Public Base URL"), "http://localhost:9000/images");
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(saveSettings).toHaveBeenCalled();
+    expect(onSettingsChange).toHaveBeenCalled();
+  });
+
   it("shows profile selector when multiple profiles exist and allows editing the second profile", async () => {
     const user = userEvent.setup();
     const onSettingsChange = vi.fn();

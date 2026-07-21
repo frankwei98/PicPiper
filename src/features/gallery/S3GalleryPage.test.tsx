@@ -1,12 +1,13 @@
-import { render, screen, within, act } from "@testing-library/react";
+import { render, screen, within, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { S3GalleryPage } from "./S3GalleryPage";
+import { fileNameFromPath } from "../../lib/path";
 
 const { listObjects, deleteObject, downloadObject, mockDialogOpen, mockOpenUrl, uploadObject, generateObjectKey, loadSettings } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async () => "/tmp/downloads");
   return {
-    listObjects: vi.fn(async () => [
+    listObjects: vi.fn(async (_request?: unknown): Promise<unknown> => [
       {
         key: "images/photo.webp",
         size: 240_000,
@@ -75,6 +76,14 @@ describe("S3GalleryPage", () => {
     ]);
   });
 
+  it("extracts filenames from POSIX and Windows picker paths", () => {
+    expect(fileNameFromPath("/Users/alice/photo.jpg")).toBe("photo.jpg");
+    expect(fileNameFromPath("C:\\Users\\alice\\photo.jpg")).toBe("photo.jpg");
+    expect(fileNameFromPath("\\\\server\\share\\photo.jpg")).toBe("photo.jpg");
+    expect(fileNameFromPath("photo.jpg")).toBe("photo.jpg");
+    expect(fileNameFromPath("C:\\Users\\alice\\")).toBe("image");
+  });
+
   it("shows empty state when no profiles are passed", () => {
     render(<S3GalleryPage galleryFocus={{ prefix: "", highlightedKeys: [] }} profiles={[]} />);
 
@@ -92,6 +101,139 @@ describe("S3GalleryPage", () => {
 
     expect(await screen.findByText("images/photo.webp")).toBeInTheDocument();
     expect(listObjects).toHaveBeenCalledWith({ profile, prefix: "images" });
+  });
+
+  it("loads another bounded page when the continuation token is requested", async () => {
+    const user = userEvent.setup();
+    listObjects
+      .mockResolvedValueOnce({
+        objects: [
+          {
+            key: "images/page-one.webp",
+            size: 100,
+            publicUrl: "https://cdn.example.com/images/page-one.webp",
+            isImage: true,
+          },
+        ],
+        nextContinuationToken: "page-2",
+      })
+      .mockResolvedValueOnce({
+        objects: [
+          {
+            key: "images/page-two.webp",
+            size: 200,
+            publicUrl: "https://cdn.example.com/images/page-two.webp",
+            isImage: true,
+          },
+        ],
+        nextContinuationToken: null,
+      });
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    expect(await screen.findByText("images/page-one.webp")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByText("images/page-two.webp")).toBeInTheDocument();
+    expect(listObjects).toHaveBeenNthCalledWith(2, {
+      profile,
+      prefix: "images",
+      continuationToken: "page-2",
+    });
+    expect(screen.getByText("images/page-one.webp")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("ignores a stale next-page response after changing gallery scope", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    const requests: Array<{
+      profileId: string;
+      continuationToken?: string;
+      resolve: (value: unknown) => void;
+    }> = [];
+    listObjects.mockImplementation((request?: unknown) => {
+      const typed = request as {
+        profile: { id: string };
+        continuationToken?: string;
+      };
+      return new Promise((resolve) => {
+        requests.push({
+          profileId: typed.profile.id,
+          continuationToken: typed.continuationToken,
+          resolve,
+        });
+      });
+    });
+    const user = userEvent.setup();
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ profileId: "p1", prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    await act(async () => {
+      requests[0]!.resolve({
+        objects: [
+          {
+            key: "bucket-a/page-one.webp",
+            size: 100,
+            publicUrl: "https://cdn.example.com/bucket-a/page-one.webp",
+            isImage: true,
+          },
+        ],
+        nextContinuationToken: "page-2",
+      });
+    });
+    expect(await screen.findByText("bucket-a/page-one.webp")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(requests).toHaveLength(2));
+    await user.selectOptions(screen.getByRole("combobox", { name: /profile/i }), "p2");
+    await waitFor(() => expect(requests).toHaveLength(3));
+
+    await act(async () => {
+      requests[2]!.resolve({
+        objects: [
+          {
+            key: "bucket-b/current.webp",
+            size: 200,
+            publicUrl: "https://cdn.example.com/bucket-b/current.webp",
+            isImage: true,
+          },
+        ],
+        nextContinuationToken: null,
+      });
+    });
+    expect(await screen.findByText("bucket-b/current.webp")).toBeInTheDocument();
+
+    await act(async () => {
+      requests[1]!.resolve({
+        objects: [
+          {
+            key: "bucket-a/stale-page-two.webp",
+            size: 300,
+            publicUrl: "https://cdn.example.com/bucket-a/stale-page-two.webp",
+            isImage: true,
+          },
+        ],
+        nextContinuationToken: null,
+      });
+    });
+    expect(screen.queryByText("bucket-a/stale-page-two.webp")).not.toBeInTheDocument();
+    expect(requests[1]!.profileId).toBe("p1");
+    expect(requests[1]!.continuationToken).toBe("page-2");
   });
 
   it("renders img thumbnail for image objects with publicUrl", async () => {
@@ -377,6 +519,159 @@ describe("S3GalleryPage", () => {
     expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
   });
 
+  it("ignores a stale object response after switching profiles", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    const requests: Array<{
+      profileId: string;
+      resolve: (objects: Array<{ key: string; size: number; publicUrl: string; isImage: boolean }>) => void;
+    }> = [];
+    listObjects.mockImplementation((request?: unknown) => {
+      const profileId = (request as { profile?: { id?: string } } | undefined)?.profile?.id;
+      if (!profileId) return Promise.reject(new Error("Missing profile"));
+      return new Promise((resolve) => {
+        requests.push({ profileId, resolve });
+      });
+    });
+    const user = userEvent.setup();
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ profileId: "p1", prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    await user.selectOptions(screen.getByRole("combobox", { name: /profile/i }), "p2");
+    await waitFor(() => expect(requests).toHaveLength(2));
+
+    await act(async () => {
+      requests[1]!.resolve([
+        {
+          key: "bucket-b/current.webp",
+          size: 200,
+          publicUrl: "https://cdn.example.com/bucket-b/current.webp",
+          isImage: true,
+        },
+      ]);
+    });
+    expect(await screen.findByText("bucket-b/current.webp")).toBeInTheDocument();
+
+    await act(async () => {
+      requests[0]!.resolve([
+        {
+          key: "bucket-a/late.webp",
+          size: 300,
+          publicUrl: "https://cdn.example.com/bucket-a/late.webp",
+          isImage: true,
+        },
+      ]);
+    });
+
+    expect(screen.queryByText("bucket-a/late.webp")).not.toBeInTheDocument();
+    expect(screen.getByText("bucket-b/current.webp")).toBeInTheDocument();
+  });
+
+  it("does not expose the previous profile's object actions while reloading", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    let resolveProfile2: ((objects: unknown) => void) | undefined;
+    listObjects
+      .mockResolvedValueOnce([
+        {
+          key: "bucket-a/photo.webp",
+          size: 100,
+          publicUrl: "https://cdn.example.com/bucket-a/photo.webp",
+          isImage: true,
+        },
+      ])
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveProfile2 = resolve;
+          }),
+      );
+    const user = userEvent.setup();
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ profileId: "p1", prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    await screen.findByText("bucket-a/photo.webp");
+    await user.selectOptions(screen.getByRole("combobox", { name: /profile/i }), "p2");
+    await waitFor(() => expect(listObjects).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveProfile2?.({ objects: [], nextContinuationToken: null });
+    });
+  });
+
+  it("ignores a stale list failure after a newer scope succeeds", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    const requests: Array<{
+      resolve: (value: unknown) => void;
+      reject: (reason: unknown) => void;
+    }> = [];
+    listObjects.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          requests.push({ resolve, reject });
+        }),
+    );
+    const user = userEvent.setup();
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ profileId: "p1", prefix: "", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    await waitFor(() => expect(requests).toHaveLength(1));
+    await user.selectOptions(screen.getByRole("combobox", { name: /profile/i }), "p2");
+    await waitFor(() => expect(requests).toHaveLength(2));
+
+    await act(async () => {
+      requests[1]!.resolve({
+        objects: [
+          {
+            key: "bucket-b/current.webp",
+            size: 200,
+            publicUrl: "https://cdn.example.com/bucket-b/current.webp",
+            isImage: true,
+          },
+        ],
+        nextContinuationToken: null,
+      });
+    });
+    expect(await screen.findByText("bucket-b/current.webp")).toBeInTheDocument();
+
+    await act(async () => {
+      requests[0]!.reject(new Error("stale profile failed"));
+    });
+    expect(screen.queryByText(/stale profile failed/i)).not.toBeInTheDocument();
+    expect(screen.getByText("bucket-b/current.webp")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+  });
+
   it("syncs selected profile when galleryFocus.profileId changes", async () => {
     const profile2 = {
       ...profile,
@@ -438,6 +733,94 @@ describe("S3GalleryPage", () => {
     );
     // Should refresh the object list after upload
     expect(listObjects).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports partial success and refreshes after one local upload fails", async () => {
+    mockDialogOpen.mockResolvedValueOnce([
+      "/tmp/first-photo.jpg",
+      "/tmp/second-photo.jpg",
+    ] as unknown as string);
+    uploadObject
+      .mockResolvedValueOnce({
+        key: "images/first-photo.jpg",
+        size: 100,
+        publicUrl: "https://cdn.example.com/images/first-photo.jpg",
+        isImage: true,
+      })
+      .mockRejectedValueOnce(new Error("Access denied"));
+    const user = userEvent.setup();
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /upload local images/i }));
+
+    expect(uploadObject).toHaveBeenCalledTimes(2);
+    expect(listObjects).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText(/uploaded 1 image\(s\); 1 failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/second-photo\.jpg: access denied/i)).toBeInTheDocument();
+  });
+
+  it("continues uploading when the first local file fails", async () => {
+    mockDialogOpen.mockResolvedValueOnce([
+      "/tmp/first-photo.jpg",
+      "/tmp/second-photo.jpg",
+    ] as unknown as string);
+    uploadObject
+      .mockRejectedValueOnce(new Error("Access denied"))
+      .mockResolvedValueOnce({
+        key: "images/second-photo.jpg",
+        size: 100,
+        publicUrl: "https://cdn.example.com/images/second-photo.jpg",
+        isImage: true,
+      });
+    const user = userEvent.setup();
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /upload local images/i }));
+
+    expect(uploadObject).toHaveBeenCalledTimes(2);
+    expect(listObjects).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText(/uploaded 1 image\(s\); 1 failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/first-photo\.jpg: access denied/i)).toBeInTheDocument();
+  });
+
+  it("reports all failures without pretending a refresh succeeded", async () => {
+    mockDialogOpen.mockResolvedValueOnce([
+      "/tmp/first-photo.jpg",
+      "/tmp/second-photo.jpg",
+    ] as unknown as string);
+    uploadObject
+      .mockRejectedValueOnce(new Error("Access denied"))
+      .mockRejectedValueOnce(new Error("Network timeout"));
+    const user = userEvent.setup();
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /upload local images/i }));
+
+    expect(uploadObject).toHaveBeenCalledTimes(2);
+    expect(listObjects).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/uploaded 0 image\(s\); 2 failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/second-photo\.jpg: network timeout/i)).toBeInTheDocument();
   });
 
   it("uses image/heic content type for .heic uploads", async () => {

@@ -118,6 +118,30 @@ mod tests {
     }
 
     #[test]
+    fn templates_without_hash_can_produce_same_key_for_different_files() {
+        let template = "uploads/{slug}.{ext}";
+        let first = render_object_key(
+            template,
+            "photo.jpg",
+            "webp",
+            "aaaaaaaaaaaaaaaa",
+            chrono::NaiveDate::from_ymd_opt(2026, 6, 26).unwrap(),
+        )
+        .unwrap();
+        let second = render_object_key(
+            template,
+            "photo.png",
+            "webp",
+            "bbbbbbbbbbbbbbbb",
+            chrono::NaiveDate::from_ymd_opt(2026, 6, 26).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(first, "uploads/photo.webp");
+        assert_eq!(first, second);
+    }
+
+    #[test]
     fn rejects_templates_without_extension() {
         let err = render_object_key(
             "{yyyy}/{mm}/{slug}-{hash}",

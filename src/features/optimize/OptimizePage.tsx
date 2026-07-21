@@ -20,6 +20,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import { fileNameFromPath } from "../../lib/path";
 import { XIcon } from "lucide-react";
 import {
   AVAILABLE_OUTPUT_FORMATS,
@@ -151,7 +152,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     const pendingItems: OptimizeItem[] = paths.map((path) => ({
       id: crypto.randomUUID(),
       sourcePath: path,
-      fileName: path.split("/").pop() ?? "unknown",
+      fileName: fileNameFromPath(path),
       sourceFormat: "unknown" as const,
       originalBytes: 0,
       status: "inspecting" as const,
