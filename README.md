@@ -8,7 +8,7 @@ Pic Piper is a Tauri desktop app for optimizing images for internet sharing and 
 
 - Choose real image files (JPG, PNG, WebP, AVIF, HEIF/HEIC).
 - Each file is inspected through the backend for format, dimensions, and size.
-- Tune quality, target format, max dimensions, and GPS removal per image.
+- Tune quality, target format, and GPS removal per image.
 - Compress images through the backend encoder.
 - Save compressed outputs to a user-selected local folder.
 
@@ -38,7 +38,7 @@ Pic Piper is a Tauri desktop app for optimizing images for internet sharing and 
 1. Open Settings.
 2. Enter your S3 endpoint, region, bucket, and access key ID.
 3. Enter the secret access key (stored locally on this device).
-4. Set a Public Base URL for copy-URL functionality (e.g., `https://cdn.example.com`).
+4. Set a Public Base URL for copy-URL functionality (e.g., `https://cdn.example.com`). Trusted local HTTP URLs (such as MinIO on a LAN) are also supported; HTTPS is recommended for shared or untrusted networks.
 5. Set a default prefix (e.g., `images/2026/06`).
 6. Click "Save profile".
 

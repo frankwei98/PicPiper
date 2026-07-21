@@ -7,8 +7,8 @@ use aws_sdk_s3::{
 use crate::{
     error::{AppError, AppResult},
     models::{
-        DeleteObjectRequest, DownloadObjectRequest, GalleryObject, ListObjectsRequest, S3Profile,
-        UploadObjectRequest,
+        DeleteObjectRequest, DownloadObjectRequest, GalleryObject, ListObjectsRequest,
+        ListObjectsResponse, S3Profile, UploadObjectRequest,
     },
     naming, optimizer,
 };
@@ -157,43 +157,58 @@ pub fn object_from_parts(
 pub async fn list_objects(
     request: ListObjectsRequest,
     secret: String,
-) -> AppResult<Vec<GalleryObject>> {
+) -> AppResult<ListObjectsResponse> {
     let client = client_for(&request.profile, secret).await;
-    let mut all_objects: Vec<GalleryObject> = Vec::new();
-    let mut continuation_token: Option<String> = None;
+    let page_size = bounded_page_size(request.page_size);
+    let mut req = client
+        .list_objects_v2()
+        .bucket(&request.profile.bucket)
+        .prefix(&request.prefix)
+        // Keep each response bounded. The UI can request the next page using
+        // the returned continuation token instead of loading an entire bucket.
+        .max_keys(page_size);
 
-    loop {
-        let mut req = client
-            .list_objects_v2()
-            .bucket(&request.profile.bucket)
-            .prefix(&request.prefix);
-
-        if let Some(token) = &continuation_token {
-            req = req.continuation_token(token);
-        }
-
-        let response = req
-            .send()
-            .await
-            .map_err(|err| AppError::new("s3ListFailed", err.to_string()))?;
-
-        all_objects.extend(map_s3_objects(&request.profile, response.contents()));
-
-        if response.is_truncated().unwrap_or(false) {
-            let next_token = response.next_continuation_token().map(String::from);
-            if next_token.is_none() {
-                return Err(AppError::new(
-                    "s3PaginationFailed",
-                    "S3 response indicates more results but returned no continuation token.",
-                ));
-            }
-            continuation_token = next_token;
-        } else {
-            break;
-        }
+    if let Some(token) = &request.continuation_token {
+        req = req.continuation_token(token);
     }
 
-    Ok(all_objects)
+    let response = req
+        .send()
+        .await
+        .map_err(|err| AppError::new("s3ListFailed", err.to_string()))?;
+
+    let next_continuation_token = continuation_token_from_response(
+        response.is_truncated().unwrap_or(false),
+        response.next_continuation_token(),
+    )?;
+
+    Ok(ListObjectsResponse {
+        objects: map_s3_objects(&request.profile, response.contents()),
+        next_continuation_token,
+    })
+}
+
+fn bounded_page_size(requested: Option<i32>) -> i32 {
+    requested.unwrap_or(100).clamp(1, 100)
+}
+
+fn continuation_token_from_response(
+    is_truncated: bool,
+    next_token: Option<&str>,
+) -> AppResult<Option<String>> {
+    if !is_truncated {
+        return Ok(None);
+    }
+    next_token
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            AppError::new(
+                "s3PaginationFailed",
+                "S3 response indicates more results but returned no continuation token.",
+            )
+        })
+        .map(Some)
 }
 
 /// Map raw S3 object entries to `GalleryObject`s. Extracted for testability.
@@ -281,34 +296,60 @@ pub async fn upload_object(
     secret: String,
 ) -> AppResult<GalleryObject> {
     naming::validate_object_key(&request.object_key)?;
+    let source_size = tokio::fs::metadata(&request.source_path)
+        .await
+        .map_err(|err| AppError::new("uploadReadFailed", err.to_string()))?
+        .len();
     let client = client_for(&request.profile, secret).await;
     let body = ByteStream::from_path(&request.source_path)
         .await
         .map_err(|err| AppError::new("uploadReadFailed", err.to_string()))?;
 
-    let mut upload = client
-        .put_object()
+    let upload = build_put_object_request(&request, body);
+    upload
+        .send_with(&client)
+        .await
+        .map_err(|err| {
+            let status = err.raw_response().map(|response| response.status().as_u16());
+            let code = upload_error_code(status);
+            let message = if code == "objectAlreadyExists" {
+                "An object with this key already exists. Choose a different key or remove the existing object before retrying.".to_string()
+            } else {
+                err.to_string()
+            };
+            AppError::new(code, message)
+        })?;
+
+    Ok(object_from_parts(
+        &request.profile,
+        request.object_key,
+        source_size,
+        None,
+    ))
+}
+
+fn build_put_object_request(
+    request: &UploadObjectRequest,
+    body: ByteStream,
+) -> aws_sdk_s3::operation::put_object::builders::PutObjectInputBuilder {
+    let mut upload = aws_sdk_s3::operation::put_object::builders::PutObjectInputBuilder::default()
         .bucket(&request.profile.bucket)
         .key(&request.object_key)
-        .body(body);
+        .body(body)
+        // Never silently replace an existing object. The condition is evaluated
+        // atomically by S3-compatible providers that support conditional writes.
+        .if_none_match("*");
     if let Some(content_type) = &request.content_type {
         upload = upload.content_type(content_type);
     }
     upload
-        .send()
-        .await
-        .map_err(|err| AppError::new("s3UploadFailed", err.to_string()))?;
+}
 
-    let size = tokio::fs::metadata(&request.source_path)
-        .await
-        .map_err(|err| AppError::new("uploadReadFailed", err.to_string()))?
-        .len();
-    Ok(object_from_parts(
-        &request.profile,
-        request.object_key,
-        size,
-        None,
-    ))
+fn upload_error_code(status: Option<u16>) -> &'static str {
+    match status {
+        Some(409 | 412) => "objectAlreadyExists",
+        _ => "s3UploadFailed",
+    }
 }
 
 #[cfg(test)]
@@ -539,5 +580,76 @@ mod tests {
 
         assert_eq!(result.unwrap_err().code, "s3DownloadReadFailed");
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn upload_status_maps_precondition_failure_to_conflict() {
+        assert_eq!(upload_error_code(Some(412)), "objectAlreadyExists");
+        assert_eq!(upload_error_code(Some(409)), "objectAlreadyExists");
+        assert_eq!(upload_error_code(Some(500)), "s3UploadFailed");
+        assert_eq!(upload_error_code(None), "s3UploadFailed");
+    }
+
+    #[test]
+    fn pagination_requires_a_token_only_when_response_is_truncated() {
+        assert_eq!(continuation_token_from_response(false, None).unwrap(), None);
+        assert_eq!(
+            continuation_token_from_response(true, Some("next")).unwrap(),
+            Some("next".to_string())
+        );
+        assert_eq!(
+            continuation_token_from_response(true, Some(""))
+                .unwrap_err()
+                .code,
+            "s3PaginationFailed"
+        );
+    }
+
+    #[test]
+    fn pagination_page_size_is_clamped_to_a_safe_range() {
+        assert_eq!(bounded_page_size(None), 100);
+        assert_eq!(bounded_page_size(Some(25)), 25);
+        assert_eq!(bounded_page_size(Some(0)), 1);
+        assert_eq!(bounded_page_size(Some(-10)), 1);
+        assert_eq!(bounded_page_size(Some(1000)), 100);
+    }
+
+    #[tokio::test]
+    async fn put_object_builder_sets_create_only_precondition() {
+        let configured_profile = profile(Some("https://cdn.example.com"));
+        let request = UploadObjectRequest {
+            profile: configured_profile,
+            source_path: "/tmp/photo.webp".to_string(),
+            object_key: "images/photo.webp".to_string(),
+            content_type: Some("image/webp".to_string()),
+            source_filename: None,
+            output_filename: None,
+            original_bytes: None,
+            target_format: None,
+        };
+
+        let input = build_put_object_request(&request, ByteStream::from(vec![1, 2, 3]))
+            .build()
+            .unwrap();
+        assert_eq!(input.if_none_match(), Some("*"));
+    }
+
+    #[tokio::test]
+    async fn upload_preflight_rejects_missing_file_before_client_setup() {
+        let request = UploadObjectRequest {
+            profile: profile(Some("https://cdn.example.com")),
+            source_path: "/definitely/missing/photo.webp".to_string(),
+            object_key: "images/photo.webp".to_string(),
+            content_type: Some("image/webp".to_string()),
+            source_filename: None,
+            output_filename: None,
+            original_bytes: None,
+            target_format: None,
+        };
+
+        let error = upload_object(request, "secret".to_string())
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "uploadReadFailed");
     }
 }

@@ -4,7 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 import type { AppView } from "../../types";
-import { galleryApi, namingApi, uploadApi } from "../../api/tauri";
+import { galleryApi, namingApi, uploadApi, type ListGalleryObjectsResponse } from "../../api/tauri";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { fileNameFromPath } from "../../lib/path";
 
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
@@ -62,8 +63,35 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     };
   }, [prefix]);
 
+  const [objects, setObjects] = useState<GalleryObject[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextContinuationToken, setNextContinuationToken] = useState<string | null>(null);
+  const [loadedScope, setLoadedScope] = useState<{ profileId: string; prefix: string } | null>(null);
+  const loadGenerationRef = useRef(0);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const namingTemplate = namingTemplateProp ?? "{yyyy}/{mm}/{slug}-{hash}.{ext}";
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const [highlightedKeysState, setHighlightedKeysState] = useState<string[]>(galleryFocus.highlightedKeys);
+  const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
+  const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
+  const [uploading, setUploading] = useState(false);
+  const statusTimersRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetGalleryScope = useCallback(() => {
+    setLoadedScope(null);
+    setObjects([]);
+    setNextContinuationToken(null);
+    setDeleteTarget(null);
+  }, []);
+
   // Sync profile and prefix when galleryFocus changes externally
   useEffect(() => {
+    resetGalleryScope();
     if (galleryFocus.profileId) {
       setSelectedProfileId(galleryFocus.profileId);
       const p = profiles.find((pr) => pr.id === galleryFocus.profileId);
@@ -77,21 +105,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       setPrefix(galleryFocus.prefix);
       setDebouncedPrefix(galleryFocus.prefix); // immediate for programmatic changes
     }
-  }, [galleryFocus.profileId, galleryFocus.prefix, profiles]);
-  const [objects, setObjects] = useState<GalleryObject[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [copyMessage, setCopyMessage] = useState<string | null>(null);
-  const namingTemplate = namingTemplateProp ?? "{yyyy}/{mm}/{slug}-{hash}.{ext}";
-  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-  const [deletingKey, setDeletingKey] = useState<string | null>(null);
-  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
-  const [highlightedKeysState, setHighlightedKeysState] = useState<string[]>(galleryFocus.highlightedKeys);
-  const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
-  const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
-  const [uploading, setUploading] = useState(false);
-  const statusTimersRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  }, [galleryFocus.profileId, galleryFocus.prefix, profiles, resetGalleryScope]);
 
   // Auto-dismiss transient status messages after a few seconds so stale
   // "URL copied" / "Saved to ..." banners don't linger across view changes.
@@ -107,27 +121,63 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     };
   }, [copyMessage, uploadStatus, uploading]);
 
-  const loadObjects = useCallback(async () => {
+  const loadObjects = useCallback(async (append = false, continuationToken?: string) => {
     if (!selectedProfile) return;
-    setLoading(true);
+    const generation = ++loadGenerationRef.current;
+    const requestedPrefix = debouncedPrefix;
+    setLoading(!append);
+    setLoadingMore(append);
     setError(null);
+    if (!append) {
+      resetGalleryScope();
+    }
     try {
-      const result = await galleryApi.listObjects({
+      const request = {
         profile: selectedProfile,
-        prefix: debouncedPrefix,
-      });
-      setObjects(result);
-      setImgErrors(new Set());
+        prefix: requestedPrefix,
+        ...(continuationToken ? { continuationToken } : {}),
+      };
+      const result = await galleryApi.listObjects(request);
+      if (generation !== loadGenerationRef.current) return;
+      const page: ListGalleryObjectsResponse = Array.isArray(result)
+        ? { objects: result, nextContinuationToken: null }
+        : result;
+      setObjects((current) => (append ? [...current, ...page.objects] : page.objects));
+      setNextContinuationToken(page.nextContinuationToken ?? null);
+      if (!append) {
+        setLoadedScope({ profileId: selectedProfile.id, prefix: requestedPrefix });
+      }
+      if (!append) setImgErrors(new Set());
     } catch (err) {
+      if (generation !== loadGenerationRef.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (generation === loadGenerationRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
-  }, [selectedProfile, debouncedPrefix]);
+  }, [resetGalleryScope, selectedProfile, debouncedPrefix]);
 
   useEffect(() => {
-    loadObjects();
+    void loadObjects();
+    return () => {
+      // Invalidate the request associated with the previous profile/prefix
+      // before the next effect starts or the component unmounts.
+      loadGenerationRef.current += 1;
+    };
   }, [loadObjects]);
+
+  const handleLoadMore = () => {
+    if (!scopeReady || !nextContinuationToken || loading || loadingMore) return;
+    void loadObjects(true, nextContinuationToken);
+  };
+
+  const scopeReady = Boolean(
+    selectedProfile &&
+      loadedScope?.profileId === selectedProfile.id &&
+      loadedScope.prefix === prefix,
+  );
 
   const handleUploadLocal = async () => {
     if (!selectedProfile || uploading) return;
@@ -148,43 +198,55 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       const paths = Array.isArray(selected) ? selected : [selected];
       const currentPrefix = prefix || selectedProfile.defaultPrefix || "images";
       const newKeys: string[] = [];
+      const failures: string[] = [];
 
       for (const filePath of paths) {
-        const fileName = filePath.split("/").pop() ?? "image";
+        const fileName = fileNameFromPath(filePath);
         const dotIndex = fileName.lastIndexOf(".");
         const ext = dotIndex > 0 ? fileName.substring(dotIndex + 1).toLowerCase() : "jpg";
 
-        const { objectKey } = await namingApi.generateObjectKey({
-          sourcePath: filePath,
-          outputFileName: fileName,
-          prefix: currentPrefix,
-          namingTemplate,
-          ext,
-        });
+        try {
+          const { objectKey } = await namingApi.generateObjectKey({
+            sourcePath: filePath,
+            outputFileName: fileName,
+            prefix: currentPrefix,
+            namingTemplate,
+            ext,
+          });
 
-        const contentTypeMap: Record<string, string> = {
-          jpg: "image/jpeg",
-          jpeg: "image/jpeg",
-          png: "image/png",
-          webp: "image/webp",
-          avif: "image/avif",
-          heif: "image/heif",
-          heic: "image/heic",
-        };
+          const contentTypeMap: Record<string, string> = {
+            jpg: "image/jpeg",
+            jpeg: "image/jpeg",
+            png: "image/png",
+            webp: "image/webp",
+            avif: "image/avif",
+            heif: "image/heif",
+            heic: "image/heic",
+          };
 
-        await uploadApi.uploadObject({
-          profile: selectedProfile,
-          sourcePath: filePath,
-          objectKey,
-          contentType: contentTypeMap[ext] ?? "application/octet-stream",
-        });
+          await uploadApi.uploadObject({
+            profile: selectedProfile,
+            sourcePath: filePath,
+            objectKey,
+            contentType: contentTypeMap[ext] ?? "application/octet-stream",
+          });
 
-        newKeys.push(objectKey);
+          newKeys.push(objectKey);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Upload failed";
+          failures.push(`${fileName}: ${message}`);
+        }
       }
 
-      setHighlightedKeysState(newKeys);
-      setUploadStatus(`Uploaded ${newKeys.length} image(s).`);
-      await loadObjects();
+      if (newKeys.length > 0) {
+        setHighlightedKeysState(newKeys);
+        await loadObjects();
+      }
+      setUploadStatus(
+        failures.length > 0
+          ? `Uploaded ${newKeys.length} image(s); ${failures.length} failed. ${failures.join("; ")}`
+          : `Uploaded ${newKeys.length} image(s).`,
+      );
     } catch (err) {
       setUploadStatus(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -228,7 +290,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const handleDownload = async (obj: GalleryObject) => {
-    if (!selectedProfile) return;
+    if (!selectedProfile || !scopeReady) return;
     setDownloadingKey(obj.key);
     setDownloadError(null);
     try {
@@ -257,7 +319,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleDeleteConfirm = async () => {
-    if (!selectedProfile || !deleteTarget) return;
+    if (!selectedProfile || !deleteTarget || !scopeReady) return;
     const targetKey = deleteTarget.key;
     setDeletingKey(targetKey);
     setDeleteTarget(null);
@@ -319,6 +381,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
             const newPrefix = newProfile?.defaultPrefix ?? "";
             setPrefix(newPrefix);
             setDebouncedPrefix(newPrefix); // immediate for programmatic changes
+            resetGalleryScope();
           }}
         >
           {profiles.map((p) => (
@@ -331,7 +394,10 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           aria-label="Prefix"
           placeholder="images/2026/06"
           value={prefix}
-          onChange={(e) => setPrefix(e.target.value)}
+          onChange={(e) => {
+            setPrefix(e.target.value);
+            resetGalleryScope();
+          }}
         />
         <Input
           aria-label="Search current prefix"
@@ -352,7 +418,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           <p className="text-sm text-muted-foreground" role="status">{uploadStatus}</p>
         )
       )}
-      {loading && (
+      {(!scopeReady || loading) && !error && (
         <section className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" aria-label="Loading">
           {Array.from({ length: 6 }, (_, i) => (
             <Card key={i}>
@@ -381,7 +447,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {!loading && !error && filteredObjects.length === 0 && (
+      {scopeReady && !loading && !error && filteredObjects.length === 0 && (
         <Empty className="border">
           <EmptyHeader>
             <EmptyTitle>No objects found.</EmptyTitle>
@@ -394,7 +460,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           </EmptyContent>
         </Empty>
       )}
-      {!loading && !error && filteredObjects.length > 0 && (
+      {scopeReady && !loading && !error && filteredObjects.length > 0 && (
         <section className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
           {filteredObjects.map((obj) => (
             <Card
@@ -442,6 +508,13 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
             </Card>
           ))}
         </section>
+      )}
+      {scopeReady && nextContinuationToken && !error && (
+        <div className="flex justify-center">
+          <Button type="button" variant="outline" onClick={handleLoadMore} disabled={loadingMore}>
+            {loadingMore ? "Loading more..." : "Load more"}
+          </Button>
+        </div>
       )}
       <AlertDialog
         open={deleteTarget !== null}

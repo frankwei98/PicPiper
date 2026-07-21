@@ -41,8 +41,8 @@ describe("optimizeQueue", () => {
     expect(AVAILABLE_OUTPUT_FORMATS).toEqual(["jpg", "png", "webp", "avif"]);
   });
 
-  it("computes concurrency as cores minus one with a minimum of one", () => {
-    expect(getCompressionConcurrency(10)).toBe(9);
+  it("caps compression concurrency so large machines do not start unbounded work", () => {
+    expect(getCompressionConcurrency(10)).toBe(3);
     expect(getCompressionConcurrency(2)).toBe(1);
     expect(getCompressionConcurrency(1)).toBe(1);
     expect(getCompressionConcurrency(undefined)).toBe(3);

@@ -51,8 +51,10 @@ mod tests {
     fn save_and_load_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        let mut settings = AppSettings::default();
-        settings.default_output_dir = Some("/tmp/out".to_string());
+        let settings = AppSettings {
+            default_output_dir: Some("/tmp/out".to_string()),
+            ..AppSettings::default()
+        };
 
         save_settings(&path, &settings).unwrap();
         let loaded = load_settings(&path).unwrap();
@@ -65,8 +67,10 @@ mod tests {
         let path = dir.path().join("settings.json");
 
         // Write valid initial settings
-        let mut settings = AppSettings::default();
-        settings.default_output_dir = Some("/original".to_string());
+        let settings = AppSettings {
+            default_output_dir: Some("/original".to_string()),
+            ..AppSettings::default()
+        };
         save_settings(&path, &settings).unwrap();
 
         // The atomic write uses a .tmp extension; verify it does not linger

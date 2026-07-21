@@ -5,7 +5,8 @@ use std::{
 
 use image::{
     codecs::{avif::AvifEncoder, jpeg::JpegEncoder},
-    DynamicImage, ImageEncoder, ImageFormat as CodecFormat,
+    metadata::Orientation,
+    DynamicImage, ImageDecoder, ImageEncoder, ImageFormat as CodecFormat, ImageReader,
 };
 
 use crate::{
@@ -16,6 +17,35 @@ use crate::{
     },
 };
 
+/// Decode an image using its content format and apply EXIF orientation before
+/// any metadata is discarded by a later re-encode.
+pub(crate) fn decode_image_with_orientation(path: &Path) -> AppResult<DynamicImage> {
+    let reader = ImageReader::open(path)
+        .map_err(|err| AppError::new("imageOpenFailed", err.to_string()))?
+        .with_guessed_format()
+        .map_err(|err| AppError::new("imageFormatFailed", err.to_string()))?;
+    let mut decoder = reader
+        .into_decoder()
+        .map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
+    let orientation = decoder
+        .orientation()
+        .map_err(|err| AppError::new("imageOrientationFailed", err.to_string()))?;
+    let mut image = DynamicImage::from_decoder(decoder)
+        .map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
+    image.apply_orientation(orientation);
+    Ok(image)
+}
+
+fn oriented_dimensions(width: u32, height: u32, orientation: Orientation) -> (u32, u32) {
+    match orientation {
+        Orientation::Rotate90
+        | Orientation::Rotate270
+        | Orientation::Rotate90FlipH
+        | Orientation::Rotate270FlipH => (height, width),
+        _ => (width, height),
+    }
+}
+
 pub fn inspect_image(request: InspectImageRequest) -> AppResult<ImageInspection> {
     let path = PathBuf::from(&request.path);
     let metadata =
@@ -25,9 +55,14 @@ pub fn inspect_image(request: InspectImageRequest) -> AppResult<ImageInspection>
         .with_guessed_format()
         .map_err(|err| AppError::new("imageFormatFailed", err.to_string()))?;
     let source_format = reader.format().and_then(map_codec_format);
-    let dimensions = reader
-        .into_dimensions()
+    let mut decoder = reader
+        .into_decoder()
         .map_err(|err| AppError::new("imageDimensionFailed", err.to_string()))?;
+    let orientation = decoder
+        .orientation()
+        .map_err(|err| AppError::new("imageOrientationFailed", err.to_string()))?;
+    let dimensions = decoder.dimensions();
+    let (width, height) = oriented_dimensions(dimensions.0, dimensions.1, orientation);
 
     Ok(ImageInspection {
         path: request.path,
@@ -38,8 +73,8 @@ pub fn inspect_image(request: InspectImageRequest) -> AppResult<ImageInspection>
             .to_string(),
         source_format,
         original_bytes: metadata.len(),
-        width: dimensions.0,
-        height: dimensions.1,
+        width,
+        height,
         estimated_bytes: Some(estimate_bytes(metadata.len(), request.settings.quality)),
         warning: None,
     })
@@ -50,8 +85,7 @@ pub fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageR
     let original_bytes = fs::metadata(&source)
         .map_err(|err| AppError::new("imageReadFailed", err.to_string()))?
         .len();
-    let image =
-        image::open(&source).map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
+    let image = decode_image_with_orientation(&source)?;
 
     // Defensive: reject output_file_name values that could escape output_dir.
     validate_output_file_name(&request.output_file_name)?;
@@ -225,10 +259,10 @@ pub fn cleanup_old_runs(cache_dir: &Path, max_age: std::time::Duration) -> usize
         let Ok(modified) = metadata.modified() else {
             continue;
         };
-        if now.duration_since(modified).unwrap_or_default() > max_age {
-            if fs::remove_dir_all(entry.path()).is_ok() {
-                removed += 1;
-            }
+        if now.duration_since(modified).unwrap_or_default() > max_age
+            && fs::remove_dir_all(entry.path()).is_ok()
+        {
+            removed += 1;
         }
     }
 
@@ -245,39 +279,26 @@ fn validate_output_file_name(name: &str) -> AppResult<()> {
         ));
     }
 
-    let path = Path::new(name);
-
-    // Reject absolute paths
-    if path.is_absolute() {
+    // Treat both separator styles as path separators regardless of the host
+    // OS. Otherwise a Windows path such as `sub\\photo.webp` is a harmless
+    // filename on Unix but escapes the output directory when interpreted on
+    // Windows.
+    if name.contains('/') || name.contains('\\') {
         return Err(AppError::new(
             "invalidOutputFileName",
-            "Output file name must not be an absolute path.",
+            "Output file name must be a single file name without path separators.",
         ));
     }
 
-    // Reject any component that is ".." or "."
-    for component in path.components() {
-        match component {
-            std::path::Component::ParentDir => {
-                return Err(AppError::new(
-                    "invalidOutputFileName",
-                    "Output file name must not contain '..' path traversal.",
-                ));
-            }
-            std::path::Component::CurDir => {
-                return Err(AppError::new(
-                    "invalidOutputFileName",
-                    "Output file name must not contain '.' path component.",
-                ));
-            }
-            std::path::Component::Normal(_) => {}
-            _ => {
-                return Err(AppError::new(
-                    "invalidOutputFileName",
-                    "Output file name contains an invalid path component.",
-                ));
-            }
-        }
+    let path = Path::new(name);
+    let mut components = path.components();
+    if !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+    {
+        return Err(AppError::new(
+            "invalidOutputFileName",
+            "Output file name must be a single normal file name.",
+        ));
     }
 
     // Reject control characters
@@ -370,6 +391,129 @@ mod tests {
                 (((x + y) as f64 / (width + height) as f64) * 255.0) as u8,
             ])
         }))
+    }
+
+    fn write_orientation_fixture(path: &Path) {
+        let image = DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(2, 3, |x, y| {
+            image::Rgb([(x * 100) as u8, (y * 70) as u8, 32])
+        }));
+        image.save(path).unwrap();
+
+        // Insert a minimal little-endian EXIF APP1 segment declaring
+        // Orientation 6 (rotate 90 degrees clockwise).
+        let exif_payload = [
+            b'E', b'x', b'i', b'f', 0, 0, // Exif header
+            b'I', b'I', 0x2A, 0, 8, 0, 0, 0, // TIFF header
+            1, 0, // one IFD entry
+            0x12, 0x01, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, // Orientation = 6
+            0, 0, 0, 0, // next IFD offset
+        ];
+        let segment_length = (exif_payload.len() + 2) as u16;
+        let mut segment = vec![
+            0xFF,
+            0xE1,
+            (segment_length >> 8) as u8,
+            segment_length as u8,
+        ];
+        segment.extend_from_slice(&exif_payload);
+
+        let mut bytes = std::fs::read(path).unwrap();
+        bytes.splice(2..2, segment);
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn decode_applies_exif_orientation() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("oriented.jpg");
+        write_orientation_fixture(&input);
+
+        let decoded = decode_image_with_orientation(&input).unwrap();
+        assert_eq!(decoded.dimensions(), (3, 2));
+    }
+
+    #[test]
+    fn inspect_and_compress_report_oriented_dimensions() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("oriented.jpg");
+        write_orientation_fixture(&input);
+
+        let inspection = inspect_image(InspectImageRequest {
+            path: input.to_string_lossy().to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Jpg,
+                quality: 80,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+        assert_eq!((inspection.width, inspection.height), (3, 2));
+
+        let result = compress_image(CompressImageRequest {
+            source_path: input.to_string_lossy().to_string(),
+            output_dir: dir.path().to_string_lossy().to_string(),
+            output_file_name: "oriented-output.jpg".to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Jpg,
+                quality: 80,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+        let output_path = PathBuf::from(&result.output_path);
+        let output_bytes = std::fs::read(&output_path).unwrap();
+        assert!(!output_bytes.windows(4).any(|window| window == b"Exif"));
+        let output = image::open(output_path).unwrap();
+        assert_eq!(output.dimensions(), (3, 2));
+        let output_rgb = output.to_rgb8();
+        let top_left = output_rgb.get_pixel(0, 0);
+        assert!(
+            top_left[1] > 80 && top_left[0] < 80,
+            "EXIF rotation should move the lower source row to the output top-left, got {:?}",
+            top_left
+        );
+    }
+
+    #[test]
+    fn compression_uses_content_format_when_extension_is_wrong() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("photo.png");
+        create_test_image(24, 16)
+            .save_with_format(&source, CodecFormat::Jpeg)
+            .unwrap();
+
+        let result = compress_image(CompressImageRequest {
+            source_path: source.to_string_lossy().to_string(),
+            output_dir: dir.path().to_string_lossy().to_string(),
+            output_file_name: "photo.webp".to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Webp,
+                quality: 80,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+
+        assert_eq!(
+            image::open(result.output_path).unwrap().dimensions(),
+            (24, 16)
+        );
+    }
+
+    #[test]
+    fn output_file_name_must_be_a_single_cross_platform_component() {
+        assert!(validate_output_file_name("photo.webp").is_ok());
+        for invalid in [
+            "sub/photo.webp",
+            r"sub\photo.webp",
+            "../photo.webp",
+            "/tmp/photo.webp",
+        ] {
+            assert!(
+                validate_output_file_name(invalid).is_err(),
+                "should reject output path: {invalid}"
+            );
+        }
     }
 
     #[test]

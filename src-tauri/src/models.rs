@@ -138,6 +138,17 @@ pub struct GalleryObject {
 pub struct ListObjectsRequest {
     pub profile: S3Profile,
     pub prefix: String,
+    #[serde(default)]
+    pub continuation_token: Option<String>,
+    #[serde(default)]
+    pub page_size: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ListObjectsResponse {
+    pub objects: Vec<GalleryObject>,
+    pub next_continuation_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

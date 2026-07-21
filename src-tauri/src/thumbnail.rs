@@ -206,14 +206,7 @@ fn read_thumbnail_macos(path: &str, max_size: u32) -> AppResult<ReadThumbnailRes
 fn read_thumbnail_cpu(path: &str, max_size: u32) -> AppResult<ReadThumbnailResponse> {
     let path = PathBuf::from(path);
 
-    let reader = image::ImageReader::open(&path)
-        .map_err(|err| AppError::new("imageOpenFailed", err.to_string()))?
-        .with_guessed_format()
-        .map_err(|err| AppError::new("imageFormatFailed", err.to_string()))?;
-
-    let img = reader
-        .decode()
-        .map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
+    let img = crate::optimizer::decode_image_with_orientation(&path)?;
 
     // Triangle filter is ~3x faster than Lanczos3; quality is fine at thumbnail size.
     let thumb = img.resize(max_size, max_size, image::imageops::FilterType::Triangle);
@@ -247,12 +240,35 @@ fn read_thumbnail_cpu(path: &str, max_size: u32) -> AppResult<ReadThumbnailRespo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::GenericImageView;
 
     fn create_test_jpeg(path: &std::path::Path) {
         let img = image::DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(64, 64, |x, y| {
             image::Rgb([x as u8, y as u8, 128])
         }));
         img.save(path).unwrap();
+    }
+
+    fn write_orientation_fixture(path: &std::path::Path) {
+        let image = image::DynamicImage::ImageRgb8(image::ImageBuffer::from_fn(2, 3, |x, y| {
+            image::Rgb([(x * 100) as u8, (y * 70) as u8, 32])
+        }));
+        image.save(path).unwrap();
+        let exif_payload = [
+            b'E', b'x', b'i', b'f', 0, 0, b'I', b'I', 0x2A, 0, 8, 0, 0, 0, 1, 0, 0x12, 0x01, 3, 0,
+            1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let segment_length = (exif_payload.len() + 2) as u16;
+        let mut segment = vec![
+            0xFF,
+            0xE1,
+            (segment_length >> 8) as u8,
+            segment_length as u8,
+        ];
+        segment.extend_from_slice(&exif_payload);
+        let mut bytes = std::fs::read(path).unwrap();
+        bytes.splice(2..2, segment);
+        std::fs::write(path, bytes).unwrap();
     }
 
     #[test]
@@ -299,6 +315,23 @@ mod tests {
 
         let resp = read_thumbnail_cpu(&input.to_string_lossy(), 32).unwrap();
         assert!(resp.data_url.starts_with("data:image/jpeg;base64,"));
+    }
+
+    #[test]
+    fn cpu_thumbnail_applies_exif_orientation() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("oriented.jpg");
+        write_orientation_fixture(&input);
+
+        let resp = read_thumbnail_cpu(&input.to_string_lossy(), 3).unwrap();
+        let encoded = resp
+            .data_url
+            .split_once(",")
+            .map(|(_, value)| value)
+            .unwrap();
+        let bytes = BASE64_STANDARD.decode(encoded).unwrap();
+        let decoded = image::load_from_memory(&bytes).unwrap();
+        assert_eq!(decoded.dimensions(), (3, 2));
     }
 
     #[test]

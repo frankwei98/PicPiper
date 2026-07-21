@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::{fs, path::PathBuf};
 
 use tauri::Manager;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::error::{AppError, AppResult};
 use crate::models::UploadHistoryEntry;
@@ -23,6 +24,37 @@ pub struct AppPaths {
 pub struct HistoryStore {
     path: PathBuf,
     lock: Arc<Mutex<()>>,
+}
+
+/// Bounds the number of CPU-heavy image encodes that can run at once. The
+/// frontend uses the same conservative limit, but the backend must enforce it
+/// too because Tauri commands can be invoked by more than one caller.
+#[derive(Clone)]
+pub struct CompressionLimiter {
+    semaphore: Arc<Semaphore>,
+}
+
+impl CompressionLimiter {
+    pub const DEFAULT_LIMIT: usize = 3;
+
+    pub fn new(limit: usize) -> Self {
+        Self {
+            semaphore: Arc::new(Semaphore::new(limit.max(1))),
+        }
+    }
+
+    pub async fn acquire(&self) -> AppResult<OwnedSemaphorePermit> {
+        self.semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|err| AppError::new("compressLimiterClosed", err.to_string()))
+    }
+
+    #[cfg(test)]
+    fn available_permits(&self) -> usize {
+        self.semaphore.available_permits()
+    }
 }
 
 impl HistoryStore {
@@ -120,5 +152,25 @@ mod tests {
             10,
             "all 10 concurrent appends should be recorded"
         );
+    }
+
+    #[tokio::test]
+    async fn compression_limiter_blocks_work_above_limit() {
+        let limiter = CompressionLimiter::new(1);
+        let first = limiter.acquire().await.unwrap();
+        assert_eq!(limiter.available_permits(), 0);
+
+        let waiting = tokio::spawn({
+            let limiter = limiter.clone();
+            async move { limiter.acquire().await.unwrap() }
+        });
+        tokio::task::yield_now().await;
+        assert!(!waiting.is_finished());
+
+        drop(first);
+        let second = waiting.await.unwrap();
+        assert_eq!(limiter.available_permits(), 0);
+        drop(second);
+        assert_eq!(limiter.available_permits(), 1);
     }
 }

@@ -14,11 +14,12 @@ use models::{
     AppSettings, CompressImageRequest, CompressImageResult, CopyOutputsRequest,
     CreateOptimizerRunResponse, DeleteObjectRequest, DownloadObjectRequest, GalleryObject,
     GenerateObjectKeyRequest, GenerateObjectKeyResponse, ImageInspection, InspectImageRequest,
-    ListObjectsRequest, ReadThumbnailRequest, ReadThumbnailResponse, SaveCredentialRequest,
-    SaveCredentialResponse, SaveSettingsRequest, UploadHistoryEntry, UploadObjectRequest,
+    ListObjectsRequest, ListObjectsResponse, ReadThumbnailRequest, ReadThumbnailResponse,
+    SaveCredentialRequest, SaveCredentialResponse, SaveSettingsRequest, UploadHistoryEntry,
+    UploadObjectRequest,
 };
 use sha2::{Digest, Sha256};
-use state::{AppPaths, HistoryStore};
+use state::{AppPaths, CompressionLimiter, HistoryStore};
 use tauri::{Manager, State};
 
 #[tauri::command]
@@ -64,22 +65,27 @@ async fn create_optimizer_run(paths: State<'_, AppPaths>) -> AppResult<CreateOpt
 #[tauri::command]
 async fn compress_image(
     paths: State<'_, AppPaths>,
+    limiter: State<'_, CompressionLimiter>,
     request: CompressImageRequest,
 ) -> AppResult<CompressImageResult> {
     optimizer::validate_optimizer_output_dir(
         &paths.data_dir.join("optimizer-cache"),
         &request.output_dir,
     )?;
-    tokio::task::spawn_blocking(move || optimizer::compress_image(request))
-        .await
-        .map_err(|err| error::AppError::new("compressJoinFailed", err.to_string()))?
+    let permit = limiter.acquire().await?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        optimizer::compress_image(request)
+    })
+    .await
+    .map_err(|err| error::AppError::new("compressJoinFailed", err.to_string()))?
 }
 
 #[tauri::command]
 async fn list_gallery_objects(
     paths: State<'_, AppPaths>,
     request: ListObjectsRequest,
-) -> AppResult<Vec<GalleryObject>> {
+) -> AppResult<ListObjectsResponse> {
     let secret = credentials::load_secret(&paths.credential_dir, &request.profile.id)?;
     gallery::list_objects(request, secret).await
 }
@@ -255,6 +261,7 @@ pub fn run() {
             let paths = state::AppPaths::from_app_handle(app.handle())?;
             let history_store = state::HistoryStore::new(paths.history_path.clone());
             app.manage(history_store);
+            app.manage(CompressionLimiter::new(CompressionLimiter::DEFAULT_LIMIT));
             app.manage(paths);
             Ok(())
         })

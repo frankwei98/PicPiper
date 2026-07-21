@@ -58,6 +58,13 @@ export const tauriApi = {
 export interface ListGalleryObjectsRequest {
   profile: S3Profile;
   prefix: string;
+  continuationToken?: string;
+  pageSize?: number;
+}
+
+export interface ListGalleryObjectsResponse {
+  objects: GalleryObject[];
+  nextContinuationToken?: string | null;
 }
 
 export interface DeleteObjectRequest {
@@ -73,7 +80,7 @@ export interface DownloadObjectRequest {
 
 export const galleryApi = {
   listObjects: (request: ListGalleryObjectsRequest) =>
-    invoke<GalleryObject[]>("list_gallery_objects", { request }),
+    invoke<ListGalleryObjectsResponse>("list_gallery_objects", { request }),
   deleteObject: (request: DeleteObjectRequest) =>
     invoke<void>("delete_gallery_object", { request }),
   downloadObject: (request: DownloadObjectRequest) =>
