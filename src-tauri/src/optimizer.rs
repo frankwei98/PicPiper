@@ -289,6 +289,23 @@ fn validate_output_file_name(name: &str) -> AppResult<()> {
         ));
     }
 
+    // Windows treats colons as alternate data streams and normalizes trailing
+    // dots/spaces. Reject them everywhere so an output name has the same
+    // meaning on every supported platform.
+    if name.contains(':') || name.ends_with('.') || name.ends_with(' ') {
+        return Err(AppError::new(
+            "invalidOutputFileName",
+            "Output file name must not contain Windows-reserved syntax.",
+        ));
+    }
+
+    if is_windows_reserved_file_name(name) {
+        return Err(AppError::new(
+            "invalidOutputFileName",
+            "Output file name must not use a Windows reserved device name.",
+        ));
+    }
+
     let path = Path::new(name);
     let mut components = path.components();
     if !matches!(components.next(), Some(std::path::Component::Normal(_)))
@@ -309,6 +326,23 @@ fn validate_output_file_name(name: &str) -> AppResult<()> {
     }
 
     Ok(())
+}
+
+fn is_windows_reserved_file_name(name: &str) -> bool {
+    let base_name = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches([' ', '.'])
+        .to_ascii_uppercase();
+
+    matches!(base_name.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$")
+        || (base_name.starts_with("COM")
+            && base_name.len() == 4
+            && matches!(base_name.as_bytes()[3], b'1'..=b'9'))
+        || (base_name.starts_with("LPT")
+            && base_name.len() == 4
+            && matches!(base_name.as_bytes()[3], b'1'..=b'9'))
 }
 
 fn estimate_bytes(original_bytes: u64, quality: u8) -> u64 {
@@ -558,6 +592,11 @@ mod tests {
             r"sub\photo.webp",
             "../photo.webp",
             "/tmp/photo.webp",
+            "photo:hidden.webp",
+            "NUL.webp",
+            "COM1.jpg",
+            "LPT9.png",
+            "photo. ",
         ] {
             assert!(
                 validate_output_file_name(invalid).is_err(),
