@@ -179,6 +179,8 @@ pub struct GenerateObjectKeyRequest {
     pub prefix: String,
     pub naming_template: String,
     pub ext: String,
+    #[serde(default)]
+    pub collision_suffix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

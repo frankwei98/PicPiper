@@ -63,6 +63,39 @@ pub fn has_path_prefix(key: &str, prefix: &str) -> bool {
     key == prefix || (key.starts_with(prefix) && key.as_bytes().get(prefix.len()) == Some(&b'/'))
 }
 
+/// Adds a caller-supplied collision suffix to the final file-name segment of
+/// an object key. The resulting key is validated before it is returned.
+pub fn append_object_key_suffix(key: &str, suffix: &str) -> AppResult<String> {
+    if suffix.is_empty()
+        || !suffix
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Err(AppError::new(
+            "invalidObjectKey",
+            "Object key suffix must contain only ASCII letters, digits, or hyphens.",
+        ));
+    }
+
+    let (directory, file_name) = key
+        .rsplit_once('/')
+        .map_or(("", key), |(directory, file_name)| (directory, file_name));
+    let suffixed_file_name = match file_name.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() && !extension.is_empty() => {
+            format!("{stem}-{suffix}.{extension}")
+        }
+        _ => format!("{file_name}-{suffix}"),
+    };
+    let suffixed_key = if directory.is_empty() {
+        suffixed_file_name
+    } else {
+        format!("{directory}/{suffixed_file_name}")
+    };
+
+    validate_object_key(&suffixed_key)?;
+    Ok(suffixed_key)
+}
+
 pub fn render_object_key(
     template: &str,
     source_filename: &str,
@@ -203,6 +236,20 @@ mod tests {
         // traversal patterns. But raw backslashes in the key are also control-free,
         // so test the normalized form.
         assert!(validate_object_key("a\\..\\b.webp").is_err());
+    }
+
+    #[test]
+    fn appends_collision_suffix_before_file_extension() {
+        let key = append_object_key_suffix("images/2026/photo.webp", "retry-1").unwrap();
+
+        assert_eq!(key, "images/2026/photo-retry-1.webp");
+    }
+
+    #[test]
+    fn rejects_unsafe_collision_suffix() {
+        let error = append_object_key_suffix("images/photo.webp", "retry/1").unwrap_err();
+
+        assert_eq!(error.code, "invalidObjectKey");
     }
 
     // --- has_path_prefix tests ---

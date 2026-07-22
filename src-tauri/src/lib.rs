@@ -206,6 +206,10 @@ async fn generate_object_key(
 
     // Normalize slashes and validate
     let object_key = object_key.replace('\\', "/");
+    let object_key = match request.collision_suffix.as_deref() {
+        Some(suffix) => naming::append_object_key_suffix(&object_key, suffix)?,
+        None => object_key,
+    };
     naming::validate_object_key(&object_key)?;
 
     Ok(GenerateObjectKeyResponse { object_key })

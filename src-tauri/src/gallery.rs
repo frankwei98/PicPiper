@@ -312,10 +312,10 @@ pub async fn upload_object(
         .map_err(|err| {
             let status = err.raw_response().map(|response| response.status().as_u16());
             let code = upload_error_code(status);
-            let message = if code == "objectAlreadyExists" {
-                "An object with this key already exists. Choose a different key or remove the existing object before retrying.".to_string()
-            } else {
-                err.to_string()
+            let message = match code {
+                "objectAlreadyExists" => "An object with this key already exists. Choose a different key or remove the existing object before retrying.".to_string(),
+                "s3UploadConflictRetryable" => "The upload conflicted with another write. Retry the upload.".to_string(),
+                _ => err.to_string(),
             };
             AppError::new(code, message)
         })?;
@@ -347,7 +347,8 @@ fn build_put_object_request(
 
 fn upload_error_code(status: Option<u16>) -> &'static str {
     match status {
-        Some(409 | 412) => "objectAlreadyExists",
+        Some(409) => "s3UploadConflictRetryable",
+        Some(412) => "objectAlreadyExists",
         _ => "s3UploadFailed",
     }
 }
@@ -585,7 +586,7 @@ mod tests {
     #[test]
     fn upload_status_maps_precondition_failure_to_conflict() {
         assert_eq!(upload_error_code(Some(412)), "objectAlreadyExists");
-        assert_eq!(upload_error_code(Some(409)), "objectAlreadyExists");
+        assert_eq!(upload_error_code(Some(409)), "s3UploadConflictRetryable");
         assert_eq!(upload_error_code(Some(500)), "s3UploadFailed");
         assert_eq!(upload_error_code(None), "s3UploadFailed");
     }
