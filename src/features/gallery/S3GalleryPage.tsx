@@ -82,6 +82,17 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const statusTimersRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentScopeRef = useRef<{ profileId: string; prefix: string } | null>(null);
+
+  useEffect(() => {
+    currentScopeRef.current = selectedProfile
+      ? { profileId: selectedProfile.id, prefix }
+      : null;
+  }, [selectedProfile?.id, prefix]);
+
+  const isCurrentScope = (scope: { profileId: string; prefix: string }) =>
+    currentScopeRef.current?.profileId === scope.profileId &&
+    currentScopeRef.current.prefix === scope.prefix;
 
   const resetGalleryScope = useCallback(() => {
     setLoadedScope(null);
@@ -182,6 +193,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
 
   const handleUploadLocal = async () => {
     if (!selectedProfile || uploading) return;
+    const uploadScope = { profileId: selectedProfile.id, prefix };
     setUploadStatus(null);
     setUploading(true);
     try {
@@ -239,7 +251,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         }
       }
 
-      if (newKeys.length > 0) {
+      if (newKeys.length > 0 && isCurrentScope(uploadScope)) {
         setHighlightedKeysState(newKeys);
         await loadObjects();
       }
@@ -321,13 +333,16 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
 
   const handleDeleteConfirm = async () => {
     if (!selectedProfile || !deleteTarget || !scopeReady) return;
+    const deleteScope = { profileId: selectedProfile.id, prefix };
     const targetKey = deleteTarget.key;
     setDeletingKey(targetKey);
     setDeleteTarget(null);
     setDeleteError(null);
     try {
       await galleryApi.deleteObject({ profile: selectedProfile, key: targetKey });
-      await loadObjects();
+      if (isCurrentScope(deleteScope)) {
+        await loadObjects();
+      }
     } catch (err) {
       setDeleteError(`Failed to delete ${targetKey}: ${errorMessage(err, "Delete failed")}`);
     } finally {
