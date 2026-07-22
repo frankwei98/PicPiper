@@ -7,14 +7,17 @@ import { fileNameFromPath } from "../../lib/path";
 const { listObjects, deleteObject, downloadObject, mockDialogOpen, mockOpenUrl, uploadObject, generateObjectKey, loadSettings } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async () => "/tmp/downloads");
   return {
-    listObjects: vi.fn(async (_request?: unknown): Promise<unknown> => [
-      {
-        key: "images/photo.webp",
-        size: 240_000,
-        publicUrl: "https://cdn.example.com/images/photo.webp",
-        isImage: true,
-      },
-    ]),
+    listObjects: vi.fn(async (_request?: unknown): Promise<unknown> => ({
+      objects: [
+        {
+          key: "images/photo.webp",
+          size: 240_000,
+          publicUrl: "https://cdn.example.com/images/photo.webp",
+          isImage: true,
+        },
+      ],
+      nextContinuationToken: null,
+    })),
     deleteObject: vi.fn(async () => {}),
     downloadObject: vi.fn(async () => "/tmp/downloads/photo.webp"),
     mockDialogOpen,
@@ -66,14 +69,17 @@ const profile = {
 describe("S3GalleryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    listObjects.mockResolvedValue([
-      {
-        key: "images/photo.webp",
-        size: 240_000,
-        publicUrl: "https://cdn.example.com/images/photo.webp",
-        isImage: true,
-      },
-    ]);
+    listObjects.mockResolvedValue({
+      objects: [
+        {
+          key: "images/photo.webp",
+          size: 240_000,
+          publicUrl: "https://cdn.example.com/images/photo.webp",
+          isImage: true,
+        },
+      ],
+      nextContinuationToken: null,
+    });
   });
 
   it("extracts filenames from POSIX and Windows picker paths", () => {
@@ -302,14 +308,17 @@ describe("S3GalleryPage", () => {
   });
 
   it("falls back to placeholder text when publicUrl is missing", async () => {
-    listObjects.mockResolvedValue([
-      {
-        key: "images/no-url.webp",
-        size: 50_000,
-        publicUrl: undefined as unknown as string,
-        isImage: true,
-      },
-    ]);
+    listObjects.mockResolvedValue({
+      objects: [
+        {
+          key: "images/no-url.webp",
+          size: 50_000,
+          publicUrl: undefined as unknown as string,
+          isImage: true,
+        },
+      ],
+      nextContinuationToken: null,
+    });
     render(
       <S3GalleryPage
         galleryFocus={{ prefix: "images", highlightedKeys: [] }}
@@ -347,7 +356,7 @@ describe("S3GalleryPage", () => {
   });
 
   it("renders empty state when no objects returned", async () => {
-    listObjects.mockResolvedValue([]);
+    listObjects.mockResolvedValue({ objects: [], nextContinuationToken: null });
     render(
       <S3GalleryPage
         galleryFocus={{ prefix: "images", highlightedKeys: [] }}
@@ -438,14 +447,17 @@ describe("S3GalleryPage", () => {
   });
 
   it("shows error when Copy URL is clicked but publicBaseUrl is missing", async () => {
-    listObjects.mockResolvedValue([
-      {
-        key: "images/photo.webp",
-        size: 240_000,
-        publicUrl: undefined as unknown as string,
-        isImage: true,
-      },
-    ]);
+    listObjects.mockResolvedValue({
+      objects: [
+        {
+          key: "images/photo.webp",
+          size: 240_000,
+          publicUrl: undefined as unknown as string,
+          isImage: true,
+        },
+      ],
+      nextContinuationToken: null,
+    });
     const user = userEvent.setup();
     render(
       <S3GalleryPage
@@ -580,7 +592,7 @@ describe("S3GalleryPage", () => {
     };
     const requests: Array<{
       profileId: string;
-      resolve: (objects: Array<{ key: string; size: number; publicUrl: string; isImage: boolean }>) => void;
+      resolve: (response: unknown) => void;
     }> = [];
     listObjects.mockImplementation((request?: unknown) => {
       const profileId = (request as { profile?: { id?: string } } | undefined)?.profile?.id;
@@ -603,26 +615,32 @@ describe("S3GalleryPage", () => {
     await waitFor(() => expect(requests).toHaveLength(2));
 
     await act(async () => {
-      requests[1]!.resolve([
-        {
-          key: "bucket-b/current.webp",
-          size: 200,
-          publicUrl: "https://cdn.example.com/bucket-b/current.webp",
-          isImage: true,
-        },
-      ]);
+      requests[1]!.resolve({
+        objects: [
+          {
+            key: "bucket-b/current.webp",
+            size: 200,
+            publicUrl: "https://cdn.example.com/bucket-b/current.webp",
+            isImage: true,
+          },
+        ],
+        nextContinuationToken: null,
+      });
     });
     expect(await screen.findByText("bucket-b/current.webp")).toBeInTheDocument();
 
     await act(async () => {
-      requests[0]!.resolve([
-        {
-          key: "bucket-a/late.webp",
-          size: 300,
-          publicUrl: "https://cdn.example.com/bucket-a/late.webp",
-          isImage: true,
-        },
-      ]);
+      requests[0]!.resolve({
+        objects: [
+          {
+            key: "bucket-a/late.webp",
+            size: 300,
+            publicUrl: "https://cdn.example.com/bucket-a/late.webp",
+            isImage: true,
+          },
+        ],
+        nextContinuationToken: null,
+      });
     });
 
     expect(screen.queryByText("bucket-a/late.webp")).not.toBeInTheDocument();
@@ -638,14 +656,17 @@ describe("S3GalleryPage", () => {
     };
     let resolveProfile2: ((objects: unknown) => void) | undefined;
     listObjects
-      .mockResolvedValueOnce([
-        {
-          key: "bucket-a/photo.webp",
-          size: 100,
-          publicUrl: "https://cdn.example.com/bucket-a/photo.webp",
-          isImage: true,
-        },
-      ])
+      .mockResolvedValueOnce({
+        objects: [
+          {
+            key: "bucket-a/photo.webp",
+            size: 100,
+            publicUrl: "https://cdn.example.com/bucket-a/photo.webp",
+            isImage: true,
+          },
+        ],
+        nextContinuationToken: null,
+      })
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -774,8 +795,14 @@ describe("S3GalleryPage", () => {
     listObjects.mockImplementation(async (request?: unknown) => {
       const profileId = (request as { profile: { id: string } }).profile.id;
       return profileId === "p2"
-        ? [{ key: "work/images/current.webp", size: 100, isImage: true }]
-        : [{ key: "images/original.webp", size: 100, isImage: true }];
+        ? {
+            objects: [{ key: "work/images/current.webp", size: 100, isImage: true }],
+            nextContinuationToken: null,
+          }
+        : {
+            objects: [{ key: "images/original.webp", size: 100, isImage: true }],
+            nextContinuationToken: null,
+          };
     });
     mockDialogOpen.mockResolvedValueOnce(["/tmp/new-photo.jpg"] as unknown as string);
     const user = userEvent.setup();

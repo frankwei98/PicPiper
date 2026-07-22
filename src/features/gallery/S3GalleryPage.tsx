@@ -153,11 +153,8 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         prefix: requestedPrefix,
         ...(continuationToken ? { continuationToken } : {}),
       };
-      const result = await galleryApi.listObjects(request);
+      const page: ListGalleryObjectsResponse = await galleryApi.listObjects(request);
       if (generation !== loadGenerationRef.current) return;
-      const page: ListGalleryObjectsResponse = Array.isArray(result)
-        ? { objects: result, nextContinuationToken: null }
-        : result;
       setObjects((current) => (append ? [...current, ...page.objects] : page.objects));
       setNextContinuationToken(page.nextContinuationToken ?? null);
       if (!append) {
