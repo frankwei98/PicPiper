@@ -967,4 +967,29 @@ describe("S3GalleryPage", () => {
 
     vi.useRealTimers();
   });
+
+  it("keeps the settled gallery visible when a prefix edit is reverted before debounce", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    const prefixInput = screen.getByLabelText("Prefix");
+    await user.type(prefixInput, "-draft");
+    await user.clear(prefixInput);
+    await user.type(prefixInput, "images");
+
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+
+    expect(screen.getByText("images/photo.webp")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
 });

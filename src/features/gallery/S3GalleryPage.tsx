@@ -397,7 +397,6 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           value={prefix}
           onChange={(e) => {
             setPrefix(e.target.value);
-            resetGalleryScope();
           }}
         />
         <Input
