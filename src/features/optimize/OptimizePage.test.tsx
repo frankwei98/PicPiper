@@ -834,6 +834,49 @@ describe("OptimizePage", () => {
     expect(lastCall.highlightedKeys).toContain("images/2026/06/photo-c-abc.jpg");
   });
 
+  it("uploads a newly compressed item without retrying an earlier failed upload", async () => {
+    const profile = {
+      id: "p1",
+      name: "Personal S3",
+      bucket: "images",
+      endpoint: "https://s3.example.com",
+      region: "auto",
+      accessKeyId: "AKIAEXAMPLE",
+      pathStyle: false,
+      defaultPrefix: "images",
+    };
+    mockDialogOpen
+      .mockResolvedValueOnce(["/tmp/first.jpg"] as unknown as string[])
+      .mockResolvedValueOnce(["/tmp/second.jpg"] as unknown as string[]);
+    uploadObject
+      .mockRejectedValueOnce(new Error("Temporary network error"))
+      .mockResolvedValueOnce({
+        key: "images/2026/06/second.jpg",
+        size: 200_000,
+        publicUrl: "https://cdn.example.com/images/2026/06/second.jpg",
+        isImage: true,
+      });
+    const user = userEvent.setup();
+    render(
+      <OptimizePage
+        activeProfile={profile}
+        namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByRole("button", { name: "Upload to S3" });
+    await user.click(screen.getByRole("button", { name: "Upload to S3" }));
+    expect(await screen.findByText(/1 of 1 upload\(s\) failed/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    const uploadNew = await screen.findByRole("button", { name: "Upload 1 new image(s) to S3" });
+    await user.click(uploadNew);
+
+    await waitFor(() => expect(uploadObject).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Retry 1 failed upload(s)" })).toBeInTheDocument();
+  });
+
   it("dropping file with usable path calls inspectImage", async () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
