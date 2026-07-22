@@ -7,6 +7,10 @@ use crate::{
     models::{SaveCredentialRequest, SaveCredentialResponse},
 };
 
+// A recent temp file may belong to another in-flight save. Keep it long enough
+// to avoid racing that write, while eventually removing files left by a crash.
+const STALE_CREDENTIAL_TEMP_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
 /// Validates that a profile_id contains only conservative ASCII characters:
 /// letters, digits, underscores, hyphens, and dots. Rejects empty strings,
 /// path separators, control characters, and anything outside the safe set.
@@ -56,6 +60,8 @@ pub fn save_secret(
             .map_err(|err| AppError::new("credentialDirFailed", err.to_string()))?;
     }
 
+    cleanup_stale_temp_files(credential_dir, &request.profile_id);
+
     let final_path = credential_dir.join(format!("{}.secret", request.profile_id));
     // Use a unique create_new temp file. A fixed `*.tmp` path lets two saves
     // overwrite each other's secret before either one reaches the rename.
@@ -96,6 +102,34 @@ pub fn save_secret(
 fn replace_credential_file(temp_path: &Path, final_path: &Path) -> AppResult<()> {
     fs::rename(temp_path, final_path)
         .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))
+}
+
+fn cleanup_stale_temp_files(credential_dir: &Path, profile_id: &str) {
+    let temp_prefix = format!("{profile_id}.secret.tmp-");
+    let now = std::time::SystemTime::now();
+    let Ok(entries) = fs::read_dir(credential_dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_file()
+            || !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(&temp_prefix)
+        {
+            continue;
+        }
+        let Ok(modified) = entry.metadata().and_then(|metadata| metadata.modified()) else {
+            continue;
+        };
+        if now.duration_since(modified).unwrap_or_default() > STALE_CREDENTIAL_TEMP_MAX_AGE {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 }
 
 pub fn load_secret(credential_dir: &Path, profile_id: &str) -> AppResult<String> {
@@ -201,6 +235,35 @@ mod tests {
 
         assert_eq!(fs::read_to_string(&destination).unwrap(), "new-secret");
         assert!(!temporary.exists());
+    }
+
+    #[test]
+    fn saving_a_secret_removes_an_old_temp_file_for_the_same_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let stale_temp = dir.path().join("example.secret.tmp-abandoned");
+        fs::write(&stale_temp, "abandoned-secret").unwrap();
+        filetime::set_file_mtime(
+            &stale_temp,
+            filetime::FileTime::from_system_time(
+                std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 60 + 1),
+            ),
+        )
+        .unwrap();
+
+        save_secret(
+            dir.path(),
+            SaveCredentialRequest {
+                profile_id: "example".to_string(),
+                secret_access_key: "current-secret".to_string(),
+            },
+        )
+        .unwrap();
+
+        assert!(!stale_temp.exists());
+        assert_eq!(
+            load_secret(dir.path(), "example").unwrap(),
+            "current-secret"
+        );
     }
 
     #[test]
