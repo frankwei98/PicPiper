@@ -21,7 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { fileNameFromPath } from "../../lib/path";
-import { errorMessage } from "../../lib/error";
+import { errorCode, errorMessage } from "../../lib/error";
 import { XIcon } from "lucide-react";
 import {
   AVAILABLE_OUTPUT_FORMATS,
@@ -44,6 +44,11 @@ interface OptimizePageProps {
   onUploadedToS3?: (focus: GalleryFocus) => void;
   activeProfile?: S3Profile;
   namingTemplate: string;
+}
+
+interface UploadFailure {
+  code?: string;
+  message: string;
 }
 
 function contentTypeFor(format: string) {
@@ -503,29 +508,38 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const [uploadingItems, setUploadingItems] = useState<Set<string>>(new Set());
-  const [uploadFailedItems, setUploadFailedItems] = useState<Map<string, string>>(new Map());
+  const [uploadFailedItems, setUploadFailedItems] = useState<Map<string, UploadFailure>>(new Map());
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
+  const collisionRetryAttempts = useRef(new Map<string, number>());
 
   const executeUploads = async (
     uploadItems: OptimizeItem[],
     prefix: string,
-  ): Promise<{ newlyUploaded: string[]; failed: Map<string, string> }> => {
+    collisionRetryItemIds = new Set<string>(),
+  ): Promise<{ newlyUploaded: string[]; failed: Map<string, UploadFailure> }> => {
     const itemIds = new Set(uploadItems.map((item) => item.id));
     setUploadingItems(itemIds);
     const newlyUploaded: string[] = [];
-    const failed = new Map<string, string>();
+    const failed = new Map<string, UploadFailure>();
 
     for (const item of uploadItems) {
 
       const outputFileName = item.outputFileName ?? "image.webp";
       const ext = item.settings.targetFormat;
       try {
+        const collisionSuffix = collisionRetryItemIds.has(item.id)
+          ? `retry-${(collisionRetryAttempts.current.get(item.id) ?? 0) + 1}`
+          : undefined;
+        if (collisionSuffix) {
+          collisionRetryAttempts.current.set(item.id, (collisionRetryAttempts.current.get(item.id) ?? 0) + 1);
+        }
         const { objectKey } = await namingApi.generateObjectKey({
           sourcePath: item.outputPath as string,
           outputFileName,
           prefix,
           namingTemplate,
           ext,
+          ...(collisionSuffix ? { collisionSuffix } : {}),
         });
 
         const result = await uploadApi.uploadObject({
@@ -540,8 +554,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         });
 
         newlyUploaded.push(result.key);
+        collisionRetryAttempts.current.delete(item.id);
       } catch (err) {
-        failed.set(item.id, errorMessage(err, "Upload failed"));
+        failed.set(item.id, {
+          code: errorCode(err),
+          message: errorMessage(err, "Upload failed"),
+        });
       }
 
       // Remove completed item from uploading set
@@ -560,6 +578,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
     setUploadError(null);
     setUploadFailedItems(new Map());
+    collisionRetryAttempts.current.clear();
     const prefix = activeProfile.defaultPrefix || "images";
     const compressedItems = items.filter((item) => item.status === "compressed" && item.outputPath);
     if (compressedItems.length === 0) {
@@ -601,7 +620,16 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       return;
     }
 
-    const { newlyUploaded, failed: stillFailed } = await executeUploads(failedItems, prefix);
+    const collisionRetryItemIds = new Set(
+      failedItems
+        .filter((item) => uploadFailedItems.get(item.id)?.code === "objectAlreadyExists")
+        .map((item) => item.id),
+    );
+    const { newlyUploaded, failed: stillFailed } = await executeUploads(
+      failedItems,
+      prefix,
+      collisionRetryItemIds,
+    );
     setUploadFailedItems(stillFailed);
 
     const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
@@ -745,7 +773,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                 </Label>
               )}
               {uploadFailedItems.has(item.id) && (
-                <p className="text-destructive text-xs mt-0.5">{uploadFailedItems.get(item.id)}</p>
+                <p className="text-destructive text-xs mt-0.5">{uploadFailedItems.get(item.id)?.message}</p>
               )}
               {uploadingItems.has(item.id) && (
                 <p className="text-muted-foreground text-xs mt-0.5">Uploading...</p>
@@ -785,6 +813,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           {uploadFailedItems.size > 0 ? (
             <Button type="button" onClick={retryUploads} disabled={saving || uploadingItems.size > 0}>
               Retry {uploadFailedItems.size} failed upload(s)
+              {Array.from(uploadFailedItems.values()).some(
+                (failure) => failure.code === "objectAlreadyExists",
+              ) ? " with new key" : ""}
             </Button>
           ) : (
             <Button type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>Upload to S3</Button>

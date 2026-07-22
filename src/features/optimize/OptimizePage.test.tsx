@@ -750,7 +750,7 @@ describe("OptimizePage", () => {
         targetFormat: "jpg",
       }));
 
-    // Mock uploadObject: first succeeds, second fails, third succeeds
+    // Mock uploadObject: first succeeds, second hits a create-only collision, third succeeds
     uploadObject
       .mockImplementationOnce(async () => ({
         key: "images/2026/06/photo-a-abc.jpg",
@@ -759,7 +759,11 @@ describe("OptimizePage", () => {
         isImage: true,
       }))
       .mockImplementationOnce(async () => {
-        throw new Error("Network error");
+        throw {
+          code: "objectAlreadyExists",
+          message: "An object with this key already exists.",
+          recoverable: true,
+        };
       })
       .mockImplementationOnce(async () => ({
         key: "images/2026/06/photo-c-abc.jpg",
@@ -792,7 +796,7 @@ describe("OptimizePage", () => {
     });
 
     // Verify retry button appears
-    expect(screen.getByRole("button", { name: /retry 1 failed upload/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry 1 failed upload\(s\) with new key/i })).toBeInTheDocument();
 
     // uploadObject should have been called 3 times (a, b, c)
     expect(uploadObject).toHaveBeenCalledTimes(3);
@@ -807,7 +811,7 @@ describe("OptimizePage", () => {
     }));
 
     // Click retry
-    await user.click(screen.getByRole("button", { name: /retry 1 failed upload/i }));
+    await user.click(screen.getByRole("button", { name: /retry 1 failed upload\(s\) with new key/i }));
 
     // Wait for retry to complete
     await waitFor(() => {
@@ -816,6 +820,12 @@ describe("OptimizePage", () => {
 
     // uploadObject should only be called once (for the failed item b)
     expect(uploadObject).toHaveBeenCalledTimes(1);
+    expect(generateObjectKey).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourcePath: "/tmp/pic-piper/run-1/photo-b.jpg",
+        collisionSuffix: "retry-1",
+      }),
+    );
 
     // Verify highlightedKeys includes both previous successes and new retry
     const lastCall = onUploadedToS3.mock.calls[onUploadedToS3.mock.calls.length - 1][0];

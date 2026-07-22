@@ -109,6 +109,8 @@ export interface GenerateObjectKeyRequest {
   prefix: string;
   namingTemplate: string;
   ext: string;
+  /** Appended before the extension for an explicit create-only collision retry. */
+  collisionSuffix?: string;
 }
 
 export interface GenerateObjectKeyResponse {
