@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
+import { errorMessage } from "../../lib/error";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -158,7 +159,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       setEditingProfileId(profileId);
     } catch (error) {
       setSaving(false);
-      setSaveError(error instanceof Error ? error.message : String(error));
+      setSaveError(errorMessage(error, "Failed to save profile."));
     }
   };
 

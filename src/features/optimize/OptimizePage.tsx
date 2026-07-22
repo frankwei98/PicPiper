@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { fileNameFromPath } from "../../lib/path";
+import { errorMessage } from "../../lib/error";
 import { XIcon } from "lucide-react";
 import {
   AVAILABLE_OUTPUT_FORMATS,
@@ -138,7 +139,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       setItems((current) =>
         current.map((ci) =>
           ci.id === itemId
-            ? { ...ci, status: "failed" as const, error: err instanceof Error ? err.message : "Inspection failed" }
+            ? { ...ci, status: "failed" as const, error: errorMessage(err, "Inspection failed") }
             : ci,
         ),
       );
@@ -328,7 +329,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         return {
           ...ci,
           status: "failed",
-          error: err instanceof Error ? err.message : "Compression failed",
+          error: errorMessage(err, "Compression failed"),
         };
       });
     } finally {
@@ -497,7 +498,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       setSaveSuccess(`Saved ${copied.length} file(s) to ${targetDir}`);
     } catch (err) {
       setSaving(false);
-      setSaveError(err instanceof Error ? err.message : "Failed to save files");
+      setSaveError(errorMessage(err, "Failed to save files"));
     }
   };
 
@@ -540,7 +541,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
         newlyUploaded.push(result.key);
       } catch (err) {
-        failed.set(item.id, err instanceof Error ? err.message : "Upload failed");
+        failed.set(item.id, errorMessage(err, "Upload failed"));
       }
 
       // Remove completed item from uploading set

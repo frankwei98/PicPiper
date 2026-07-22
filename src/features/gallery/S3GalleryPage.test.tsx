@@ -823,6 +823,29 @@ describe("S3GalleryPage", () => {
     expect(screen.getByText(/second-photo\.jpg: network timeout/i)).toBeInTheDocument();
   });
 
+  it("shows the message from a serialized Tauri upload error", async () => {
+    mockDialogOpen.mockResolvedValueOnce(["/tmp/conflict.jpg"] as unknown as string);
+    uploadObject.mockRejectedValueOnce({
+      code: "objectAlreadyExists",
+      message: "An object with this key already exists.",
+      recoverable: true,
+    });
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /upload local images/i }));
+
+    expect(
+      await screen.findByText(/conflict\.jpg: an object with this key already exists/i),
+    ).toBeInTheDocument();
+  });
+
   it("uses image/heic content type for .heic uploads", async () => {
     mockDialogOpen.mockResolvedValueOnce(["/tmp/photo.heic"] as unknown as string);
     const user = userEvent.setup();
