@@ -94,43 +94,8 @@ pub fn save_secret(
 }
 
 fn replace_credential_file(temp_path: &Path, final_path: &Path) -> AppResult<()> {
-    #[cfg(windows)]
-    {
-        use std::iter;
-        use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING};
-
-        let temp_wide: Vec<u16> = temp_path
-            .as_os_str()
-            .encode_wide()
-            .chain(iter::once(0))
-            .collect();
-        let final_wide: Vec<u16> = final_path
-            .as_os_str()
-            .encode_wide()
-            .chain(iter::once(0))
-            .collect();
-        let moved = unsafe {
-            MoveFileExW(
-                temp_wide.as_ptr(),
-                final_wide.as_ptr(),
-                MOVEFILE_REPLACE_EXISTING,
-            )
-        };
-        if moved == 0 {
-            return Err(AppError::new(
-                "credentialWriteFailed",
-                std::io::Error::last_os_error().to_string(),
-            ));
-        }
-        Ok(())
-    }
-
-    #[cfg(not(windows))]
-    {
-        fs::rename(temp_path, final_path)
-            .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))
-    }
+    fs::rename(temp_path, final_path)
+        .map_err(|err| AppError::new("credentialWriteFailed", err.to_string()))
 }
 
 pub fn load_secret(credential_dir: &Path, profile_id: &str) -> AppResult<String> {
@@ -222,6 +187,20 @@ mod tests {
             .unwrap()
             .filter_map(Result::ok)
             .all(|entry| !entry.file_name().to_string_lossy().contains(".tmp-")));
+    }
+
+    #[test]
+    fn replacing_credential_file_replaces_an_existing_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let temporary = dir.path().join("new.secret.tmp");
+        let destination = dir.path().join("profile.secret");
+        fs::write(&temporary, "new-secret").unwrap();
+        fs::write(&destination, "old-secret").unwrap();
+
+        replace_credential_file(&temporary, &destination).unwrap();
+
+        assert_eq!(fs::read_to_string(&destination).unwrap(), "new-secret");
+        assert!(!temporary.exists());
     }
 
     #[test]
