@@ -9,6 +9,7 @@ import type { AppSettings } from "./api/tauri";
 import type { GalleryFocus } from "./state/appState";
 import { initialNavigationState } from "./state/appState";
 import type { AppNavigationState } from "./state/appState";
+import { errorMessage } from "./lib/error";
 
 function App() {
   const [navigation, setNavigation] = useState<AppNavigationState>(initialNavigationState);
@@ -26,7 +27,7 @@ function App() {
         if (!cancelled) setSettings(loaded);
       })
       .catch((error) => {
-        if (!cancelled) setSettingsError(error instanceof Error ? error.message : String(error));
+        if (!cancelled) setSettingsError(errorMessage(error, "Failed to load settings."));
       });
     return () => {
       cancelled = true;

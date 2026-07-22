@@ -25,6 +25,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { fileNameFromPath } from "../../lib/path";
+import { errorMessage } from "../../lib/error";
 
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
@@ -150,7 +151,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       if (!append) setImgErrors(new Set());
     } catch (err) {
       if (generation !== loadGenerationRef.current) return;
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err, "Failed to load objects."));
     } finally {
       if (generation === loadGenerationRef.current) {
         setLoading(false);
@@ -233,7 +234,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
 
           newKeys.push(objectKey);
         } catch (err) {
-          const message = err instanceof Error ? err.message : "Upload failed";
+          const message = errorMessage(err, "Upload failed");
           failures.push(`${fileName}: ${message}`);
         }
       }
@@ -248,7 +249,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           : `Uploaded ${newKeys.length} image(s).`,
       );
     } catch (err) {
-      setUploadStatus(err instanceof Error ? err.message : "Upload failed");
+      setUploadStatus(errorMessage(err, "Upload failed"));
     } finally {
       setUploading(false);
     }
@@ -283,7 +284,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     try {
       await openUrl(obj.publicUrl);
     } catch (err) {
-      setCopyMessage(err instanceof Error ? `View failed: ${err.message}` : "View failed");
+      setCopyMessage(`View failed: ${errorMessage(err, "Unknown error")}`);
     }
   };
 
@@ -306,7 +307,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       });
       setCopyMessage(`Saved to ${resultPath}`);
     } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Download failed");
+      setDownloadError(errorMessage(err, "Download failed"));
     } finally {
       setDownloadingKey(null);
     }
@@ -328,7 +329,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       await galleryApi.deleteObject({ profile: selectedProfile, key: targetKey });
       await loadObjects();
     } catch (err) {
-      setDeleteError(`Failed to delete ${targetKey}: ${err instanceof Error ? err.message : "Delete failed"}`);
+      setDeleteError(`Failed to delete ${targetKey}: ${errorMessage(err, "Delete failed")}`);
     } finally {
       setDeletingKey(null);
     }
