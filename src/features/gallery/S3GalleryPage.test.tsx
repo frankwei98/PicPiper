@@ -701,6 +701,67 @@ describe("S3GalleryPage", () => {
     expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
   });
 
+  it("does not refresh an old profile after a local upload finishes in a new scope", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    let resolveUpload!: (value: {
+      key: string;
+      size: number;
+      publicUrl: string;
+      isImage: boolean;
+    }) => void;
+    uploadObject.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
+    );
+    listObjects.mockImplementation(async (request?: unknown) => {
+      const profileId = (request as { profile: { id: string } }).profile.id;
+      return profileId === "p2"
+        ? [{ key: "work/images/current.webp", size: 100, isImage: true }]
+        : [{ key: "images/original.webp", size: 100, isImage: true }];
+    });
+    mockDialogOpen.mockResolvedValueOnce(["/tmp/new-photo.jpg"] as unknown as string);
+    const user = userEvent.setup();
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ profileId: "p1", prefix: "images", highlightedKeys: [] }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    await screen.findByText("images/original.webp");
+    const oldProfileRequests = listObjects.mock.calls.filter(
+      ([request]) => (request as { profile: { id: string } }).profile.id === "p1",
+    ).length;
+
+    await user.click(screen.getByRole("button", { name: /upload local images/i }));
+    await waitFor(() => expect(uploadObject).toHaveBeenCalledTimes(1));
+    await user.selectOptions(screen.getByRole("combobox", { name: /profile/i }), "p2");
+    expect(await screen.findByText("work/images/current.webp")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveUpload!({
+        key: "images/new-photo.jpg",
+        size: 100,
+        publicUrl: "https://cdn.example.com/images/new-photo.jpg",
+        isImage: true,
+      });
+    });
+
+    expect(screen.getByText("work/images/current.webp")).toBeInTheDocument();
+    expect(
+      listObjects.mock.calls.filter(
+        ([request]) => (request as { profile: { id: string } }).profile.id === "p1",
+      ),
+    ).toHaveLength(oldProfileRequests);
+  });
+
   it("upload local images calls generateObjectKey and uploadObject, then refreshes", async () => {
     mockDialogOpen.mockResolvedValueOnce(["/tmp/new-photo.jpg"] as unknown as string);
     const user = userEvent.setup();
