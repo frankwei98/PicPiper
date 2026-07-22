@@ -27,9 +27,10 @@ pub(crate) fn decode_image_with_orientation(path: &Path) -> AppResult<DynamicIma
     let mut decoder = reader
         .into_decoder()
         .map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
-    let orientation = decoder
-        .orientation()
-        .map_err(|err| AppError::new("imageOrientationFailed", err.to_string()))?;
+    // Orientation metadata is optional. Some otherwise-decodable images have
+    // a truncated or malformed EXIF/TIFF orientation tag, so retain pixels
+    // with their stored orientation instead of rejecting the whole image.
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
     let mut image = DynamicImage::from_decoder(decoder)
         .map_err(|err| AppError::new("imageDecodeFailed", err.to_string()))?;
     image.apply_orientation(orientation);
@@ -58,9 +59,7 @@ pub fn inspect_image(request: InspectImageRequest) -> AppResult<ImageInspection>
     let mut decoder = reader
         .into_decoder()
         .map_err(|err| AppError::new("imageDimensionFailed", err.to_string()))?;
-    let orientation = decoder
-        .orientation()
-        .map_err(|err| AppError::new("imageOrientationFailed", err.to_string()))?;
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
     let dimensions = decoder.dimensions();
     let (width, height) = oriented_dimensions(dimensions.0, dimensions.1, orientation);
 
@@ -422,6 +421,36 @@ mod tests {
         std::fs::write(path, bytes).unwrap();
     }
 
+    fn write_fixture_with_unreadable_orientation(path: &Path) {
+        // Valid 1×1 uncompressed grayscale TIFF. Its Orientation value points
+        // past EOF, while every tag the pixel decoder needs remains valid.
+        let tag_count = 10u16;
+        let pixel_offset = 8 + 2 + usize::from(tag_count) * 12 + 4;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"II*\0");
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&tag_count.to_le_bytes());
+        let mut entry = |tag: u16, kind: u16, count: u32, value: u32| {
+            bytes.extend_from_slice(&tag.to_le_bytes());
+            bytes.extend_from_slice(&kind.to_le_bytes());
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.extend_from_slice(&value.to_le_bytes());
+        };
+        entry(256, 4, 1, 1); // ImageWidth
+        entry(257, 4, 1, 1); // ImageLength
+        entry(258, 3, 1, 8); // BitsPerSample
+        entry(259, 3, 1, 1); // Compression = none
+        entry(262, 3, 1, 1); // PhotometricInterpretation = BlackIsZero
+        entry(273, 4, 1, pixel_offset as u32); // StripOffsets
+        entry(274, 3, 3, pixel_offset as u32); // unreadable Orientation values
+        entry(277, 3, 1, 1); // SamplesPerPixel
+        entry(278, 4, 1, 1); // RowsPerStrip
+        entry(279, 4, 1, 1); // StripByteCounts
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // no next IFD
+        bytes.push(128);
+        std::fs::write(path, bytes).unwrap();
+    }
+
     #[test]
     fn decode_applies_exif_orientation() {
         let dir = tempfile::tempdir().unwrap();
@@ -472,6 +501,27 @@ mod tests {
             "EXIF rotation should move the lower source row to the output top-left, got {:?}",
             top_left
         );
+    }
+
+    #[test]
+    fn unreadable_orientation_metadata_does_not_block_decoding_or_inspection() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("bad-orientation.tiff");
+        write_fixture_with_unreadable_orientation(&input);
+
+        let decoded = decode_image_with_orientation(&input).unwrap();
+        assert_eq!(decoded.dimensions(), (1, 1));
+
+        let inspection = inspect_image(InspectImageRequest {
+            path: input.to_string_lossy().to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Jpg,
+                quality: 80,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+        assert_eq!((inspection.width, inspection.height), (1, 1));
     }
 
     #[test]
