@@ -71,6 +71,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [loadedScope, setLoadedScope] = useState<{ profileId: string; prefix: string } | null>(null);
   const loadGenerationRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
+  const [paginationError, setPaginationError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const namingTemplate = namingTemplateProp ?? "{yyyy}/{mm}/{slug}-{hash}.{ext}";
@@ -99,6 +100,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     setObjects([]);
     setNextContinuationToken(null);
     setDeleteTarget(null);
+    setPaginationError(null);
   }, []);
 
   // Sync profile and prefix when galleryFocus changes externally
@@ -139,9 +141,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     const requestedPrefix = debouncedPrefix;
     setLoading(!append);
     setLoadingMore(append);
-    setError(null);
     if (!append) {
+      setError(null);
       resetGalleryScope();
+    } else {
+      setPaginationError(null);
     }
     try {
       const request = {
@@ -162,7 +166,12 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       if (!append) setImgErrors(new Set());
     } catch (err) {
       if (generation !== loadGenerationRef.current) return;
-      setError(errorMessage(err, "Failed to load objects."));
+      const message = errorMessage(err, "Failed to load objects.");
+      if (append) {
+        setPaginationError(message);
+      } else {
+        setError(message);
+      }
     } finally {
       if (generation === loadGenerationRef.current) {
         setLoading(false);
@@ -211,6 +220,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       const paths = Array.isArray(selected) ? selected : [selected];
       const currentPrefix = prefix || selectedProfile.defaultPrefix || "images";
       const newKeys: string[] = [];
+      const newObjects: GalleryObject[] = [];
       const failures: string[] = [];
 
       for (const filePath of paths) {
@@ -237,7 +247,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
             heic: "image/heic",
           };
 
-          await uploadApi.uploadObject({
+          const result = await uploadApi.uploadObject({
             profile: selectedProfile,
             sourcePath: filePath,
             objectKey,
@@ -245,6 +255,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           });
 
           newKeys.push(objectKey);
+          newObjects.push(result);
         } catch (err) {
           const message = errorMessage(err, "Upload failed");
           failures.push(`${fileName}: ${message}`);
@@ -253,7 +264,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
 
       if (newKeys.length > 0 && isCurrentScope(uploadScope)) {
         setHighlightedKeysState(newKeys);
-        await loadObjects();
+        const newKeySet = new Set(newKeys);
+        setObjects((current) => [
+          ...newObjects,
+          ...current.filter((object) => !newKeySet.has(object.key)),
+        ]);
       }
       setUploadStatus(
         failures.length > 0
@@ -277,6 +292,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     const q = search.toLowerCase();
     return objects.filter((obj) => obj.key.toLowerCase().includes(q));
   }, [objects, search]);
+  const searchIsActive = Boolean(search.trim());
 
   const handleCopyUrl = async (obj: GalleryObject) => {
     if (!obj.publicUrl) {
@@ -341,7 +357,8 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     try {
       await galleryApi.deleteObject({ profile: selectedProfile, key: targetKey });
       if (isCurrentScope(deleteScope)) {
-        await loadObjects();
+        setObjects((current) => current.filter((object) => object.key !== targetKey));
+        setHighlightedKeysState((current) => current.filter((key) => key !== targetKey));
       }
     } catch (err) {
       setDeleteError(`Failed to delete ${targetKey}: ${errorMessage(err, "Delete failed")}`);
@@ -465,14 +482,22 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       {scopeReady && !loading && !error && filteredObjects.length === 0 && (
         <Empty className="border">
           <EmptyHeader>
-            <EmptyTitle>No objects found.</EmptyTitle>
-            <EmptyDescription>Upload images or adjust the current prefix.</EmptyDescription>
+            <EmptyTitle>{searchIsActive ? "No loaded objects match this search." : "No objects found."}</EmptyTitle>
+            <EmptyDescription>
+              {searchIsActive
+                ? nextContinuationToken
+                  ? "Search only covers loaded objects. Load more to continue searching."
+                  : "Search only covers loaded objects in this prefix."
+                : "Upload images or adjust the current prefix."}
+            </EmptyDescription>
           </EmptyHeader>
-          <EmptyContent>
-            <Button type="button" onClick={handleUploadLocal}>
-              Upload local images
-            </Button>
-          </EmptyContent>
+          {!searchIsActive && (
+            <EmptyContent>
+              <Button type="button" onClick={handleUploadLocal}>
+                Upload local images
+              </Button>
+            </EmptyContent>
+          )}
         </Empty>
       )}
       {scopeReady && !loading && !error && filteredObjects.length > 0 && (
@@ -526,8 +551,13 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       )}
       {scopeReady && nextContinuationToken && !error && (
         <div className="flex justify-center">
+          {paginationError && (
+            <Alert variant="destructive">
+              <AlertDescription>Failed to load more: {paginationError}</AlertDescription>
+            </Alert>
+          )}
           <Button type="button" variant="outline" onClick={handleLoadMore} disabled={loadingMore}>
-            {loadingMore ? "Loading more..." : "Load more"}
+            {loadingMore ? "Loading more..." : paginationError ? "Retry load more" : "Load more"}
           </Button>
         </div>
       )}
