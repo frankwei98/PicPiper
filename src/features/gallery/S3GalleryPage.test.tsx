@@ -148,6 +148,57 @@ describe("S3GalleryPage", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 
+  it("keeps loaded objects visible and offers a retry when loading another page fails", async () => {
+    const user = userEvent.setup();
+    listObjects
+      .mockResolvedValueOnce({
+        objects: [{ key: "images/page-one.webp", size: 100, isImage: true }],
+        nextContinuationToken: "page-2",
+      })
+      .mockRejectedValueOnce(new Error("Temporary network error"))
+      .mockResolvedValueOnce({
+        objects: [{ key: "images/page-two.webp", size: 100, isImage: true }],
+        nextContinuationToken: null,
+      });
+
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    expect(await screen.findByText("images/page-one.webp")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+
+    expect(await screen.findByText(/failed to load more: temporary network error/i)).toBeInTheDocument();
+    expect(screen.getByText("images/page-one.webp")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry load more" }));
+
+    expect(await screen.findByText("images/page-two.webp")).toBeInTheDocument();
+  });
+
+  it("explains that search only covers the loaded pages", async () => {
+    const user = userEvent.setup();
+    listObjects.mockResolvedValueOnce({
+      objects: [{ key: "images/page-one.webp", size: 100, isImage: true }],
+      nextContinuationToken: "page-2",
+    });
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[profile]}
+      />,
+    );
+
+    await screen.findByText("images/page-one.webp");
+    await user.type(screen.getByLabelText("Search current prefix"), "later");
+
+    expect(screen.getByText("No loaded objects match this search.")).toBeInTheDocument();
+    expect(screen.getByText(/search only covers loaded objects/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load more" })).toBeInTheDocument();
+  });
+
   it("ignores a stale next-page response after changing gallery scope", async () => {
     const profile2 = {
       ...profile,
@@ -307,7 +358,7 @@ describe("S3GalleryPage", () => {
     expect(await screen.findByText(/no objects/i)).toBeInTheDocument();
   });
 
-  it("deletes after confirmation and refreshes the prefix", async () => {
+  it("deletes after confirmation without discarding the loaded pages", async () => {
     const user = userEvent.setup();
     render(
       <S3GalleryPage
@@ -324,7 +375,8 @@ describe("S3GalleryPage", () => {
     await user.click(within(dialog).getByRole("button", { name: /delete/i }));
 
     expect(deleteObject).toHaveBeenCalledWith({ profile, key: "images/photo.webp" });
-    expect(listObjects).toHaveBeenCalledTimes(2);
+    expect(listObjects).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("images/photo.webp")).not.toBeInTheDocument();
   });
 
   it("shows an error when delete rejects", async () => {
@@ -762,7 +814,7 @@ describe("S3GalleryPage", () => {
     ).toHaveLength(oldProfileRequests);
   });
 
-  it("upload local images calls generateObjectKey and uploadObject, then refreshes", async () => {
+  it("adds a local upload without discarding the loaded pages", async () => {
     mockDialogOpen.mockResolvedValueOnce(["/tmp/new-photo.jpg"] as unknown as string);
     const user = userEvent.setup();
     render(
@@ -792,11 +844,12 @@ describe("S3GalleryPage", () => {
         sourcePath: "/tmp/new-photo.jpg",
       }),
     );
-    // Should refresh the object list after upload
-    expect(listObjects).toHaveBeenCalledTimes(2);
+    expect(listObjects).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("images/2026/06/new-photo.jpg")).toBeInTheDocument();
+    expect(screen.getByText("images/photo.webp")).toBeInTheDocument();
   });
 
-  it("reports partial success and refreshes after one local upload fails", async () => {
+  it("reports partial success without discarding the loaded pages", async () => {
     mockDialogOpen.mockResolvedValueOnce([
       "/tmp/first-photo.jpg",
       "/tmp/second-photo.jpg",
@@ -822,9 +875,10 @@ describe("S3GalleryPage", () => {
     await user.click(screen.getByRole("button", { name: /upload local images/i }));
 
     expect(uploadObject).toHaveBeenCalledTimes(2);
-    expect(listObjects).toHaveBeenCalledTimes(2);
+    expect(listObjects).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/uploaded 1 image\(s\); 1 failed/i)).toBeInTheDocument();
     expect(screen.getByText(/second-photo\.jpg: access denied/i)).toBeInTheDocument();
+    expect(screen.getByText("images/first-photo.jpg")).toBeInTheDocument();
   });
 
   it("continues uploading when the first local file fails", async () => {
@@ -853,9 +907,10 @@ describe("S3GalleryPage", () => {
     await user.click(screen.getByRole("button", { name: /upload local images/i }));
 
     expect(uploadObject).toHaveBeenCalledTimes(2);
-    expect(listObjects).toHaveBeenCalledTimes(2);
+    expect(listObjects).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/uploaded 1 image\(s\); 1 failed/i)).toBeInTheDocument();
     expect(screen.getByText(/first-photo\.jpg: access denied/i)).toBeInTheDocument();
+    expect(screen.getByText("images/second-photo.jpg")).toBeInTheDocument();
   });
 
   it("reports all failures without pretending a refresh succeeded", async () => {
