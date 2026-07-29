@@ -261,15 +261,15 @@ pub async fn download_object(request: DownloadObjectRequest, secret: String) -> 
         .await
         .map_err(|err| AppError::new("downloadDirFailed", err.to_string()))?;
 
-    // Pick a unique path before starting the download so we don't overwrite.
-    let dest = optimizer::unique_destination_path(dest_dir, &file_name);
+    // Reserve the destination with `create_new` before streaming so another
+    // process cannot claim the same suffix after we choose it.
+    let (dest, destination) = optimizer::reserve_unique_destination_file(dest_dir, &file_name)
+        .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
 
     // Stream body directly to file instead of buffering the whole object in memory.
     use tokio::io::AsyncWriteExt;
     let write_result = async {
-        let mut file = tokio::fs::File::create(&dest)
-            .await
-            .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
+        let mut file = tokio::fs::File::from_std(destination);
         let mut stream = response.body;
         while let Some(chunk) = stream
             .try_next()

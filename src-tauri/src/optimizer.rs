@@ -1,5 +1,5 @@
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -146,13 +146,43 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
         let file_name = Path::new(src_path)
             .file_name()
             .ok_or_else(|| AppError::new("invalidPath", "Could not extract filename from path"))?;
-        let dest = unique_destination_path(target, &file_name.to_string_lossy());
-        fs::copy(src_path, &dest).map_err(|err| {
+        let source_permissions = fs::metadata(src_path)
+            .map_err(|err| {
+                AppError::new(
+                    "copyFailed",
+                    format!("Failed to copy {}: {}", src_path, err),
+                )
+            })?
+            .permissions();
+        let mut source = fs::File::open(src_path).map_err(|err| {
             AppError::new(
                 "copyFailed",
                 format!("Failed to copy {}: {}", src_path, err),
             )
         })?;
+        let (dest, mut destination) =
+            reserve_unique_destination_file(target, &file_name.to_string_lossy()).map_err(
+                |err| {
+                    AppError::new(
+                        "copyFailed",
+                        format!("Failed to copy {}: {}", src_path, err),
+                    )
+                },
+            )?;
+
+        let copy_result = io::copy(&mut source, &mut destination)
+            .and_then(|_| fs::set_permissions(&dest, source_permissions))
+            .and_then(|_| destination.sync_all());
+        drop(destination);
+        if let Err(err) = copy_result {
+            // This call created `dest` with `create_new`, so it is safe to
+            // remove only this failed partial output.
+            let _ = fs::remove_file(&dest);
+            return Err(AppError::new(
+                "copyFailed",
+                format!("Failed to copy {}: {}", src_path, err),
+            ));
+        }
         copied.push(dest.to_string_lossy().to_string());
     }
 
@@ -207,29 +237,40 @@ pub fn validate_optimizer_output_paths(cache_dir: &Path, output_paths: &[String]
     Ok(())
 }
 
-/// Choose a unique file path in `dir` based on `file_name`.
-///
-/// If `dir/file_name` does not exist, returns it as-is. Otherwise appends
-/// `-2`, `-3`, etc. before the extension until a free path is found.
-pub fn unique_destination_path(dir: &Path, file_name: &str) -> PathBuf {
-    let candidate = dir.join(file_name);
-    if !candidate.exists() {
-        return candidate;
+fn destination_file_name(file_name: &str, sequence: usize) -> String {
+    if sequence == 1 {
+        return file_name.to_string();
     }
-
     let (stem, ext) = match file_name.rsplit_once('.') {
         Some((s, e)) if !s.is_empty() && !e.is_empty() => (s.to_string(), Some(e.to_string())),
         _ => (file_name.to_string(), None),
     };
 
-    for n in 2.. {
-        let name = match &ext {
-            Some(e) => format!("{}-{}.{}", stem, n, e),
-            None => format!("{}-{}", stem, n),
-        };
-        let path = dir.join(&name);
-        if !path.exists() {
-            return path;
+    match ext {
+        Some(ext) => format!("{}-{}.{}", stem, sequence, ext),
+        None => format!("{}-{}", stem, sequence),
+    }
+}
+
+/// Atomically reserve a unique destination file in `dir`.
+///
+/// The returned file is opened with `create_new`, so no other process can
+/// create or overwrite the selected path between choosing its suffix and
+/// opening it. Callers must remove the path if writing the reserved file fails.
+pub fn reserve_unique_destination_file(
+    dir: &Path,
+    file_name: &str,
+) -> std::io::Result<(PathBuf, fs::File)> {
+    for sequence in 1.. {
+        let path = dir.join(destination_file_name(file_name, sequence));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => return Ok((path, file)),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err),
         }
     }
     unreachable!()
@@ -801,27 +842,39 @@ mod tests {
     }
 
     #[test]
-    fn unique_destination_path_returns_original_when_free() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = unique_destination_path(dir.path(), "photo.webp");
-        assert_eq!(path, dir.path().join("photo.webp"));
-    }
+    fn reserve_unique_destination_file_gives_concurrent_saves_distinct_paths() {
+        use std::sync::{Arc, Barrier};
 
-    #[test]
-    fn unique_destination_path_appends_suffix_when_exists() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("photo.webp"), b"existing").unwrap();
-        let path = unique_destination_path(dir.path(), "photo.webp");
-        assert_eq!(path, dir.path().join("photo-2.webp"));
-    }
+        let barrier = Arc::new(Barrier::new(3));
+        let mut workers = Vec::new();
 
-    #[test]
-    fn unique_destination_path_skips_existing_suffixes() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("photo.webp"), b"1").unwrap();
-        std::fs::write(dir.path().join("photo-2.webp"), b"2").unwrap();
-        let path = unique_destination_path(dir.path(), "photo.webp");
-        assert_eq!(path, dir.path().join("photo-3.webp"));
+        for _ in 0..2 {
+            let barrier = Arc::clone(&barrier);
+            let output_dir = dir.path().to_path_buf();
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                let (path, _file) =
+                    reserve_unique_destination_file(&output_dir, "photo.webp").unwrap();
+                path
+            }));
+        }
+
+        barrier.wait();
+        let mut reserved = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>();
+        reserved.sort();
+
+        assert_eq!(
+            reserved,
+            vec![
+                dir.path().join("photo-2.webp"),
+                dir.path().join("photo.webp"),
+            ]
+        );
+        assert!(reserved.iter().all(|path| path.is_file()));
     }
 
     #[test]
