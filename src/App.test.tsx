@@ -7,7 +7,7 @@ describe("App", () => {
 
     expect(screen.queryByText("Pic Piper")).not.toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: "Views" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Optimize/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /Compress/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /S3 Gallery/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Settings/ })).toBeInTheDocument();
     expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "app-tab-optimize");
@@ -16,8 +16,8 @@ describe("App", () => {
   it("switches views with tab keyboard navigation", () => {
     render(<App />);
 
-    const optimizeTab = screen.getByRole("tab", { name: /Optimize/ });
-    fireEvent.keyDown(optimizeTab, { key: "ArrowRight" });
+    const compressTab = screen.getByRole("tab", { name: /Compress/ });
+    fireEvent.keyDown(compressTab, { key: "ArrowRight" });
 
     const galleryTab = screen.getByRole("tab", { name: /S3 Gallery/ });
     expect(galleryTab).toHaveFocus();

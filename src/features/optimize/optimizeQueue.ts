@@ -5,10 +5,7 @@ export const MAX_COMPRESSION_CONCURRENCY = 3;
 
 export type AvailableOutputFormat = (typeof AVAILABLE_OUTPUT_FORMATS)[number];
 
-export function defaultTargetFormat(sourceFormat: OptimizeItem["sourceFormat"]): WritableImageFormat {
-  if (sourceFormat === "jpg" || sourceFormat === "png" || sourceFormat === "webp" || sourceFormat === "avif") {
-    return sourceFormat;
-  }
+export function defaultTargetFormat(_sourceFormat: OptimizeItem["sourceFormat"]): WritableImageFormat {
   return "webp";
 }
 

@@ -39,13 +39,13 @@ const { createOptimizerRun, inspectImage, compressImage, copyOutputsToDir, readT
     mockDialogOpen,
     mockOnDragDropEvent: vi.fn(async () => vi.fn()),
     uploadObject: vi.fn(async () => ({
-      key: "images/2026/06/real-photo-abcdef12.jpg",
+      key: "images/2026/06/real-photo-abcdef12.webp",
       size: 240_000,
-      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.jpg",
+      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.webp",
       isImage: true,
     })),
     generateObjectKey: vi.fn(async () => ({
-      objectKey: "images/2026/06/real-photo-abcdef12.jpg",
+      objectKey: "images/2026/06/real-photo-abcdef12.webp",
     })),
   };
 });
@@ -112,13 +112,13 @@ function installDefaultMocks() {
     dataUrl: path.includes("pic-piper") ? "data:image/jpeg;base64,COMPRESSED" : "data:image/jpeg;base64,ORIGINAL",
   }));
   uploadObject.mockImplementation(async () => ({
-    key: "images/2026/06/real-photo-abcdef12.jpg",
+    key: "images/2026/06/real-photo-abcdef12.webp",
     size: 240_000,
-    publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.jpg",
+    publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.webp",
     isImage: true,
   }));
   generateObjectKey.mockImplementation(async () => ({
-    objectKey: "images/2026/06/real-photo-abcdef12.jpg",
+    objectKey: "images/2026/06/real-photo-abcdef12.webp",
   }));
 }
 
@@ -142,6 +142,8 @@ describe("OptimizePage", () => {
   it("starts empty and asks the user to choose images", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
+    expect(screen.getByRole("heading", { name: "Compress" })).toBeInTheDocument();
+    expect(screen.queryByText("Optimize")).not.toBeInTheDocument();
     expect(screen.getByText(/choose images/i)).toBeInTheDocument();
     expect(screen.queryByText("photo-01.jpg")).not.toBeInTheDocument();
     expect(screen.queryByText("/sample/photo-01.jpg")).not.toBeInTheDocument();
@@ -200,8 +202,8 @@ describe("OptimizePage", () => {
     expect(compressImage).toHaveBeenCalledWith(
       expect.objectContaining({
         sourcePath: "/tmp/real-photo.jpg",
-        outputFileName: "real-photo.jpg",
-        settings: expect.objectContaining({ targetFormat: "jpg", quality: 85, removeGps: true }),
+        outputFileName: "real-photo.webp",
+        settings: expect.objectContaining({ targetFormat: "webp", quality: 85, removeGps: true }),
       }),
     );
     expect(await screen.findByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
@@ -341,6 +343,7 @@ describe("OptimizePage", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await user.selectOptions(await screen.findByLabelText(/format for real-photo\.png/i), "png");
 
     expect(await screen.findByText(/quality does not apply to png output/i)).toBeInTheDocument();
   });
@@ -394,8 +397,8 @@ describe("OptimizePage", () => {
     });
     const compressRequests = compressImage.mock.calls as unknown as Array<[{ outputFileName: string }]>;
     expect(compressRequests.map(([request]) => request.outputFileName)).toEqual([
-      "photo.jpg",
-      "photo-2.jpg",
+      "photo.webp",
+      "photo-2.webp",
     ]);
   });
 
@@ -439,13 +442,13 @@ describe("OptimizePage", () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    // First import: photo.jpg -> compresses to photo.jpg
+    // First import: photo.jpg -> compresses to photo.webp
     await user.click(screen.getByRole("button", { name: /choose images/i }));
     await waitFor(() => {
       expect(compressImage).toHaveBeenCalledTimes(1);
     });
     expect(compressImage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ outputFileName: "photo.jpg" }),
+      expect.objectContaining({ outputFileName: "photo.webp" }),
     );
 
     // Second import: another photo.jpg appended
@@ -454,9 +457,9 @@ describe("OptimizePage", () => {
       expect(compressImage).toHaveBeenCalledTimes(2);
     });
 
-    // The second import should use photo-2.jpg, not overwrite photo.jpg
+    // The second import should use photo-2.webp, not overwrite photo.webp
     const calls = compressImage.mock.calls as unknown as Array<[{ outputFileName: string }]>;
-    expect(calls[1][0].outputFileName).toBe("photo-2.jpg");
+    expect(calls[1][0].outputFileName).toBe("photo-2.webp");
   });
 
   it("does not queue an inspecting placeholder when global settings change", async () => {
@@ -635,7 +638,7 @@ describe("OptimizePage", () => {
 
     expect(mockDialogOpen).toHaveBeenCalledWith({ directory: true });
     expect(copyOutputsToDir).toHaveBeenCalledWith({
-      outputPaths: ["/tmp/pic-piper/run-1/real-photo.jpg"],
+      outputPaths: ["/tmp/pic-piper/run-1/real-photo.webp"],
       targetDir: "/tmp/saved",
     });
   });
@@ -705,7 +708,9 @@ describe("OptimizePage", () => {
 
     expect(generateObjectKey).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourcePath: "/tmp/pic-piper/run-1/real-photo.jpg",
+        sourcePath: "/tmp/pic-piper/run-1/real-photo.webp",
+        outputFileName: "real-photo.webp",
+        ext: "webp",
         prefix: "images/2026/06",
         namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
       }),
@@ -713,15 +718,15 @@ describe("OptimizePage", () => {
     expect(uploadObject).toHaveBeenCalledWith(
       expect.objectContaining({
         profile,
-        sourcePath: "/tmp/pic-piper/run-1/real-photo.jpg",
-        objectKey: "images/2026/06/real-photo-abcdef12.jpg",
-        contentType: "image/jpeg",
+        sourcePath: "/tmp/pic-piper/run-1/real-photo.webp",
+        objectKey: "images/2026/06/real-photo-abcdef12.webp",
+        contentType: "image/webp",
       }),
     );
     expect(onUploadedToS3).toHaveBeenCalledWith({
       profileId: "p1",
       prefix: "images/2026/06",
-      highlightedKeys: ["images/2026/06/real-photo-abcdef12.jpg"],
+      highlightedKeys: ["images/2026/06/real-photo-abcdef12.webp"],
     });
   });
 
