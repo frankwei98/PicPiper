@@ -16,6 +16,27 @@ interface LayoutProps {
   onViewChange: (view: AppView) => void;
 }
 
+function handleTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+
+  const tabs = Array.from(
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? [],
+  );
+  const currentIndex = tabs.indexOf(event.currentTarget);
+  if (currentIndex === -1) return;
+
+  event.preventDefault();
+
+  let nextIndex = currentIndex;
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = tabs.length - 1;
+  if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+  if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+
+  tabs[nextIndex]?.focus();
+  tabs[nextIndex]?.click();
+}
+
 export function Layout({ activeView, children, onViewChange }: LayoutProps) {
   const startWindowDrag = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -28,51 +49,68 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
   };
 
   return (
-    <main className="relative grid grid-cols-[220px_minmax(0,1fr)] min-h-dvh max-md:grid-cols-1">
-      <div
-        data-tauri-drag-region
-        className="fixed inset-x-0 top-0 z-20 h-12"
-        aria-hidden="true"
-        onMouseDown={startWindowDrag}
-      />
-      <aside className={cn(
-        "bg-sidebar text-sidebar-foreground",
-        "flex flex-col gap-8",
-        "border-r border-sidebar-border",
-        "sticky top-0 h-dvh overflow-y-auto",
-        "px-6 pb-8 pt-20",
-        "max-md:relative max-md:h-auto max-md:border-r-0 max-md:border-b max-md:px-5 max-md:pb-5 max-md:pt-20",
-      )}>
-        <div className="flex items-center gap-2">
-          <div
-            className="size-8 bg-sidebar-primary text-sidebar-primary-foreground rounded-lg flex items-center justify-center shrink-0"
-            aria-hidden="true"
-          >
-            <ImageIcon className="size-4" />
-          </div>
-          <h1 className="text-base font-semibold text-sidebar-foreground text-balance">Pic Piper</h1>
-        </div>
-        <nav aria-label="Main navigation" className="grid gap-1 max-md:flex max-md:flex-wrap max-md:gap-2">
-          {NAV_ITEMS.map((item) => (
-            <Button
-              key={item.id}
-              variant={activeView === item.id ? "secondary" : "ghost"}
-              type="button"
-              onClick={() => onViewChange(item.id)}
-              className={cn(
-                "w-full justify-start gap-2",
-                activeView === item.id
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
-                  : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/70",
-              )}
+    <main className="relative min-h-dvh bg-background">
+      <header className="sticky top-0 z-20 h-14 border-b bg-background/95 shadow-[0_1px_0_oklch(0_0_0/0.02)] backdrop-blur-md">
+        <div
+          data-tauri-drag-region
+          className="absolute inset-0"
+          aria-hidden="true"
+          onMouseDown={startWindowDrag}
+        />
+        <div className="pointer-events-none relative flex h-full min-w-0 items-center gap-4 pr-4 pl-[5.25rem] max-sm:gap-2 max-sm:pr-2">
+          <div className="flex shrink-0 items-center gap-2">
+            <div
+              className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm"
+              aria-hidden="true"
             >
-              <item.icon className="size-4" />
-              {item.label}
-            </Button>
-          ))}
-        </nav>
-      </aside>
-      <section className="min-w-0 overflow-x-hidden px-10 pb-8 pt-20 max-md:px-4 max-md:pb-6 max-md:pt-6">
+              <ImageIcon className="size-3.5" />
+            </div>
+            <h1 className="text-sm font-semibold tracking-tight text-foreground max-sm:sr-only">
+              Pic Piper
+            </h1>
+          </div>
+          <nav aria-label="Main navigation" className="pointer-events-auto min-w-0">
+            <div
+              role="tablist"
+              aria-label="Pic Piper views"
+              className="flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-xl bg-muted/70 p-1 ring-1 ring-border/70"
+            >
+              {NAV_ITEMS.map((item) => {
+                const selected = activeView === item.id;
+                return (
+                  <Button
+                    key={item.id}
+                    id={`app-tab-${item.id}`}
+                    role="tab"
+                    aria-controls={`app-panel-${item.id}`}
+                    aria-selected={selected}
+                    tabIndex={selected ? 0 : -1}
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => onViewChange(item.id)}
+                    onKeyDown={handleTabKeyDown}
+                    className={cn(
+                      "h-7 gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground",
+                      "hover:bg-background/70 hover:text-foreground",
+                      selected && "bg-background text-foreground shadow-sm ring-1 ring-border/70 hover:bg-background",
+                    )}
+                  >
+                    <item.icon className="size-3.5" />
+                    {item.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </nav>
+        </div>
+      </header>
+      <section
+        id={`app-panel-${activeView}`}
+        role="tabpanel"
+        aria-labelledby={`app-tab-${activeView}`}
+        className="min-w-0 overflow-x-hidden px-10 pt-6 pb-8 max-md:px-6 max-sm:px-4 max-sm:pb-6"
+      >
         {children}
       </section>
     </main>
