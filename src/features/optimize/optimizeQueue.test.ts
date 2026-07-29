@@ -28,11 +28,11 @@ function item(status: OptimizeItem["status"]): OptimizeItem {
 }
 
 describe("optimizeQueue", () => {
-  it("defaults target format to source format except HEIF uses WebP", () => {
-    expect(defaultTargetFormat("jpg")).toBe("jpg");
-    expect(defaultTargetFormat("png")).toBe("png");
+  it("defaults every source format to WebP", () => {
+    expect(defaultTargetFormat("jpg")).toBe("webp");
+    expect(defaultTargetFormat("png")).toBe("webp");
     expect(defaultTargetFormat("webp")).toBe("webp");
-    expect(defaultTargetFormat("avif")).toBe("avif");
+    expect(defaultTargetFormat("avif")).toBe("webp");
     expect(defaultTargetFormat("heif")).toBe("webp");
     expect(defaultTargetFormat("unknown")).toBe("webp");
   });

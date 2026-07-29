@@ -1,10 +1,10 @@
 # Pic Piper
 
-Pic Piper is a Tauri desktop app for optimizing images for internet sharing and uploading them to an S3-compatible bucket.
+Pic Piper is a Tauri desktop app for compressing images for internet sharing and uploading them to an S3-compatible bucket.
 
 ## Features
 
-### Optimize
+### Compress
 
 - Choose real image files (JPG, PNG, WebP, AVIF, HEIF/HEIC).
 - Each file is inspected through the backend for format, dimensions, and size.
@@ -29,7 +29,7 @@ Pic Piper is a Tauri desktop app for optimizing images for internet sharing and 
 
 ### Upload Workflow
 
-- After compressing images in Optimize, click "Upload to S3" to upload.
+- After compression finishes, click "Upload to S3" to upload.
 - Object keys are generated from the naming template with content hash.
 - After upload, the app opens S3 Gallery at the target prefix with uploaded objects highlighted.
 

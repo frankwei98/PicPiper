@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Images, Settings, Zap } from "lucide-react";
 
 const NAV_ITEMS: Array<{ id: AppView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: "optimize", label: "Optimize", icon: Zap },
+  { id: "optimize", label: "Compress", icon: Zap },
   { id: "gallery", label: "S3 Gallery", icon: Images },
   { id: "settings", label: "Settings", icon: Settings },
 ];

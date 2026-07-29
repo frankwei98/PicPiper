@@ -729,7 +729,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     <div className="grid w-full max-w-6xl gap-6">
       <header className="grid grid-cols-[minmax(0,1fr)_minmax(12rem,25%)] items-end gap-5">
         <div className="min-w-0">
-          <h2 className="text-3xl font-semibold tracking-tight text-balance">Optimize</h2>
+          <h2 className="text-3xl font-semibold tracking-tight text-balance">Compress</h2>
           <p className="text-muted-foreground mt-2 max-w-md text-sm text-pretty">Drop images to compress automatically.</p>
         </div>
         <div className="grid w-full min-w-0 justify-self-end gap-3">
@@ -787,7 +787,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         </section>
       )}
 
-      <section className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Images to optimize">
+      <section className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Images to compress">
         {items.map((item) => (
           <Card className="group relative transition-[transform,box-shadow] hover:-translate-y-px" key={item.id}>
             <CardContent className="grid gap-3">
