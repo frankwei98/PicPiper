@@ -177,6 +177,15 @@ describe("OptimizePage", () => {
     expect(screen.getByText(/metadata.*removed during compression/i)).toBeInTheDocument();
   });
 
+  it("keeps quality controls in a constrained second column at narrow window widths", () => {
+    const { container } = render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    expect(container.querySelector("header")).toHaveClass(
+      "grid-cols-[minmax(0,1fr)_minmax(12rem,25%)]",
+      "items-end",
+    );
+  });
+
   it("imports selected images and starts single-image compression automatically", async () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);

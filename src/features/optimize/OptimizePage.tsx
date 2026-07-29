@@ -727,12 +727,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   return (
     <div className="grid w-full max-w-6xl gap-6">
-      <header className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_25%] lg:items-end">
+      <header className="grid grid-cols-[minmax(0,1fr)_minmax(12rem,25%)] items-end gap-5">
         <div className="min-w-0">
           <h2 className="text-3xl font-semibold tracking-tight text-balance">Optimize</h2>
           <p className="text-muted-foreground mt-2 max-w-md text-sm text-pretty">Drop images to compress automatically.</p>
         </div>
-        <div className="grid min-w-0 gap-3 lg:justify-self-end lg:w-full">
+        <div className="grid w-full min-w-0 justify-self-end gap-3">
           <span className="text-xs text-muted-foreground text-pretty">
             Metadata (including GPS) is removed during compression
           </span>
