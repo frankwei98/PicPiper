@@ -2,7 +2,7 @@ import type { AppView } from "../types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ImageIcon, Images, Settings, Zap } from "lucide-react";
+import { Images, Settings, Zap } from "lucide-react";
 
 const NAV_ITEMS: Array<{ id: AppView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "optimize", label: "Optimize", icon: Zap },
@@ -57,53 +57,43 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
           aria-hidden="true"
           onMouseDown={startWindowDrag}
         />
-        <div className="pointer-events-none relative flex h-full min-w-0 items-center gap-4 pr-4 pl-[5.25rem] max-sm:gap-2 max-sm:pr-2">
-          <div className="flex shrink-0 items-center gap-2">
-            <div
-              className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm"
-              aria-hidden="true"
-            >
-              <ImageIcon className="size-3.5" />
-            </div>
-            <h1 className="text-sm font-semibold tracking-tight text-foreground max-sm:sr-only">
-              Pic Piper
-            </h1>
+        <nav
+          aria-label="Main navigation"
+          className="pointer-events-auto absolute top-1/2 left-1/2 z-10 min-w-0 -translate-x-1/2 -translate-y-1/2"
+        >
+          <div
+            role="tablist"
+            aria-label="Views"
+            className="flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-xl bg-muted/70 p-1 ring-1 ring-border/70"
+          >
+            {NAV_ITEMS.map((item) => {
+              const selected = activeView === item.id;
+              return (
+                <Button
+                  key={item.id}
+                  id={`app-tab-${item.id}`}
+                  role="tab"
+                  aria-controls={`app-panel-${item.id}`}
+                  aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => onViewChange(item.id)}
+                  onKeyDown={handleTabKeyDown}
+                  className={cn(
+                    "h-7 gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground",
+                    "hover:bg-background/70 hover:text-foreground",
+                    selected && "bg-background text-foreground shadow-sm ring-1 ring-border/70 hover:bg-background",
+                  )}
+                >
+                  <item.icon className="size-3.5" />
+                  {item.label}
+                </Button>
+              );
+            })}
           </div>
-          <nav aria-label="Main navigation" className="pointer-events-auto min-w-0">
-            <div
-              role="tablist"
-              aria-label="Pic Piper views"
-              className="flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-xl bg-muted/70 p-1 ring-1 ring-border/70"
-            >
-              {NAV_ITEMS.map((item) => {
-                const selected = activeView === item.id;
-                return (
-                  <Button
-                    key={item.id}
-                    id={`app-tab-${item.id}`}
-                    role="tab"
-                    aria-controls={`app-panel-${item.id}`}
-                    aria-selected={selected}
-                    tabIndex={selected ? 0 : -1}
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    onClick={() => onViewChange(item.id)}
-                    onKeyDown={handleTabKeyDown}
-                    className={cn(
-                      "h-7 gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground",
-                      "hover:bg-background/70 hover:text-foreground",
-                      selected && "bg-background text-foreground shadow-sm ring-1 ring-border/70 hover:bg-background",
-                    )}
-                  >
-                    <item.icon className="size-3.5" />
-                    {item.label}
-                  </Button>
-                );
-              })}
-            </div>
-          </nav>
-        </div>
+        </nav>
       </header>
       <section
         id={`app-panel-${activeView}`}
