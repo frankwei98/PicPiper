@@ -15,9 +15,13 @@ use crate::{
     naming, optimizer,
 };
 
-async fn cleanup_partial_on_error(dest: &std::path::Path, result: AppResult<()>) -> AppResult<()> {
+fn cleanup_partial_on_error(
+    reservation: &optimizer::ReservedDestination,
+    file: &std::fs::File,
+    result: AppResult<()>,
+) -> AppResult<()> {
     if result.is_err() {
-        let _ = tokio::fs::remove_file(dest).await;
+        let _ = optimizer::remove_reserved_destination(reservation, file);
     }
     result
 }
@@ -283,14 +287,15 @@ pub async fn download_object(request: DownloadObjectRequest, secret: String) -> 
 
     // Reserve the destination with `create_new` before streaming so another
     // process cannot claim the same suffix after we choose it.
-    let (dest, destination) = optimizer::reserve_unique_destination_file(dest_dir, &file_name)
-        .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
+    let (reservation, destination) =
+        optimizer::reserve_unique_destination_file(dest_dir, &file_name)
+            .map_err(|err| AppError::new("downloadWriteFailed", err.to_string()))?;
 
     // Stream body directly to file instead of buffering the whole object in memory.
     use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::File::from_std(destination);
+    let mut stream = response.body;
     let write_result = async {
-        let mut file = tokio::fs::File::from_std(destination);
-        let mut stream = response.body;
         while let Some(chunk) = stream
             .try_next()
             .await
@@ -306,9 +311,11 @@ pub async fn download_object(request: DownloadObjectRequest, secret: String) -> 
         Ok(())
     }
     .await;
-    cleanup_partial_on_error(&dest, write_result).await?;
+    let destination = file.into_std().await;
+    cleanup_partial_on_error(&reservation, &destination, write_result)?;
+    drop(destination);
 
-    Ok(dest.to_string_lossy().to_string())
+    Ok(reservation.path().to_string_lossy().to_string())
 }
 
 pub async fn upload_object(
@@ -587,20 +594,21 @@ mod tests {
         assert!(mapped.is_empty());
     }
 
-    #[tokio::test]
-    async fn cleanup_partial_on_error_removes_partial_file() {
+    #[test]
+    fn cleanup_partial_on_error_removes_partial_file() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("partial.jpg");
-        tokio::fs::write(&path, b"partial").await.unwrap();
+        let (reservation, mut file) =
+            optimizer::reserve_unique_destination_file(dir.path(), "partial.jpg").unwrap();
+        std::io::Write::write_all(&mut file, b"partial").unwrap();
 
         let result = cleanup_partial_on_error(
-            &path,
+            &reservation,
+            &file,
             Err(AppError::new("s3DownloadReadFailed", "network dropped")),
-        )
-        .await;
+        );
 
         assert_eq!(result.unwrap_err().code, "s3DownloadReadFailed");
-        assert!(!path.exists());
+        assert!(!reservation.path().exists());
     }
 
     #[tokio::test]

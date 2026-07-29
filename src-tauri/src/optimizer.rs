@@ -160,7 +160,7 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
                 format!("Failed to copy {}: {}", src_path, err),
             )
         })?;
-        let (dest, mut destination) =
+        let (reservation, mut destination) =
             reserve_unique_destination_file(target, &file_name.to_string_lossy()).map_err(
                 |err| {
                     AppError::new(
@@ -171,19 +171,18 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
             )?;
 
         let copy_result = io::copy(&mut source, &mut destination)
-            .and_then(|_| fs::set_permissions(&dest, source_permissions))
+            .and_then(|_| fs::set_permissions(reservation.path(), source_permissions))
             .and_then(|_| destination.sync_all());
-        drop(destination);
         if let Err(err) = copy_result {
-            // This call created `dest` with `create_new`, so it is safe to
-            // remove only this failed partial output.
-            let _ = fs::remove_file(&dest);
+            let _ = remove_reserved_destination(&reservation, &destination);
+            drop(destination);
             return Err(AppError::new(
                 "copyFailed",
                 format!("Failed to copy {}: {}", src_path, err),
             ));
         }
-        copied.push(dest.to_string_lossy().to_string());
+        drop(destination);
+        copied.push(reservation.path().to_string_lossy().to_string());
     }
 
     Ok(copied)
@@ -252,6 +251,61 @@ fn destination_file_name(file_name: &str, sequence: usize) -> String {
     }
 }
 
+#[cfg(unix)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FileIdentity {
+    device: u64,
+    inode: u64,
+}
+
+#[cfg(unix)]
+fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
+    use std::os::unix::fs::MetadataExt;
+
+    FileIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+    }
+}
+
+#[cfg(windows)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FileIdentity {
+    volume_serial_number: Option<u32>,
+    file_index: Option<u64>,
+}
+
+#[cfg(windows)]
+fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
+    use std::os::windows::fs::MetadataExt;
+
+    FileIdentity {
+        volume_serial_number: metadata.volume_serial_number(),
+        file_index: metadata.file_index(),
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FileIdentity;
+
+#[cfg(not(any(unix, windows)))]
+fn file_identity(_metadata: &fs::Metadata) -> FileIdentity {
+    FileIdentity
+}
+
+/// A unique destination file created by this process.
+pub struct ReservedDestination {
+    path: PathBuf,
+    identity: FileIdentity,
+}
+
+impl ReservedDestination {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 /// Atomically reserve a unique destination file in `dir`.
 ///
 /// The returned file is opened with `create_new`, so no other process can
@@ -260,7 +314,7 @@ fn destination_file_name(file_name: &str, sequence: usize) -> String {
 pub fn reserve_unique_destination_file(
     dir: &Path,
     file_name: &str,
-) -> std::io::Result<(PathBuf, fs::File)> {
+) -> std::io::Result<(ReservedDestination, fs::File)> {
     for sequence in 1.. {
         let path = dir.join(destination_file_name(file_name, sequence));
         match fs::OpenOptions::new()
@@ -268,12 +322,41 @@ pub fn reserve_unique_destination_file(
             .create_new(true)
             .open(&path)
         {
-            Ok(file) => return Ok((path, file)),
+            Ok(file) => {
+                let identity = file_identity(&file.metadata()?);
+                return Ok((ReservedDestination { path, identity }, file));
+            }
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(err) => return Err(err),
         }
     }
     unreachable!()
+}
+
+/// Remove a failed output only while its reserved file handle remains open and
+/// `path` still points to that same file. Returns `false` if another process
+/// replaced or removed it.
+pub fn remove_reserved_destination(
+    reservation: &ReservedDestination,
+    file: &fs::File,
+) -> std::io::Result<bool> {
+    if file_identity(&file.metadata()?) != reservation.identity {
+        return Ok(false);
+    }
+
+    let metadata = match fs::symlink_metadata(reservation.path()) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(err),
+    };
+
+    if file_identity(&metadata) != reservation.identity {
+        return Ok(false);
+    }
+
+    // Keep `file` open through unlinking. That preserves the identity of the
+    // reservation while the path is checked and removed.
+    fs::remove_file(reservation.path()).map(|_| true)
 }
 
 /// Delete optimizer-cache/run-* directories older than `max_age`.
@@ -874,9 +957,9 @@ mod tests {
             let output_dir = dir.path().to_path_buf();
             workers.push(std::thread::spawn(move || {
                 barrier.wait();
-                let (path, _file) =
+                let (reservation, _file) =
                     reserve_unique_destination_file(&output_dir, "photo.webp").unwrap();
-                path
+                reservation.path().to_path_buf()
             }));
         }
 
@@ -895,6 +978,22 @@ mod tests {
             ]
         );
         assert!(reserved.iter().all(|path| path.is_file()));
+    }
+
+    #[test]
+    fn failed_write_cleanup_preserves_a_file_that_replaced_our_reservation() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reservation, file) =
+            reserve_unique_destination_file(dir.path(), "photo.webp").unwrap();
+
+        std::fs::remove_file(reservation.path()).unwrap();
+        std::fs::write(reservation.path(), b"created by another process").unwrap();
+
+        assert!(!remove_reserved_destination(&reservation, &file).unwrap());
+        assert_eq!(
+            std::fs::read(reservation.path()).unwrap(),
+            b"created by another process"
+        );
     }
 
     #[test]
