@@ -127,15 +127,10 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       }
 
       const profileId = profile?.id || crypto.randomUUID();
-
-      const secretResult = secretAccessKey
-        ? await settingsApi.saveS3Secret({
-            profileId,
-            secretAccessKey,
-          })
-        : {
-            credentialRef: profile!.credentialRef!,
-          };
+      // Credential references are derived from the profile ID by the backend.
+      // Persist the profile first so a failed settings write cannot orphan a
+      // newly stored secret.
+      const credentialRef = secretAccessKey ? `s3:${profileId}` : profile!.credentialRef!;
 
       const savedProfile: S3Profile = {
         id: profileId,
@@ -144,7 +139,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         region,
         bucket,
         accessKeyId,
-        credentialRef: secretResult.credentialRef,
+        credentialRef,
         pathStyle,
         publicBaseUrl: publicBaseUrl || undefined,
         defaultPrefix,
@@ -158,6 +153,25 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       };
 
       await settingsApi.saveSettings(nextSettings);
+      try {
+        if (secretAccessKey) {
+          await settingsApi.saveS3Secret({
+            profileId,
+            secretAccessKey,
+          });
+        }
+      } catch (error) {
+        try {
+          await settingsApi.saveSettings(settings);
+        } catch (rollbackError) {
+          setSaving(false);
+          setSaveError(
+            `${errorMessage(error, "Failed to save profile.")} The previous settings could not be restored: ${errorMessage(rollbackError, "Unknown error.")}`,
+          );
+          return;
+        }
+        throw error;
+      }
       onSettingsChange(nextSettings);
       setSecretAccessKey("");
       setSaving(false);

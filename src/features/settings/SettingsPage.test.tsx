@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AppSettings } from "../../api/tauri";
@@ -21,8 +21,10 @@ import { SettingsPage } from "./SettingsPage";
 
 describe("SettingsPage", () => {
   beforeEach(() => {
-    saveSettings.mockClear();
-    saveS3Secret.mockClear();
+    saveSettings.mockReset();
+    saveSettings.mockResolvedValue(undefined);
+    saveS3Secret.mockReset();
+    saveS3Secret.mockResolvedValue({ credentialRef: "s3:personal" });
   });
 
   it("renders a save action for profile settings", () => {
@@ -120,6 +122,80 @@ describe("SettingsPage", () => {
     });
     expect(saveSettings).toHaveBeenCalled();
     expect(onSettingsChange).toHaveBeenCalled();
+  });
+
+  it("does not store a credential when saving the profile settings fails", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    saveSettings.mockRejectedValueOnce(new Error("Settings storage unavailable"));
+
+    render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Profile name"));
+    await user.type(screen.getByLabelText("Profile name"), "Personal R2");
+    await user.type(screen.getByLabelText("Endpoint"), "https://example.r2.cloudflarestorage.com");
+    await user.type(screen.getByLabelText("Bucket"), "images");
+    await user.type(screen.getByLabelText("Access key ID"), "access-key");
+    await user.type(screen.getByLabelText("Secret access key"), "secret-key");
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(await screen.findByText(/settings storage unavailable/i)).toBeInTheDocument();
+    expect(saveSettings).toHaveBeenCalledTimes(1);
+    expect(saveS3Secret).not.toHaveBeenCalled();
+    expect(onSettingsChange).not.toHaveBeenCalled();
+  });
+
+  it("restores the original settings when storing an updated credential fails", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    const settings: AppSettings = {
+      profiles: [
+        {
+          id: "personal",
+          name: "Personal R2",
+          endpoint: "https://example.r2.cloudflarestorage.com",
+          region: "auto",
+          bucket: "images",
+          accessKeyId: "access-key",
+          credentialRef: "s3:personal",
+          pathStyle: true,
+          defaultPrefix: "images",
+        },
+      ],
+      namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+      defaultProfileId: "personal",
+    };
+    saveS3Secret.mockRejectedValueOnce(new Error("Credential storage unavailable"));
+
+    render(<SettingsPage settings={settings} onSettingsChange={onSettingsChange} />);
+
+    await user.clear(screen.getByLabelText("Default prefix"));
+    await user.type(screen.getByLabelText("Default prefix"), "images/2026/06");
+    await user.type(screen.getByLabelText("Secret access key"), "replacement-secret");
+
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(await screen.findByText(/credential storage unavailable/i)).toBeInTheDocument();
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(2));
+    expect(saveSettings).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        profiles: expect.arrayContaining([
+          expect.objectContaining({ defaultPrefix: "images/2026/06" }),
+        ]),
+      }),
+    );
+    expect(saveSettings).toHaveBeenNthCalledWith(2, settings);
+    expect(onSettingsChange).not.toHaveBeenCalled();
   });
 
   it("accepts a trusted local HTTP public base URL", async () => {
