@@ -15,15 +15,19 @@ use crate::{
     naming, optimizer,
 };
 
-fn cleanup_partial_on_error(
+fn error_with_retained_partial_file(
+    mut error: AppError,
     reservation: &optimizer::ReservedDestination,
-    file: &std::fs::File,
-    result: AppResult<()>,
-) -> AppResult<()> {
-    if result.is_err() {
-        let _ = optimizer::remove_reserved_destination(reservation, file);
-    }
-    result
+) -> AppError {
+    // We cannot conditionally delete a path without a check/unlink race. A
+    // failed download therefore leaves its empty or partial reservation in
+    // place rather than risking deletion of a file created by another process.
+    error.message = format!(
+        "{} Partial file was retained at {}. Retrying will use a new filename.",
+        error.message,
+        reservation.path().display()
+    );
+    error
 }
 
 async fn client_for(profile: &S3Profile, secret: String) -> Client {
@@ -311,9 +315,11 @@ pub async fn download_object(request: DownloadObjectRequest, secret: String) -> 
         Ok(())
     }
     .await;
-    let destination = file.into_std().await;
-    cleanup_partial_on_error(&reservation, &destination, write_result)?;
-    drop(destination);
+    if let Err(error) = write_result {
+        drop(file);
+        return Err(error_with_retained_partial_file(error, &reservation));
+    }
+    drop(file);
 
     Ok(reservation.path().to_string_lossy().to_string())
 }
@@ -595,20 +601,45 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_partial_on_error_removes_partial_file() {
+    fn failed_download_error_names_its_retained_partial_file() {
         let dir = tempfile::tempdir().unwrap();
         let (reservation, mut file) =
             optimizer::reserve_unique_destination_file(dir.path(), "partial.jpg").unwrap();
         std::io::Write::write_all(&mut file, b"partial").unwrap();
 
-        let result = cleanup_partial_on_error(
+        let error = error_with_retained_partial_file(
+            AppError::new("s3DownloadReadFailed", "network dropped"),
             &reservation,
-            &file,
-            Err(AppError::new("s3DownloadReadFailed", "network dropped")),
         );
 
-        assert_eq!(result.unwrap_err().code, "s3DownloadReadFailed");
-        assert!(!reservation.path().exists());
+        assert_eq!(error.code, "s3DownloadReadFailed");
+        assert!(error.message.contains("Partial file was retained"));
+        assert!(error
+            .message
+            .contains(reservation.path().to_string_lossy().as_ref()));
+        assert_eq!(std::fs::read(reservation.path()).unwrap(), b"partial");
+    }
+
+    #[test]
+    fn failed_download_never_removes_a_file_that_replaced_its_reservation() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reservation, file) =
+            optimizer::reserve_unique_destination_file(dir.path(), "partial.jpg").unwrap();
+
+        std::fs::remove_file(reservation.path()).unwrap();
+        std::fs::write(reservation.path(), b"created by another process").unwrap();
+
+        let error = error_with_retained_partial_file(
+            AppError::new("s3DownloadReadFailed", "network dropped"),
+            &reservation,
+        );
+
+        assert_eq!(error.code, "s3DownloadReadFailed");
+        assert_eq!(
+            std::fs::read(reservation.path()).unwrap(),
+            b"created by another process"
+        );
+        drop(file);
     }
 
     #[tokio::test]
