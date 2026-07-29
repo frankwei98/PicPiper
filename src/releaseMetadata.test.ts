@@ -21,6 +21,19 @@ async function readVersions() {
   };
 }
 
+function jobDefinition(workflow: string, jobName: string) {
+  const jobStart = workflow.indexOf(`  ${jobName}:\n`);
+  if (jobStart === -1) {
+    return "";
+  }
+
+  const remainingJobs = workflow.slice(jobStart + 1);
+  const nextJob = remainingJobs.search(/^  [a-z][a-z0-9_-]*:\n/m);
+  return nextJob === -1
+    ? workflow.slice(jobStart)
+    : remainingJobs.slice(0, nextJob);
+}
+
 describe("release metadata", () => {
   it("declares the published v0.1.1 version in every build manifest", async () => {
     await expect(readVersions()).resolves.toEqual({
@@ -30,11 +43,13 @@ describe("release metadata", () => {
     });
   });
 
-  it("runs all quality checks before publishing Tauri bundles", async () => {
+  it("gates every release matrix build on a dedicated quality job", async () => {
     const workflow = await readFile(
       resolve(cwd(), ".github/workflows/release.yml"),
       "utf8",
     );
+    const qualityJob = jobDefinition(workflow, "quality");
+    const publishJob = jobDefinition(workflow, "publish");
     const qualityChecks = [
       "pnpm test",
       "pnpm build",
@@ -42,12 +57,15 @@ describe("release metadata", () => {
       "cd src-tauri && cargo fmt --check",
       "cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings",
     ];
-    const buildBundlesAt = workflow.indexOf("Build and upload Tauri bundles");
 
-    expect(buildBundlesAt).toBeGreaterThan(-1);
+    expect(qualityJob).toContain("runs-on: ubuntu-24.04");
     for (const command of qualityChecks) {
-      expect(workflow.indexOf(command)).toBeGreaterThan(-1);
-      expect(workflow.indexOf(command)).toBeLessThan(buildBundlesAt);
+      expect(qualityJob).toContain(command);
     }
+
+    expect(qualityJob).not.toContain("tauri-apps/tauri-action");
+    expect(publishJob).toMatch(/^    needs: quality$/m);
+    expect(publishJob).toContain("strategy:");
+    expect(publishJob).toContain("Build and upload Tauri bundles");
   });
 });
