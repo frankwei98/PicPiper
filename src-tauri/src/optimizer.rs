@@ -136,6 +136,16 @@ pub fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageR
     })
 }
 
+fn copy_to_reserved_file(
+    source: &mut fs::File,
+    destination: &mut fs::File,
+    source_permissions: fs::Permissions,
+) -> std::io::Result<()> {
+    io::copy(source, destination)
+        .and_then(|_| destination.set_permissions(source_permissions))
+        .and_then(|_| destination.sync_all())
+}
+
 pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>> {
     let target = Path::new(&request.target_dir);
     fs::create_dir_all(target).map_err(|err| AppError::new("targetDirFailed", err.to_string()))?;
@@ -170,11 +180,11 @@ pub fn copy_outputs_to_dir(request: CopyOutputsRequest) -> AppResult<Vec<String>
                 },
             )?;
 
-        let copy_result = io::copy(&mut source, &mut destination)
-            .and_then(|_| fs::set_permissions(reservation.path(), source_permissions))
-            .and_then(|_| destination.sync_all());
+        let copy_result = copy_to_reserved_file(&mut source, &mut destination, source_permissions);
         if let Err(err) = copy_result {
-            let _ = remove_reserved_destination(&reservation, &destination);
+            // Conditional deletion by path cannot be made race-free: another
+            // process could replace this name between any ownership check and
+            // unlink. Retain the empty or partial reservation instead.
             drop(destination);
             return Err(AppError::new(
                 "copyFailed",
@@ -251,53 +261,9 @@ fn destination_file_name(file_name: &str, sequence: usize) -> String {
     }
 }
 
-#[cfg(unix)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct FileIdentity {
-    device: u64,
-    inode: u64,
-}
-
-#[cfg(unix)]
-fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
-    use std::os::unix::fs::MetadataExt;
-
-    FileIdentity {
-        device: metadata.dev(),
-        inode: metadata.ino(),
-    }
-}
-
-#[cfg(windows)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct FileIdentity {
-    volume_serial_number: Option<u32>,
-    file_index: Option<u64>,
-}
-
-#[cfg(windows)]
-fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
-    use std::os::windows::fs::MetadataExt;
-
-    FileIdentity {
-        volume_serial_number: metadata.volume_serial_number(),
-        file_index: metadata.file_index(),
-    }
-}
-
-#[cfg(not(any(unix, windows)))]
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct FileIdentity;
-
-#[cfg(not(any(unix, windows)))]
-fn file_identity(_metadata: &fs::Metadata) -> FileIdentity {
-    FileIdentity
-}
-
 /// A unique destination file created by this process.
 pub struct ReservedDestination {
     path: PathBuf,
-    identity: FileIdentity,
 }
 
 impl ReservedDestination {
@@ -310,7 +276,8 @@ impl ReservedDestination {
 ///
 /// The returned file is opened with `create_new`, so no other process can
 /// create or overwrite the selected path between choosing its suffix and
-/// opening it. Callers must remove the path if writing the reserved file fails.
+/// opening it. On a write error callers must leave the reservation in place,
+/// because conditional deletion by path is inherently racy.
 pub fn reserve_unique_destination_file(
     dir: &Path,
     file_name: &str,
@@ -322,41 +289,12 @@ pub fn reserve_unique_destination_file(
             .create_new(true)
             .open(&path)
         {
-            Ok(file) => {
-                let identity = file_identity(&file.metadata()?);
-                return Ok((ReservedDestination { path, identity }, file));
-            }
+            Ok(file) => return Ok((ReservedDestination { path }, file)),
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(err) => return Err(err),
         }
     }
     unreachable!()
-}
-
-/// Remove a failed output only while its reserved file handle remains open and
-/// `path` still points to that same file. Returns `false` if another process
-/// replaced or removed it.
-pub fn remove_reserved_destination(
-    reservation: &ReservedDestination,
-    file: &fs::File,
-) -> std::io::Result<bool> {
-    if file_identity(&file.metadata()?) != reservation.identity {
-        return Ok(false);
-    }
-
-    let metadata = match fs::symlink_metadata(reservation.path()) {
-        Ok(metadata) => metadata,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(err) => return Err(err),
-    };
-
-    if file_identity(&metadata) != reservation.identity {
-        return Ok(false);
-    }
-
-    // Keep `file` open through unlinking. That preserves the identity of the
-    // reservation while the path is checked and removed.
-    fs::remove_file(reservation.path()).map(|_| true)
 }
 
 /// Delete optimizer-cache/run-* directories older than `max_age`.
@@ -980,19 +918,57 @@ mod tests {
         assert!(reserved.iter().all(|path| path.is_file()));
     }
 
+    #[cfg(unix)]
     #[test]
-    fn failed_write_cleanup_preserves_a_file_that_replaced_our_reservation() {
+    fn copy_failure_keeps_its_partial_reservation_instead_of_removing_by_path() {
         let dir = tempfile::tempdir().unwrap();
-        let (reservation, file) =
+        let source_dir = dir.path().join("source");
+        let target_dir = dir.path().join("target");
+        std::fs::create_dir_all(source_dir.join("photo.webp")).unwrap();
+        std::fs::create_dir_all(&target_dir).unwrap();
+
+        let error = copy_outputs_to_dir(CopyOutputsRequest {
+            output_paths: vec![source_dir.join("photo.webp").to_string_lossy().to_string()],
+            target_dir: target_dir.to_string_lossy().to_string(),
+        })
+        .unwrap_err();
+
+        assert_eq!(error.code, "copyFailed");
+        assert!(
+            target_dir.join("photo.webp").is_file(),
+            "the reserved partial output must remain rather than risking deletion of a replacement"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_completion_does_not_change_permissions_of_a_replacement_path() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("source.webp");
+        std::fs::write(&source_path, b"compressed output").unwrap();
+        std::fs::set_permissions(&source_path, std::fs::Permissions::from_mode(0o400)).unwrap();
+        let source_permissions = std::fs::metadata(&source_path).unwrap().permissions();
+        let mut source = std::fs::File::open(&source_path).unwrap();
+
+        let (reservation, mut destination) =
             reserve_unique_destination_file(dir.path(), "photo.webp").unwrap();
-
         std::fs::remove_file(reservation.path()).unwrap();
-        std::fs::write(reservation.path(), b"created by another process").unwrap();
+        std::fs::write(reservation.path(), b"other process").unwrap();
+        std::fs::set_permissions(reservation.path(), std::fs::Permissions::from_mode(0o600))
+            .unwrap();
 
-        assert!(!remove_reserved_destination(&reservation, &file).unwrap());
+        copy_to_reserved_file(&mut source, &mut destination, source_permissions).unwrap();
+
+        assert_eq!(std::fs::read(reservation.path()).unwrap(), b"other process");
         assert_eq!(
-            std::fs::read(reservation.path()).unwrap(),
-            b"created by another process"
+            std::fs::metadata(reservation.path())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
         );
     }
 
