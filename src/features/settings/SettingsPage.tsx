@@ -45,6 +45,13 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [defaultPrefix, setDefaultPrefix] = useState(profile?.defaultPrefix ?? "");
   const [pathStyle, setPathStyle] = useState(profile?.pathStyle ?? true);
 
+  // Settings arrive after the initial render. If the selected profile did not
+  // exist in the initial placeholder settings, select the loaded default.
+  useEffect(() => {
+    if (creatingNew || settings.profiles.some((p) => p.id === editingProfileId)) return;
+    setEditingProfileId(settings.defaultProfileId ?? settings.profiles[0]?.id ?? "");
+  }, [creatingNew, editingProfileId, settings.defaultProfileId, settings.profiles]);
+
   // Re-populate form fields when the selected profile changes OR when the
   // parent asynchronously delivers the real settings (App.tsx loads settings
   // after mount, so the initial render sees namingTemplate defaults).

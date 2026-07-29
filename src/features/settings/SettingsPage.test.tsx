@@ -469,4 +469,64 @@ describe("SettingsPage", () => {
 
     expect(screen.getByLabelText("Naming template")).toHaveValue("{slug}-{hash}.{ext}");
   });
+
+  it("edits and saves the default profile after settings arrive asynchronously", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    const loadedProfile = {
+      id: "personal",
+      name: "Personal R2",
+      endpoint: "https://example.r2.cloudflarestorage.com",
+      region: "auto",
+      bucket: "images",
+      accessKeyId: "access-key",
+      credentialRef: "s3:personal",
+      pathStyle: true,
+      defaultPrefix: "images",
+    };
+    const { rerender } = render(
+      <SettingsPage
+        settings={{
+          profiles: [],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    rerender(
+      <SettingsPage
+        settings={{
+          profiles: [loadedProfile],
+          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
+          defaultProfileId: loadedProfile.id,
+        }}
+        onSettingsChange={onSettingsChange}
+      />,
+    );
+
+    expect(screen.getByLabelText("Profile name")).toHaveValue("Personal R2");
+    expect(screen.getByLabelText("Endpoint")).toHaveValue(
+      "https://example.r2.cloudflarestorage.com",
+    );
+
+    await user.clear(screen.getByLabelText("Default prefix"));
+    await user.type(screen.getByLabelText("Default prefix"), "images/2026/07");
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(saveS3Secret).not.toHaveBeenCalled();
+    expect(saveSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profiles: [
+          expect.objectContaining({
+            id: "personal",
+            defaultPrefix: "images/2026/07",
+            credentialRef: "s3:personal",
+          }),
+        ],
+        defaultProfileId: "personal",
+      }),
+    );
+    expect(onSettingsChange).toHaveBeenCalled();
+  });
 });
