@@ -147,6 +147,17 @@ describe("OptimizePage", () => {
     expect(screen.queryByText("/sample/photo-01.jpg")).not.toBeInTheDocument();
   });
 
+  it("opens the image picker when the drop zone is clicked", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByTestId("drop-zone"));
+
+    expect(mockDialogOpen).toHaveBeenCalledWith(expect.objectContaining({
+      multiple: true,
+    }));
+  });
+
   it("does not render preset controls or a manual Compress button", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
