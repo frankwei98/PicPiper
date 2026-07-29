@@ -107,9 +107,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     });
   };
 
-  const inspectSingleItem = useCallback(async (itemId: string, sourcePath: string) => {
+  const inspectSingleItem = useCallback(async (itemId: string, sourcePath: string, capturedVersion: number) => {
     setItems((current) =>
-      current.map((ci) => (ci.id === itemId ? { ...ci, status: "inspecting" as const, error: undefined } : ci)),
+      current.map((ci) =>
+        ci.id === itemId && (ci.taskVersion ?? 0) === capturedVersion
+          ? { ...ci, status: "inspecting" as const, error: undefined }
+          : ci,
+      ),
     );
 
     try {
@@ -125,7 +129,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
       setItems((current) =>
         current.map((ci) =>
-          ci.id === itemId
+          ci.id === itemId && (ci.taskVersion ?? 0) === capturedVersion
             ? {
                 ...ci,
                 fileName: inspection.fileName,
@@ -144,7 +148,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         const thumb = await tauriApi.readThumbnail({ path: sourcePath, maxSize: 512 });
         setItems((current) =>
           current.map((ci) =>
-            ci.id === itemId ? { ...ci, originalPreviewUrl: thumb.dataUrl } : ci,
+            ci.id === itemId && (ci.taskVersion ?? 0) === capturedVersion
+              ? { ...ci, originalPreviewUrl: thumb.dataUrl }
+              : ci,
           ),
         );
       } catch {
@@ -153,7 +159,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     } catch (err) {
       setItems((current) =>
         current.map((ci) =>
-          ci.id === itemId
+          ci.id === itemId && (ci.taskVersion ?? 0) === capturedVersion
             ? { ...ci, status: "failed" as const, error: errorMessage(err, "Inspection failed") }
             : ci,
         ),
@@ -179,7 +185,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     setItems((current) => [...current, ...pendingItems]);
 
     for (const item of pendingItems) {
-      await inspectSingleItem(item.id, item.sourcePath);
+      await inspectSingleItem(item.id, item.sourcePath, item.taskVersion ?? 0);
     }
 
     setImporting(false);
@@ -477,7 +483,21 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const retryItem = (id: string) => {
     const item = items.find((i) => i.id === id);
     if (item && item.originalBytes === 0) {
-      inspectSingleItem(id, item.sourcePath);
+      const nextTaskVersion = (item.taskVersion ?? 0) + 1;
+      setItems((current) =>
+        current.map((currentItem) =>
+          currentItem.id === id
+            ? {
+                ...currentItem,
+                status: "inspecting" as const,
+                error: undefined,
+                cancelling: false,
+                taskVersion: nextTaskVersion,
+              }
+            : currentItem,
+        ),
+      );
+      void inspectSingleItem(id, item.sourcePath, nextTaskVersion);
     } else {
       setItems((current) =>
         current.map((item) =>

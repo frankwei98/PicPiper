@@ -487,6 +487,42 @@ describe("OptimizePage", () => {
     });
   });
 
+  it("keeps an image cancelled when its inspection finishes after cancellation", async () => {
+    let resolveInspect!: (value: Awaited<ReturnType<typeof inspectImage>>) => void;
+    inspectImage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInspect = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await user.click(await screen.findByRole("button", { name: /cancel real-photo\.jpg/i }));
+
+    await act(async () => {
+      resolveInspect({
+        id: "real-photo",
+        sourcePath: "/tmp/real-photo.jpg",
+        fileName: "real-photo.jpg",
+        sourceFormat: "jpg",
+        originalBytes: 1_200_000,
+        estimatedBytes: 260_000,
+        status: "queued",
+        settings: {
+          targetFormat: "jpg",
+          quality: 85,
+          removeGps: true,
+        },
+      });
+    });
+
+    expect(await screen.findByText(/cancelled/i)).toBeInTheDocument();
+    expect(compressImage).not.toHaveBeenCalled();
+  });
+
   it("does not apply late compression results after cancellation", async () => {
     let resolveCompression!: (value: Awaited<ReturnType<typeof compressImage>>) => void;
     compressImage.mockImplementationOnce(
