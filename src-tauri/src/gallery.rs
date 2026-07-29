@@ -1,4 +1,6 @@
-use aws_config::BehaviorVersion;
+use std::time::Duration;
+
+use aws_config::{timeout::TimeoutConfig, BehaviorVersion};
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{
     config::Region, config::SharedCredentialsProvider, primitives::ByteStream, Client,
@@ -32,6 +34,7 @@ async fn client_for(profile: &S3Profile, secret: String) -> Client {
         .region(Region::new(profile.region.clone()))
         .credentials_provider(SharedCredentialsProvider::new(credentials))
         .endpoint_url(endpoint_url(profile))
+        .timeout_config(s3_timeout_config())
         .load()
         .await;
     let mut builder = aws_sdk_s3::config::Builder::from(&base);
@@ -39,6 +42,18 @@ async fn client_for(profile: &S3Profile, secret: String) -> Client {
         builder = builder.force_path_style(true);
     }
     Client::from_conf(builder.build())
+}
+
+fn s3_timeout_config() -> TimeoutConfig {
+    // Keep connection and first-byte failures responsive, while allowing
+    // slow image uploads/downloads enough time to complete. The operation
+    // timeout bounds the whole request lifecycle across retries.
+    TimeoutConfig::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(Duration::from_secs(30))
+        .operation_attempt_timeout(Duration::from_secs(10 * 60))
+        .operation_timeout(Duration::from_secs(30 * 60))
+        .build()
 }
 
 /// Extract the base endpoint URL, stripping the bucket name suffix if present.
@@ -669,6 +684,28 @@ mod tests {
         assert_eq!(bounded_page_size(Some(0)), 1);
         assert_eq!(bounded_page_size(Some(-10)), 1);
         assert_eq!(bounded_page_size(Some(1000)), 100);
+    }
+
+    #[test]
+    fn s3_timeouts_bound_connection_attempts_and_full_operations() {
+        let timeouts = s3_timeout_config();
+
+        assert_eq!(
+            timeouts.connect_timeout(),
+            Some(std::time::Duration::from_secs(10))
+        );
+        assert_eq!(
+            timeouts.read_timeout(),
+            Some(std::time::Duration::from_secs(30))
+        );
+        assert_eq!(
+            timeouts.operation_attempt_timeout(),
+            Some(std::time::Duration::from_secs(10 * 60))
+        );
+        assert_eq!(
+            timeouts.operation_timeout(),
+            Some(std::time::Duration::from_secs(30 * 60))
+        );
     }
 
     #[tokio::test]
