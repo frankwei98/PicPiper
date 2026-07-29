@@ -312,11 +312,14 @@ pub fn cleanup_old_runs(cache_dir: &Path, max_age: std::time::Duration) -> usize
 /// Reject output file names that could escape the output directory via path
 /// traversal (`..`), absolute paths, directory separators, or control characters.
 fn validate_output_file_name(name: &str) -> AppResult<()> {
+    validate_cross_platform_file_name(name, "invalidOutputFileName")
+}
+
+/// Validate a file name before using it as a local destination on any
+/// supported platform. Callers provide their domain-specific error code.
+pub(crate) fn validate_cross_platform_file_name(name: &str, code: &str) -> AppResult<()> {
     if name.is_empty() {
-        return Err(AppError::new(
-            "invalidOutputFileName",
-            "Output file name must not be empty.",
-        ));
+        return Err(AppError::new(code, "File name must not be empty."));
     }
 
     // Treat both separator styles as path separators regardless of the host
@@ -325,25 +328,28 @@ fn validate_output_file_name(name: &str) -> AppResult<()> {
     // Windows.
     if name.contains('/') || name.contains('\\') {
         return Err(AppError::new(
-            "invalidOutputFileName",
-            "Output file name must be a single file name without path separators.",
+            code,
+            "File name must be a single file name without path separators.",
         ));
     }
 
     // Windows treats colons as alternate data streams and normalizes trailing
     // dots/spaces. Reject them everywhere so an output name has the same
     // meaning on every supported platform.
-    if name.contains(':') || name.ends_with('.') || name.ends_with(' ') {
+    if name.contains(['<', '>', ':', '"', '|', '?', '*'])
+        || name.ends_with('.')
+        || name.ends_with(' ')
+    {
         return Err(AppError::new(
-            "invalidOutputFileName",
-            "Output file name must not contain Windows-reserved syntax.",
+            code,
+            "File name must not contain Windows-reserved syntax.",
         ));
     }
 
     if is_windows_reserved_file_name(name) {
         return Err(AppError::new(
-            "invalidOutputFileName",
-            "Output file name must not use a Windows reserved device name.",
+            code,
+            "File name must not use a Windows reserved device name.",
         ));
     }
 
@@ -353,16 +359,16 @@ fn validate_output_file_name(name: &str) -> AppResult<()> {
         || components.next().is_some()
     {
         return Err(AppError::new(
-            "invalidOutputFileName",
-            "Output file name must be a single normal file name.",
+            code,
+            "File name must be a single normal file name.",
         ));
     }
 
     // Reject control characters
     if name.chars().any(|c| c.is_control()) {
         return Err(AppError::new(
-            "invalidOutputFileName",
-            "Output file name must not contain control characters.",
+            code,
+            "File name must not contain control characters.",
         ));
     }
 
@@ -377,10 +383,24 @@ fn is_windows_reserved_file_name(name: &str) -> bool {
         .trim_end_matches([' ', '.'])
         .to_ascii_uppercase();
 
-    matches!(base_name.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$")
-        || (base_name.starts_with("COM")
-            && base_name.len() == 4
-            && matches!(base_name.as_bytes()[3], b'1'..=b'9'))
+    matches!(
+        base_name.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "CLOCK$"
+            | "CONIN$"
+            | "CONOUT$"
+            | "COM¹"
+            | "COM²"
+            | "COM³"
+            | "LPT¹"
+            | "LPT²"
+            | "LPT³"
+    ) || (base_name.starts_with("COM")
+        && base_name.len() == 4
+        && matches!(base_name.as_bytes()[3], b'1'..=b'9'))
         || (base_name.starts_with("LPT")
             && base_name.len() == 4
             && matches!(base_name.as_bytes()[3], b'1'..=b'9'))
