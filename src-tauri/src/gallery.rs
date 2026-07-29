@@ -242,7 +242,16 @@ pub async fn delete_object(request: DeleteObjectRequest, secret: String) -> AppR
     Ok(())
 }
 
+fn download_file_name_from_key(key: &str) -> AppResult<String> {
+    let file_name = key.rsplit('/').next().unwrap_or_default();
+    optimizer::validate_cross_platform_file_name(file_name, "invalidDownloadFileName")?;
+    Ok(file_name.to_string())
+}
+
 pub async fn download_object(request: DownloadObjectRequest, secret: String) -> AppResult<String> {
+    // Validate before opening a network connection or creating the output
+    // directory so a remotely supplied key cannot create unsafe local paths.
+    let file_name = download_file_name_from_key(&request.key)?;
     let client = client_for(&request.profile, secret).await;
     let response = client
         .get_object()
@@ -252,10 +261,6 @@ pub async fn download_object(request: DownloadObjectRequest, secret: String) -> 
         .await
         .map_err(|err| AppError::new("s3DownloadFailed", err.to_string()))?;
 
-    let file_name = std::path::Path::new(&request.key)
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "download".to_string());
     let dest_dir = std::path::Path::new(&request.output_dir);
     tokio::fs::create_dir_all(dest_dir)
         .await
@@ -581,6 +586,57 @@ mod tests {
 
         assert_eq!(result.unwrap_err().code, "s3DownloadReadFailed");
         assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn download_rejects_unsafe_destination_names_before_network_or_output_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let output_dir = dir.path().join("not-created");
+        let mut unreachable_profile = profile(Some("https://cdn.example.com"));
+        unreachable_profile.endpoint = "http://127.0.0.1:1".to_string();
+
+        for key in [
+            "photos/image:metadata.jpg",
+            "photos/CON.jpg",
+            "photos/photo.",
+            "photos/photo. ",
+            "photos/image?.jpg",
+            "photos/image<copy>.jpg",
+            "photos/image\"copy\".jpg",
+            "photos/image|copy*.jpg",
+            "photos/COM¹.jpg",
+            "photos/LPT³.jpg",
+            "photos/CONIN$.jpg",
+            "photos/CONOUT$.jpg",
+            r"photos/sub\\photo.jpg",
+            "photos/..",
+            "photos/image\u{0000}.jpg",
+        ] {
+            let error = download_object(
+                DownloadObjectRequest {
+                    profile: unreachable_profile.clone(),
+                    key: key.to_string(),
+                    output_dir: output_dir.to_string_lossy().to_string(),
+                },
+                "secret".to_string(),
+            )
+            .await
+            .unwrap_err();
+
+            assert_eq!(error.code, "invalidDownloadFileName", "key: {key}");
+            assert!(
+                !output_dir.exists(),
+                "unsafe key must not create an output directory: {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn download_file_name_uses_the_final_forward_slash_segment() {
+        assert_eq!(
+            download_file_name_from_key("albums/2026/photo.jpg").unwrap(),
+            "photo.jpg"
+        );
     }
 
     #[test]
