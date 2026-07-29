@@ -727,7 +727,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   return (
     <div className="grid w-full max-w-6xl gap-6">
-      <header className="grid gap-5 lg:grid-cols-[minmax(18rem,1fr)_minmax(18rem,24rem)] lg:items-end">
+      <header className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_25%] lg:items-end">
         <div className="min-w-0">
           <h2 className="text-3xl font-semibold tracking-tight text-balance">Optimize</h2>
           <p className="text-muted-foreground mt-2 max-w-md text-sm text-pretty">Drop images to compress automatically.</p>
@@ -743,14 +743,18 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         </div>
       </header>
 
-      <section
+      <button
+        type="button"
         data-testid="drop-zone"
+        disabled={importing}
         className={cn(
-          "border-2 border-dashed rounded-xl bg-muted/40 p-12 px-8 text-center text-muted-foreground text-sm",
+          "w-full border-2 border-dashed rounded-xl bg-muted/40 p-12 px-8 text-center text-muted-foreground text-sm",
           "transition-[border-color,background-color] duration-150 ease-out cursor-pointer",
           "hover:border-foreground/30 hover:bg-muted/60",
+          "disabled:cursor-not-allowed disabled:opacity-60",
           dragging && "border-primary bg-primary/10 border-solid text-foreground",
         )}
+        onClick={handleChooseImages}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -758,11 +762,11 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         <div className="text-base font-medium text-foreground mb-2">Drop images here</div>
         <div className="text-sm text-muted-foreground">
           or{" "}
-          <Button variant="link" className="h-auto px-1 py-0" type="button" onClick={handleChooseImages} disabled={importing}>
+          <span className="px-1 text-foreground underline underline-offset-4">
             Choose images
-          </Button>
+          </span>
         </div>
-      </section>
+      </button>
 
       {dropError && (
         <Alert variant="destructive">
