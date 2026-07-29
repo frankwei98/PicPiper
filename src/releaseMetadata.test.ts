@@ -29,4 +29,25 @@ describe("release metadata", () => {
       tauri: releaseVersion,
     });
   });
+
+  it("runs all quality checks before publishing Tauri bundles", async () => {
+    const workflow = await readFile(
+      resolve(cwd(), ".github/workflows/release.yml"),
+      "utf8",
+    );
+    const qualityChecks = [
+      "pnpm test",
+      "pnpm build",
+      "cd src-tauri && cargo test",
+      "cd src-tauri && cargo fmt --check",
+      "cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings",
+    ];
+    const buildBundlesAt = workflow.indexOf("Build and upload Tauri bundles");
+
+    expect(buildBundlesAt).toBeGreaterThan(-1);
+    for (const command of qualityChecks) {
+      expect(workflow.indexOf(command)).toBeGreaterThan(-1);
+      expect(workflow.indexOf(command)).toBeLessThan(buildBundlesAt);
+    }
+  });
 });
