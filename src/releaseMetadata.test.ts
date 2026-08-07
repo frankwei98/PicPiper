@@ -50,18 +50,17 @@ describe("release metadata", () => {
     );
     const qualityJob = jobDefinition(workflow, "quality");
     const publishJob = jobDefinition(workflow, "publish");
-    const qualityChecks = [
-      "pnpm test",
-      "pnpm build",
-      "cd src-tauri && cargo test",
-      "cd src-tauri && cargo fmt --check",
-      "cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings",
-    ];
+    const qualityChecks = `run: |
+          pnpm test
+          pnpm build
+          cd src-tauri
+          cargo test
+          cargo fmt --check
+          cargo clippy --all-targets --all-features -- -D warnings`;
 
     expect(qualityJob).toContain("runs-on: ubuntu-24.04");
-    for (const command of qualityChecks) {
-      expect(qualityJob).toContain(command);
-    }
+    expect(qualityJob).toContain(qualityChecks);
+    expect(qualityJob.match(/^\s+cd src-tauri\s*$/gm)).toHaveLength(1);
 
     expect(qualityJob).not.toContain("tauri-apps/tauri-action");
     expect(publishJob).toMatch(/^    needs: quality$/m);
