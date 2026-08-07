@@ -12,6 +12,7 @@ use std::path::PathBuf;
 /// CoreGraphics renders with `kCGImageAlphaPremultipliedLast`, meaning each
 /// color channel has been multiplied by alpha/255. The PNG encoder expects
 /// straight alpha, so we divide each color channel back by alpha.
+#[cfg(target_os = "macos")]
 fn unpremultiply(premultiplied: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(premultiplied.len());
     for chunk in premultiplied.chunks_exact(4) {
@@ -37,6 +38,7 @@ fn unpremultiply(premultiplied: &[u8]) -> Vec<u8> {
 /// Encode RGBA thumbnail bytes as a data URL. If any alpha byte is less than
 /// 255, the image is encoded as PNG to preserve transparency. Otherwise it is
 /// encoded as JPEG for smaller output.
+#[cfg(any(target_os = "macos", test))]
 fn encode_thumbnail_data_url(width: u32, height: u32, rgba: &[u8]) -> AppResult<String> {
     let has_alpha = rgba.chunks_exact(4).any(|px| px[3] < 255);
 
