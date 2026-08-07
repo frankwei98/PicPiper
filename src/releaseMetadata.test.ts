@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { cwd } from "node:process";
 import { describe, expect, it } from "vitest";
 
-const releaseVersion = "0.1.1";
+const releaseVersion = "0.2.0";
 
 async function readVersions() {
   const [packageJson, cargoToml, tauriConfig] = await Promise.all([
@@ -35,7 +35,7 @@ function jobDefinition(workflow: string, jobName: string) {
 }
 
 describe("release metadata", () => {
-  it("declares the published v0.1.1 version in every build manifest", async () => {
+  it("declares the published v0.2.0 version in every build manifest", async () => {
     await expect(readVersions()).resolves.toEqual({
       npm: releaseVersion,
       cargo: releaseVersion,
