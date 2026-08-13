@@ -59,6 +59,17 @@ export function shouldRequeueForGlobalSettings(item: OptimizeItem): boolean {
   return item.status !== "inspecting" && item.status !== "failed" && item.status !== "cancelled";
 }
 
+export function isCurrentCompressionOutput(
+  item: OptimizeItem,
+  currentQuality: number,
+): item is OptimizeItem & { outputPath: string } {
+  return (
+    item.status === "compressed" &&
+    Boolean(item.outputPath) &&
+    item.settings.quality === currentQuality
+  );
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
   if (bytes >= 1_000) return `${Math.round(bytes / 1_000)} KB`;
