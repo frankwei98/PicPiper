@@ -1077,6 +1077,51 @@ describe("S3GalleryPage", () => {
     expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
   });
 
+  it("adopts asynchronously loaded defaults until the user edits the gallery scope", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    const galleryFocus = { prefix: "", highlightedKeys: [] };
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <S3GalleryPage galleryFocus={galleryFocus} profiles={[]} />,
+    );
+
+    rerender(
+      <S3GalleryPage
+        galleryFocus={galleryFocus}
+        profiles={[profile, profile2]}
+        defaultProfileId="p2"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
+    });
+
+    await user.selectOptions(screen.getByRole("combobox", { name: /profile/i }), "p1");
+    const prefixInput = screen.getByLabelText("Prefix");
+    await user.clear(prefixInput);
+    await user.type(prefixInput, "personal/edited");
+    await waitFor(() => {
+      expect(listObjects).toHaveBeenCalledWith({ profile, prefix: "personal/edited" });
+    });
+
+    rerender(
+      <S3GalleryPage
+        galleryFocus={galleryFocus}
+        profiles={[{ ...profile }, { ...profile2 }]}
+        defaultProfileId="p2"
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: /profile/i })).toHaveValue("p1");
+    expect(prefixInput).toHaveValue("personal/edited");
+  });
+
   it("debounces prefix changes and only calls listObjects once", async () => {
     // Use shouldAdvanceTime so timers auto-advance for Testing Library
     vi.useFakeTimers({ shouldAdvanceTime: true });

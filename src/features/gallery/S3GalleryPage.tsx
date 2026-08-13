@@ -84,6 +84,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [uploading, setUploading] = useState(false);
   const statusTimersRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentScopeRef = useRef<{ profileId: string; prefix: string } | null>(null);
+  const scopeEditedByUserRef = useRef(false);
 
   useEffect(() => {
     currentScopeRef.current = selectedProfile
@@ -102,6 +103,29 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     setDeleteTarget(null);
     setPaginationError(null);
   }, []);
+
+  // Settings may arrive after the gallery first renders with no profiles. Adopt
+  // their defaults only while the user has not made an explicit scope choice.
+  useEffect(() => {
+    if (
+      scopeEditedByUserRef.current ||
+      galleryFocus.profileId ||
+      galleryFocus.prefix ||
+      profiles.length === 0
+    ) {
+      return;
+    }
+
+    const defaultProfile =
+      profiles.find((profile) => profile.id === defaultProfileId) ?? profiles[0];
+    if (!defaultProfile) return;
+
+    const defaultPrefix = defaultProfile.defaultPrefix || "";
+    setSelectedProfileId(defaultProfile.id);
+    setPrefix(defaultPrefix);
+    setDebouncedPrefix(defaultPrefix);
+    resetGalleryScope();
+  }, [defaultProfileId, galleryFocus.prefix, galleryFocus.profileId, profiles, resetGalleryScope]);
 
   // Sync profile and prefix when galleryFocus changes externally
   useEffect(() => {
@@ -405,6 +429,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           className="w-full"
           value={selectedProfile?.id ?? ""}
           onChange={(e) => {
+            scopeEditedByUserRef.current = true;
             const newId = e.target.value;
             setSelectedProfileId(newId);
             const newProfile = profiles.find((p) => p.id === newId);
@@ -425,6 +450,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           placeholder="images/2026/06"
           value={prefix}
           onChange={(e) => {
+            scopeEditedByUserRef.current = true;
             setPrefix(e.target.value);
           }}
         />
