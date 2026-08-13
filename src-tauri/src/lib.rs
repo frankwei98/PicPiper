@@ -18,7 +18,6 @@ use models::{
     SaveCredentialRequest, SaveCredentialResponse, SaveSettingsRequest, UploadHistoryEntry,
     UploadObjectRequest,
 };
-use sha2::{Digest, Sha256};
 use state::{AppPaths, CompressionLimiter, HistoryStore};
 use tauri::{Manager, State};
 
@@ -163,56 +162,7 @@ async fn upload_gallery_object(
 async fn generate_object_key(
     request: GenerateObjectKeyRequest,
 ) -> AppResult<GenerateObjectKeyResponse> {
-    // Stream the file through SHA-256 to avoid reading the entire contents
-    // into memory. Large images (≥10 MB) would otherwise double their peak
-    // memory footprint since upload_object reads the file again.
-    use tokio::io::AsyncReadExt;
-    let mut file = tokio::fs::File::open(&request.source_path)
-        .await
-        .map_err(|err| error::AppError::new("readFileFailed", err.to_string()))?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 64 * 1024];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .await
-            .map_err(|err| error::AppError::new("readFileFailed", err.to_string()))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    let content_hash = hex::encode(hasher.finalize());
-
-    let date = chrono::Utc::now().date_naive();
-    let rendered = naming::render_object_key(
-        &request.naming_template,
-        &request.output_file_name,
-        &request.ext,
-        &content_hash,
-        date,
-    )?;
-
-    // Prefix the rendered key with the selected prefix if the template doesn't already
-    // start with it as a complete path segment boundary.
-    let prefix_normalized = request.prefix.trim_matches('/');
-    let object_key = if !prefix_normalized.is_empty()
-        && !naming::has_path_prefix(&rendered, prefix_normalized)
-    {
-        format!("{}/{}", prefix_normalized, rendered)
-    } else {
-        rendered
-    };
-
-    // Normalize slashes and validate
-    let object_key = object_key.replace('\\', "/");
-    let object_key = match request.collision_suffix.as_deref() {
-        Some(suffix) => naming::append_object_key_suffix(&object_key, suffix)?,
-        None => object_key,
-    };
-    naming::validate_object_key(&object_key)?;
-
-    Ok(GenerateObjectKeyResponse { object_key })
+    naming::generate_object_key(request).await
 }
 
 #[tauri::command]

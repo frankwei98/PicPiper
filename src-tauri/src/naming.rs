@@ -1,4 +1,60 @@
 use crate::error::{AppError, AppResult};
+use crate::models::{GenerateObjectKeyRequest, GenerateObjectKeyResponse};
+use sha2::{Digest, Sha256};
+use tokio::io::AsyncReadExt;
+
+pub async fn generate_object_key(
+    request: GenerateObjectKeyRequest,
+) -> AppResult<GenerateObjectKeyResponse> {
+    generate_object_key_for_date(request, chrono::Utc::now().date_naive()).await
+}
+
+pub async fn generate_object_key_for_date(
+    request: GenerateObjectKeyRequest,
+    date: chrono::NaiveDate,
+) -> AppResult<GenerateObjectKeyResponse> {
+    let mut file = tokio::fs::File::open(&request.source_path)
+        .await
+        .map_err(|err| AppError::new("readFileFailed", err.to_string()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        let bytes_read = file
+            .read(&mut buffer)
+            .await
+            .map_err(|err| AppError::new("readFileFailed", err.to_string()))?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+    let content_hash = hex::encode(hasher.finalize());
+
+    let rendered = render_object_key(
+        &request.naming_template,
+        &request.output_file_name,
+        &request.ext,
+        &content_hash,
+        date,
+    )?;
+
+    let prefix_normalized = request.prefix.trim_matches('/');
+    let object_key =
+        if !prefix_normalized.is_empty() && !has_path_prefix(&rendered, prefix_normalized) {
+            format!("{prefix_normalized}/{rendered}")
+        } else {
+            rendered
+        };
+
+    let object_key = object_key.replace('\\', "/");
+    let object_key = match request.collision_suffix.as_deref() {
+        Some(suffix) => append_object_key_suffix(&object_key, suffix)?,
+        None => object_key,
+    };
+    validate_object_key(&object_key)?;
+
+    Ok(GenerateObjectKeyResponse { object_key })
+}
 
 /// Validates that an object key is safe for use with S3-compatible storage.
 /// Rejects keys that could cause path traversal, contain control characters,
@@ -135,6 +191,33 @@ pub fn render_object_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::GenerateObjectKeyRequest;
+
+    #[tokio::test]
+    async fn generates_complete_object_key_from_file() {
+        let source = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(source.path(), b"abc").unwrap();
+        let request = GenerateObjectKeyRequest {
+            source_path: source.path().to_string_lossy().into_owned(),
+            output_file_name: "My Photo.JPG".to_string(),
+            prefix: "/images/".to_string(),
+            naming_template: "images\\{yyyy}\\{mm}\\{slug}-{hash}.{ext}".to_string(),
+            ext: "webp".to_string(),
+            collision_suffix: Some("retry-1".to_string()),
+        };
+
+        let response = generate_object_key_for_date(
+            request,
+            chrono::NaiveDate::from_ymd_opt(2026, 6, 26).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            response.object_key,
+            "images/2026/06/my-photo-ba7816bf-retry-1.webp"
+        );
+    }
 
     #[test]
     fn renders_default_template_with_slug_and_hash() {
