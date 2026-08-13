@@ -61,6 +61,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const optimizerRun = useRef<{ runId: string; outputDir: string } | null>(null);
   const tauriDragDropActive = useRef(false);
   const debounceRef = useRef<number | undefined>(undefined);
+  const pendingQualityRef = useRef<number | undefined>(undefined);
   const qualityRef = useRef(quality);
   const uploads = useOptimizeUploads({ activeProfile, items, namingTemplate, onUploadedToS3 });
 
@@ -362,37 +363,62 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   }, [items, runCompressionTask]);
 
   // --- Global settings requeue with debounce ---
+  const applyGlobalRequeue = useCallback((nextQuality: number) => {
+    if (!uploads.canMutateQueue()) return false;
+
+    pendingQualityRef.current = undefined;
+    optimizerRun.current = null;
+    preferredNameCounts.current.clear();
+    uploads.reset();
+    setItems((current) =>
+      current.map((item) =>
+        shouldRequeueForGlobalSettings(item)
+          ? {
+              ...item,
+              status: "queued",
+              outputBytes: undefined,
+              outputPath: undefined,
+              outputFileName: undefined,
+              compressedPreviewUrl: undefined,
+              error: undefined,
+              cancelling: false,
+              taskVersion: (item.taskVersion ?? 0) + 1,
+              settings: {
+                ...item.settings,
+                quality: nextQuality,
+                removeGps: true,
+              },
+            }
+          : item,
+      ),
+    );
+    return true;
+  }, [uploads.canMutateQueue, uploads.reset]);
+
   const scheduleGlobalRequeue = (nextQuality: number) => {
-    if (!uploads.canMutateQueue()) return;
+    pendingQualityRef.current = nextQuality;
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
-      optimizerRun.current = null;
-      preferredNameCounts.current.clear();
-      uploads.reset();
-      setItems((current) =>
-        current.map((item) =>
-          shouldRequeueForGlobalSettings(item)
-            ? {
-                ...item,
-                status: "queued",
-                outputBytes: undefined,
-                outputPath: undefined,
-                outputFileName: undefined,
-                compressedPreviewUrl: undefined,
-                error: undefined,
-                cancelling: false,
-                taskVersion: (item.taskVersion ?? 0) + 1,
-                settings: {
-                  ...item.settings,
-                  quality: nextQuality,
-                  removeGps: true,
-                },
-              }
-            : item,
-        ),
-      );
+      if (!uploads.canMutateQueue()) return;
+
+      applyGlobalRequeue(nextQuality);
     }, 400);
   };
+
+  useEffect(() => {
+    if (uploads.isUploading) {
+      window.clearTimeout(debounceRef.current);
+      return;
+    }
+
+    const pendingQuality = pendingQualityRef.current;
+    if (pendingQuality !== undefined) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = window.setTimeout(() => {
+        applyGlobalRequeue(pendingQuality);
+      }, 400);
+    }
+  }, [applyGlobalRequeue, uploads.isUploading]);
 
   const handleQualityChange = (nextQuality: number) => {
     if (!uploads.canMutateQueue()) return;
