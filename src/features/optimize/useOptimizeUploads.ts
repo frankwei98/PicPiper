@@ -33,32 +33,49 @@ export function useOptimizeUploads({
   const [uploadingItemIds, setUploadingItemIds] = useState<Set<string>>(new Set());
   const [failedUploads, setFailedUploads] = useState<Map<string, UploadFailure>>(new Map());
   const [uploadedItemIds, setUploadedItemIds] = useState<Set<string>>(new Set());
-  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
+  const failedUploadsRef = useRef<Map<string, UploadFailure>>(new Map());
+  const uploadedKeysRef = useRef<string[]>([]);
   const collisionRetryAttempts = useRef(new Map<string, number>());
   const uploadInProgressRef = useRef(false);
 
   const canMutateQueue = useCallback(() => !uploadInProgressRef.current, []);
 
+  const updateFailedUploads = useCallback(
+    (update: (current: Map<string, UploadFailure>) => Map<string, UploadFailure>) => {
+      const next = update(failedUploadsRef.current);
+      failedUploadsRef.current = next;
+      setFailedUploads(() => next);
+      return next;
+    },
+    [],
+  );
+
   const forgetItem = useCallback((itemId: string) => {
+    if (!canMutateQueue()) return false;
+
     setUploadedItemIds((current) => {
       const next = new Set(current);
       next.delete(itemId);
       return next;
     });
-    setFailedUploads((current) => {
+    updateFailedUploads((current) => {
       const next = new Map(current);
       next.delete(itemId);
       return next;
     });
     collisionRetryAttempts.current.delete(itemId);
-  }, []);
+    return true;
+  }, [canMutateQueue, updateFailedUploads]);
 
   const reset = useCallback(() => {
-    setUploadedItemIds(new Set());
-    setFailedUploads(new Map());
-    setUploadedKeys([]);
+    if (!canMutateQueue()) return false;
+
+    setUploadedItemIds(() => new Set());
+    updateFailedUploads(() => new Map());
+    uploadedKeysRef.current = [];
     collisionRetryAttempts.current.clear();
-  }, []);
+    return true;
+  }, [canMutateQueue, updateFailedUploads]);
 
   const executeUploads = async (
     uploadItems: OptimizeItem[],
@@ -73,55 +90,58 @@ export function useOptimizeUploads({
     const newlyUploadedItemIds: string[] = [];
     const failed = new Map<string, UploadFailure>();
 
-    for (const item of uploadItems) {
-      const outputFileName = item.outputFileName ?? "image.webp";
-      const extension = item.settings.targetFormat;
-      try {
-        const collisionSuffix = collisionRetryItemIds.has(item.id)
-          ? `retry-${(collisionRetryAttempts.current.get(item.id) ?? 0) + 1}`
-          : undefined;
-        if (collisionSuffix) {
-          collisionRetryAttempts.current.set(
-            item.id,
-            (collisionRetryAttempts.current.get(item.id) ?? 0) + 1,
-          );
+    try {
+      for (const item of uploadItems) {
+        const outputFileName = item.outputFileName ?? "image.webp";
+        const extension = item.settings.targetFormat;
+        try {
+          const collisionSuffix = collisionRetryItemIds.has(item.id)
+            ? `retry-${(collisionRetryAttempts.current.get(item.id) ?? 0) + 1}`
+            : undefined;
+          if (collisionSuffix) {
+            collisionRetryAttempts.current.set(
+              item.id,
+              (collisionRetryAttempts.current.get(item.id) ?? 0) + 1,
+            );
+          }
+          const { objectKey } = await namingApi.generateObjectKey({
+            sourcePath: item.outputPath as string,
+            outputFileName,
+            prefix,
+            namingTemplate,
+            ext: extension,
+            ...(collisionSuffix ? { collisionSuffix } : {}),
+          });
+
+          const result = await uploadApi.uploadObject({
+            profile,
+            sourcePath: item.outputPath as string,
+            objectKey,
+            contentType: contentTypeForExtension(extension),
+            sourceFilename: item.fileName,
+            outputFilename: outputFileName,
+            originalBytes: item.originalBytes,
+            targetFormat: extension,
+          });
+
+          newlyUploaded.push(result.key);
+          newlyUploadedItemIds.push(item.id);
+          collisionRetryAttempts.current.delete(item.id);
+        } catch (error) {
+          failed.set(item.id, {
+            code: errorCode(error),
+            message: errorMessage(error, "Upload failed"),
+          });
         }
-        const { objectKey } = await namingApi.generateObjectKey({
-          sourcePath: item.outputPath as string,
-          outputFileName,
-          prefix,
-          namingTemplate,
-          ext: extension,
-          ...(collisionSuffix ? { collisionSuffix } : {}),
-        });
 
-        const result = await uploadApi.uploadObject({
-          profile,
-          sourcePath: item.outputPath as string,
-          objectKey,
-          contentType: contentTypeForExtension(extension),
-          sourceFilename: item.fileName,
-          outputFilename: outputFileName,
-          originalBytes: item.originalBytes,
-          targetFormat: extension,
-        });
-
-        newlyUploaded.push(result.key);
-        newlyUploadedItemIds.push(item.id);
-        collisionRetryAttempts.current.delete(item.id);
-      } catch (error) {
-        failed.set(item.id, {
-          code: errorCode(error),
-          message: errorMessage(error, "Upload failed"),
-        });
+        remainingItemIds.delete(item.id);
+        setUploadingItemIds(() => new Set(remainingItemIds));
       }
-
-      remainingItemIds.delete(item.id);
-      setUploadingItemIds(new Set(remainingItemIds));
+    } finally {
+      setUploadingItemIds(() => new Set());
+      uploadInProgressRef.current = false;
     }
 
-    setUploadingItemIds(new Set());
-    uploadInProgressRef.current = false;
     return { newlyUploaded, newlyUploadedItemIds, failed };
   };
 
@@ -132,7 +152,8 @@ export function useOptimizeUploads({
       return;
     }
     setUploadError(null);
-    if (failedUploads.size === 0) {
+    const currentFailures = failedUploadsRef.current;
+    if (currentFailures.size === 0) {
       collisionRetryAttempts.current.clear();
     }
     const prefix = activeProfile.defaultPrefix || "images";
@@ -141,7 +162,7 @@ export function useOptimizeUploads({
         item.status === "compressed" &&
         item.outputPath &&
         !uploadedItemIds.has(item.id) &&
-        !failedUploads.has(item.id),
+        !currentFailures.has(item.id),
     );
     if (compressedItems.length === 0) {
       setUploadError("No compressed outputs to upload.");
@@ -153,18 +174,20 @@ export function useOptimizeUploads({
       activeProfile,
       prefix,
     );
-    const remainingFailures = new Map(failedUploads);
-    for (const item of compressedItems) {
-      remainingFailures.delete(item.id);
-    }
-    for (const [itemId, failure] of failed) {
-      remainingFailures.set(itemId, failure);
-    }
-    setFailedUploads(remainingFailures);
+    const remainingFailures = updateFailedUploads((current) => {
+      const next = new Map(current);
+      for (const item of compressedItems) {
+        next.delete(item.id);
+      }
+      for (const [itemId, failure] of failed) {
+        next.set(itemId, failure);
+      }
+      return next;
+    });
     setUploadedItemIds((current) => new Set([...current, ...newlyUploadedItemIds]));
 
-    const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
-    setUploadedKeys(allUploadedKeys);
+    const allUploadedKeys = [...uploadedKeysRef.current, ...newlyUploaded];
+    uploadedKeysRef.current = allUploadedKeys;
 
     if (remainingFailures.size === 0) {
       onUploadedToS3?.({
@@ -189,8 +212,9 @@ export function useOptimizeUploads({
     }
     setUploadError(null);
     const prefix = activeProfile.defaultPrefix || "images";
+    const currentFailures = failedUploadsRef.current;
     const failedItems = items.filter(
-      (item) => item.status === "compressed" && item.outputPath && failedUploads.has(item.id),
+      (item) => item.status === "compressed" && item.outputPath && currentFailures.has(item.id),
     );
     if (failedItems.length === 0) {
       setUploadError("No failed uploads to retry.");
@@ -199,7 +223,7 @@ export function useOptimizeUploads({
 
     const collisionRetryItemIds = new Set(
       failedItems
-        .filter((item) => failedUploads.get(item.id)?.code === "objectAlreadyExists")
+        .filter((item) => currentFailures.get(item.id)?.code === "objectAlreadyExists")
         .map((item) => item.id),
     );
     const { newlyUploaded, newlyUploadedItemIds, failed: stillFailed } = await executeUploads(
@@ -208,11 +232,11 @@ export function useOptimizeUploads({
       prefix,
       collisionRetryItemIds,
     );
-    setFailedUploads(stillFailed);
+    updateFailedUploads(() => stillFailed);
     setUploadedItemIds((current) => new Set([...current, ...newlyUploadedItemIds]));
 
-    const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
-    setUploadedKeys(allUploadedKeys);
+    const allUploadedKeys = [...uploadedKeysRef.current, ...newlyUploaded];
+    uploadedKeysRef.current = allUploadedKeys;
 
     if (stillFailed.size === 0) {
       onUploadedToS3?.({
