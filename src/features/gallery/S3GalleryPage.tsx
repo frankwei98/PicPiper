@@ -35,6 +35,12 @@ interface S3GalleryPageProps {
   onNavigate?: (view: AppView) => void;
 }
 
+interface ScopedHighlights {
+  profileId: string;
+  prefix: string;
+  keys: string[];
+}
+
 export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, namingTemplate: namingTemplateProp, onNavigate }: S3GalleryPageProps) {
   const resolveDefaultId = () =>
     galleryFocus.profileId ?? defaultProfileId ?? profiles[0]?.id ?? "";
@@ -78,7 +84,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
-  const [highlightedKeysState, setHighlightedKeysState] = useState<string[]>(galleryFocus.highlightedKeys);
+  const [localHighlights, setLocalHighlights] = useState<ScopedHighlights | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
   const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
@@ -284,7 +290,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       }
 
       if (newKeys.length > 0 && isCurrentScope(uploadScope)) {
-        setHighlightedKeysState(newKeys);
+        setLocalHighlights({ ...uploadScope, keys: newKeys });
         const newKeySet = new Set(newKeys);
         setObjects((current) => [
           ...newObjects,
@@ -303,10 +309,34 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     }
   };
 
-  const highlightedKeys = useMemo(
-    () => new Set([...galleryFocus.highlightedKeys, ...highlightedKeysState]),
-    [galleryFocus.highlightedKeys, highlightedKeysState],
-  );
+  const highlightedKeys = useMemo(() => {
+    if (!selectedProfile) return new Set<string>();
+
+    const focusProfileId =
+      galleryFocus.profileId ?? defaultProfileId ?? profiles[0]?.id ?? "";
+    const focusProfile = profiles.find((profile) => profile.id === focusProfileId);
+    const focusPrefix = galleryFocus.prefix || focusProfile?.defaultPrefix || "";
+    const externalKeys =
+      selectedProfile.id === focusProfileId && prefix === focusPrefix
+        ? galleryFocus.highlightedKeys
+        : [];
+    const localKeys =
+      localHighlights?.profileId === selectedProfile.id &&
+      localHighlights.prefix === prefix
+        ? localHighlights.keys
+        : [];
+
+    return new Set([...externalKeys, ...localKeys]);
+  }, [
+    defaultProfileId,
+    galleryFocus.highlightedKeys,
+    galleryFocus.prefix,
+    galleryFocus.profileId,
+    localHighlights,
+    prefix,
+    profiles,
+    selectedProfile,
+  ]);
 
   const filteredObjects = useMemo(() => {
     if (!search.trim()) return objects;
@@ -379,7 +409,13 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       await galleryApi.deleteObject({ profile: selectedProfile, key: targetKey });
       if (isCurrentScope(deleteScope)) {
         setObjects((current) => current.filter((object) => object.key !== targetKey));
-        setHighlightedKeysState((current) => current.filter((key) => key !== targetKey));
+        setLocalHighlights((current) =>
+          current &&
+          current.profileId === deleteScope.profileId &&
+          current.prefix === deleteScope.prefix
+            ? { ...current, keys: current.keys.filter((key) => key !== targetKey) }
+            : current,
+        );
       }
     } catch (err) {
       setDeleteError(`Failed to delete ${targetKey}: ${errorMessage(err, "Delete failed")}`);

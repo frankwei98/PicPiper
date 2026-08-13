@@ -583,6 +583,61 @@ describe("S3GalleryPage", () => {
     expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
   });
 
+  it("shows New only in the profile and prefix that supplied the highlight", async () => {
+    const profile2 = {
+      ...profile,
+      id: "p2",
+      name: "Work S3",
+      defaultPrefix: "work/images",
+    };
+    const sharedObject = {
+      key: "shared/photo.webp",
+      size: 240_000,
+      publicUrl: "https://cdn.example.com/shared/photo.webp",
+      isImage: true,
+    };
+    listObjects.mockResolvedValue({
+      objects: [sharedObject],
+      nextContinuationToken: null,
+    });
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <S3GalleryPage
+        galleryFocus={{
+          profileId: "p1",
+          prefix: "personal/images",
+          highlightedKeys: [sharedObject.key],
+        }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    await screen.findByText(sharedObject.key);
+    expect(screen.getByText("New")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: /profile/i }), "p2");
+    await waitFor(() => {
+      expect(listObjects).toHaveBeenCalledWith({ profile: profile2, prefix: "work/images" });
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("New")).not.toBeInTheDocument();
+    });
+
+    unmount();
+    render(
+      <S3GalleryPage
+        galleryFocus={{
+          profileId: "p2",
+          prefix: "work/images",
+          highlightedKeys: [sharedObject.key],
+        }}
+        profiles={[profile, profile2]}
+      />,
+    );
+
+    expect(await screen.findByText("New")).toBeInTheDocument();
+  });
+
   it("ignores a stale object response after switching profiles", async () => {
     const profile2 = {
       ...profile,
