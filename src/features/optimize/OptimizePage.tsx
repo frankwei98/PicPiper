@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { CompressionSettings, ImageInspection, OptimizeItem, S3Profile, WritableImageFormat } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
-import { namingApi, tauriApi, uploadApi } from "../../api/tauri";
+import { tauriApi } from "../../api/tauri";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,24 +16,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { fileNameFromPath } from "../../lib/path";
-import { errorCode, errorMessage } from "../../lib/error";
-import { contentTypeForExtension, extensionsFor } from "../../lib/imageFormats";
-import { XIcon } from "lucide-react";
+import { errorMessage } from "../../lib/error";
+import { extensionsFor } from "../../lib/imageFormats";
 import {
-  AVAILABLE_OUTPUT_FORMATS,
   defaultTargetFormat,
   formatBytes,
   getCompressionConcurrency,
   makeUniqueOutputFileNames,
   trackDispatchedNames,
-  savingsPercent,
   shouldRequeueForGlobalSettings,
 } from "./optimizeQueue";
+import { OptimizeItemCard } from "./OptimizeItemCard";
+import { useOptimizeUploads } from "./useOptimizeUploads";
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   targetFormat: "webp",
@@ -47,16 +45,10 @@ interface OptimizePageProps {
   namingTemplate: string;
 }
 
-interface UploadFailure {
-  code?: string;
-  message: string;
-}
-
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [quality, setQuality] = useState(DEFAULT_SETTINGS.quality);
   const [compareItemId, setCompareItemId] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
@@ -70,7 +62,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const tauriDragDropActive = useRef(false);
   const debounceRef = useRef<number | undefined>(undefined);
   const qualityRef = useRef(quality);
-  const uploadInProgressRef = useRef(false);
+  const uploads = useOptimizeUploads({ activeProfile, items, namingTemplate, onUploadedToS3 });
 
   useEffect(() => {
     return () => {
@@ -79,18 +71,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   }, []);
 
   const removeItem = (id: string) => {
-    if (uploadInProgressRef.current) return;
+    if (!uploads.canMutateQueue()) return;
     setItems((current) => current.filter((item) => item.id !== id));
-    setUploadedItemIds((current) => {
-      const next = new Set(current);
-      next.delete(id);
-      return next;
-    });
-    setUploadFailedItems((current) => {
-      const next = new Map(current);
-      next.delete(id);
-      return next;
-    });
+    uploads.forgetItem(id);
   };
 
   const inspectSingleItem = useCallback(async (itemId: string, sourcePath: string, capturedVersion: number) => {
@@ -154,7 +137,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   }, []);
 
   const importImages = useCallback(async (paths: string[]) => {
-    if (uploadInProgressRef.current) return;
+    if (!uploads.canMutateQueue()) return;
     setImporting(true);
     setDropError(null);
 
@@ -176,10 +159,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
 
     setImporting(false);
-  }, [quality, inspectSingleItem]);
+  }, [quality, inspectSingleItem, uploads.canMutateQueue]);
 
   const handleChooseImages = async () => {
-    if (uploadInProgressRef.current) return;
+    if (!uploads.canMutateQueue()) return;
     const selected = await open({
       multiple: true,
       filters: [
@@ -200,7 +183,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     event.preventDefault();
     setDragging(false);
 
-    if (uploadInProgressRef.current) return;
+    if (!uploads.canMutateQueue()) return;
 
     // Skip DOM drop when Tauri webview drag/drop is handling it
     if (tauriDragDropActive.current) return;
@@ -221,7 +204,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
 
     await importImages(paths);
-  }, [importImages]);
+  }, [importImages, uploads.canMutateQueue]);
 
   const handleDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -380,14 +363,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   // --- Global settings requeue with debounce ---
   const scheduleGlobalRequeue = (nextQuality: number) => {
-    if (uploadInProgressRef.current) return;
+    if (!uploads.canMutateQueue()) return;
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       optimizerRun.current = null;
       preferredNameCounts.current.clear();
-      setUploadedItemIds(new Set());
-      setUploadFailedItems(new Map());
-      setUploadedKeys([]);
+      uploads.reset();
       setItems((current) =>
         current.map((item) =>
           shouldRequeueForGlobalSettings(item)
@@ -414,7 +395,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const handleQualityChange = (nextQuality: number) => {
-    if (uploadInProgressRef.current) return;
+    if (!uploads.canMutateQueue()) return;
     qualityRef.current = nextQuality;
     setQuality(nextQuality);
     scheduleGlobalRequeue(nextQuality);
@@ -422,19 +403,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   // --- Per-item actions ---
   const updateFormat = (id: string, targetFormat: WritableImageFormat) => {
-    if (uploadInProgressRef.current) return;
+    if (!uploads.canMutateQueue()) return;
     optimizerRun.current = null;
     preferredNameCounts.current.clear();
-    setUploadedItemIds((current) => {
-      const next = new Set(current);
-      next.delete(id);
-      return next;
-    });
-    setUploadFailedItems((current) => {
-      const next = new Map(current);
-      next.delete(id);
-      return next;
-    });
+    uploads.forgetItem(id);
     setItems((current) =>
       current.map((item) =>
         item.id === id && item.status !== "cancelled"
@@ -455,7 +427,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const cancelItem = (id: string) => {
-    if (uploadInProgressRef.current) return;
+    if (!uploads.canMutateQueue()) return;
     setItems((current) =>
       current.map((item) =>
         item.id === id
@@ -471,7 +443,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const retryItem = (id: string) => {
-    if (uploadInProgressRef.current) return;
+    if (!uploads.canMutateQueue()) return;
     const item = items.find((i) => i.id === id);
     if (item && item.originalBytes === 0) {
       const nextTaskVersion = (item.taskVersion ?? 0) + 1;
@@ -541,185 +513,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
   };
 
-  const [uploadingItems, setUploadingItems] = useState<Set<string>>(new Set());
-  const [uploadFailedItems, setUploadFailedItems] = useState<Map<string, UploadFailure>>(new Map());
-  const [uploadedItemIds, setUploadedItemIds] = useState<Set<string>>(new Set());
-  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
-  const collisionRetryAttempts = useRef(new Map<string, number>());
-  const uploadInProgress = uploadingItems.size > 0;
-
-  const executeUploads = async (
-    uploadItems: OptimizeItem[],
-    prefix: string,
-    collisionRetryItemIds = new Set<string>(),
-  ): Promise<{
-    newlyUploaded: string[];
-    newlyUploadedItemIds: string[];
-    failed: Map<string, UploadFailure>;
-  }> => {
-    uploadInProgressRef.current = true;
-    const itemIds = new Set(uploadItems.map((item) => item.id));
-    setUploadingItems(itemIds);
-    const newlyUploaded: string[] = [];
-    const newlyUploadedItemIds: string[] = [];
-    const failed = new Map<string, UploadFailure>();
-
-    for (const item of uploadItems) {
-
-      const outputFileName = item.outputFileName ?? "image.webp";
-      const ext = item.settings.targetFormat;
-      try {
-        const collisionSuffix = collisionRetryItemIds.has(item.id)
-          ? `retry-${(collisionRetryAttempts.current.get(item.id) ?? 0) + 1}`
-          : undefined;
-        if (collisionSuffix) {
-          collisionRetryAttempts.current.set(item.id, (collisionRetryAttempts.current.get(item.id) ?? 0) + 1);
-        }
-        const { objectKey } = await namingApi.generateObjectKey({
-          sourcePath: item.outputPath as string,
-          outputFileName,
-          prefix,
-          namingTemplate,
-          ext,
-          ...(collisionSuffix ? { collisionSuffix } : {}),
-        });
-
-        const result = await uploadApi.uploadObject({
-          profile: activeProfile!,
-          sourcePath: item.outputPath as string,
-          objectKey,
-          contentType: contentTypeForExtension(ext),
-          sourceFilename: item.fileName,
-          outputFilename: outputFileName,
-          originalBytes: item.originalBytes,
-          targetFormat: ext,
-        });
-
-        newlyUploaded.push(result.key);
-        newlyUploadedItemIds.push(item.id);
-        collisionRetryAttempts.current.delete(item.id);
-      } catch (err) {
-        failed.set(item.id, {
-          code: errorCode(err),
-          message: errorMessage(err, "Upload failed"),
-        });
-      }
-
-      // Remove completed item from uploading set
-      itemIds.delete(item.id);
-      setUploadingItems(new Set(itemIds));
-    }
-
-    setUploadingItems(new Set());
-    uploadInProgressRef.current = false;
-    return { newlyUploaded, newlyUploadedItemIds, failed };
-  };
-
-  const uploadToS3 = async () => {
-    if (uploadInProgressRef.current) return;
-    if (!activeProfile) {
-      setUploadError("Configure and select an S3 profile before uploading.");
-      return;
-    }
-    setUploadError(null);
-    if (uploadFailedItems.size === 0) {
-      collisionRetryAttempts.current.clear();
-    }
-    const prefix = activeProfile.defaultPrefix || "images";
-    const compressedItems = items.filter(
-      (item) =>
-        item.status === "compressed" &&
-        item.outputPath &&
-        !uploadedItemIds.has(item.id) &&
-        !uploadFailedItems.has(item.id),
-    );
-    if (compressedItems.length === 0) {
-      setUploadError("No compressed outputs to upload.");
-      return;
-    }
-
-    const { newlyUploaded, newlyUploadedItemIds, failed } = await executeUploads(compressedItems, prefix);
-    const remainingFailures = new Map(uploadFailedItems);
-    for (const item of compressedItems) {
-      remainingFailures.delete(item.id);
-    }
-    for (const [itemId, failure] of failed) {
-      remainingFailures.set(itemId, failure);
-    }
-    setUploadFailedItems(remainingFailures);
-    setUploadedItemIds((current) => new Set([...current, ...newlyUploadedItemIds]));
-
-    const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
-    setUploadedKeys(allUploadedKeys);
-
-    if (remainingFailures.size === 0) {
-      onUploadedToS3?.({
-        profileId: activeProfile.id,
-        prefix,
-        highlightedKeys: allUploadedKeys,
-      });
-    } else if (failed.size === 0) {
-      setUploadError(`${remainingFailures.size} failed upload(s) still need retrying.`);
-    } else {
-      setUploadError(
-        `${failed.size} of ${compressedItems.length} upload(s) failed. Fix and retry.`,
-      );
-    }
-  };
-
-  const retryUploads = async () => {
-    if (uploadInProgressRef.current) return;
-    if (!activeProfile) {
-      setUploadError("Configure and select an S3 profile before uploading.");
-      return;
-    }
-    setUploadError(null);
-    const prefix = activeProfile.defaultPrefix || "images";
-    const failedItems = items.filter(
-      (item) => item.status === "compressed" && item.outputPath && uploadFailedItems.has(item.id),
-    );
-    if (failedItems.length === 0) {
-      setUploadError("No failed uploads to retry.");
-      return;
-    }
-
-    const collisionRetryItemIds = new Set(
-      failedItems
-        .filter((item) => uploadFailedItems.get(item.id)?.code === "objectAlreadyExists")
-        .map((item) => item.id),
-    );
-    const { newlyUploaded, newlyUploadedItemIds, failed: stillFailed } = await executeUploads(
-      failedItems,
-      prefix,
-      collisionRetryItemIds,
-    );
-    setUploadFailedItems(stillFailed);
-    setUploadedItemIds((current) => new Set([...current, ...newlyUploadedItemIds]));
-
-    const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
-    setUploadedKeys(allUploadedKeys);
-
-    if (stillFailed.size === 0) {
-      onUploadedToS3?.({
-        profileId: activeProfile.id,
-        prefix,
-        highlightedKeys: allUploadedKeys,
-      });
-    } else {
-      setUploadError(
-        `${stillFailed.size} of ${failedItems.length} upload(s) failed. Fix and retry.`,
-      );
-    }
-  };
-
   const compareItem = compareItemId ? items.find((i) => i.id === compareItemId) : undefined;
-  const newUploadItemCount = items.filter(
-    (item) =>
-      item.status === "compressed" &&
-      item.outputPath &&
-      !uploadedItemIds.has(item.id) &&
-      !uploadFailedItems.has(item.id),
-  ).length;
 
   return (
     <div className="grid w-full max-w-6xl gap-6">
@@ -734,7 +528,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           </span>
           <Label className="grid w-full gap-2 items-start">
             Quality {quality}%
-            <Slider aria-label="Quality" value={quality} onValueChange={handleQualityChange} min={1} max={100} disabled={uploadInProgress} />
+            <Slider aria-label="Quality" value={quality} onValueChange={handleQualityChange} min={1} max={100} disabled={uploads.isUploading} />
           </Label>
         </div>
       </header>
@@ -742,7 +536,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       <button
         type="button"
         data-testid="drop-zone"
-        disabled={importing || uploadInProgress}
+        disabled={importing || uploads.isUploading}
         className={cn(
           "w-full border-2 border-dashed rounded-xl bg-muted/40 p-12 px-8 text-center text-muted-foreground text-sm",
           "transition-[border-color,background-color] duration-150 ease-out cursor-pointer",
@@ -785,96 +579,26 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
       <section className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]" aria-label="Images to compress">
         {items.map((item) => (
-          <Card className="group relative transition-[transform,box-shadow] hover:-translate-y-px" key={item.id}>
-            <CardContent className="grid gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                aria-label={`Remove ${item.fileName} from queue`}
-                onClick={() => removeItem(item.id)}
-                disabled={uploadInProgress}
-              >
-                <XIcon className="size-3" />
-              </Button>
-              <div className="w-full aspect-square rounded-lg overflow-hidden bg-muted flex items-center justify-center">
-                {item.status === "compressed" && item.compressedPreviewUrl ? (
-                  <Button className="h-full w-full rounded-none p-0" variant="ghost" type="button" aria-label={`Compare ${item.fileName}`} onClick={() => setCompareItemId(item.id)}>
-                    <img src={item.compressedPreviewUrl} alt="" loading="lazy" className="w-full h-full object-cover block" />
-                  </Button>
-                ) : item.originalPreviewUrl ? (
-                  <img src={item.originalPreviewUrl} alt="" loading="lazy" className="w-full h-full object-cover block" />
-                ) : (
-                  <Skeleton className="h-full w-full" aria-hidden="true" />
-                )}
-              </div>
-              <div className="flex flex-col gap-1 min-w-0">
-                <strong className="text-sm font-semibold overflow-hidden text-ellipsis whitespace-nowrap">{item.fileName}</strong>
-              {item.error ? (
-                <p className="text-destructive text-xs mt-0.5">{item.error}</p>
-              ) : item.status === "cancelled" ? (
-                <p className="text-muted-foreground mt-0.5 text-xs text-pretty">Cancelled</p>
-              ) : item.status === "compressing" || item.status === "loadingPreview" ? (
-                <p className="text-muted-foreground mt-0.5 text-xs text-pretty tabular-nums">Compressing...</p>
-              ) : item.status === "compressed" ? (
-                <p className="text-muted-foreground mt-0.5 text-xs text-pretty tabular-nums">
-                  {formatBytes(item.originalBytes)} {String.fromCodePoint(0x2192)} {formatBytes(item.outputBytes ?? 0)}{" "}
-                  ({savingsPercent(item.originalBytes, item.outputBytes ?? 0)}% saved)
-                </p>
-              ) : item.originalBytes > 0 ? (
-                <p className="text-muted-foreground mt-0.5 text-xs text-pretty tabular-nums">
-                  {item.sourceFormat.toUpperCase()} {String.fromCodePoint(0x2192)} {item.settings.targetFormat.toUpperCase()} |{" "}
-                  {formatBytes(item.originalBytes)}
-                </p>
-              ) : null}
-              {item.warning && <p className="text-muted-foreground text-xs mt-0.5">{item.warning}</p>}
-              {item.settings.targetFormat === "png" && (
-                <p className="text-muted-foreground text-xs mt-0.5">Quality does not apply to PNG output.</p>
-              )}
-              {item.status !== "inspecting" && item.status !== "cancelled" && !item.error && (
-                <Label className="flex flex-col items-start gap-2 mt-2 text-xs text-muted-foreground">
-                  <NativeSelect
-                    aria-label={`Format for ${item.fileName}`}
-                    className="w-full"
-                    value={item.settings.targetFormat}
-                    onChange={(event) => updateFormat(item.id, event.target.value as WritableImageFormat)}
-                    disabled={uploadInProgress}
-                  >
-                    {AVAILABLE_OUTPUT_FORMATS.map((format) => (
-                      <NativeSelectOption key={format} value={format}>
-                        {format.toUpperCase()}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
-                </Label>
-              )}
-              {uploadFailedItems.has(item.id) && (
-                <p className="text-destructive text-xs mt-0.5">{uploadFailedItems.get(item.id)?.message}</p>
-              )}
-              {uploadingItems.has(item.id) && (
-                <p className="text-muted-foreground text-xs mt-0.5">Uploading...</p>
-              )}
-              {(item.status === "inspecting" || item.status === "queued" || item.status === "compressing" || item.status === "loadingPreview") && (
-                <Button variant="ghost" size="sm" type="button" aria-label={`Cancel ${item.fileName}`} onClick={() => cancelItem(item.id)} disabled={uploadInProgress}>Cancel</Button>
-              )}
-              {(item.status === "failed" || item.status === "cancelled") && (
-                <Button variant="ghost" size="sm" type="button" aria-label={`Retry ${item.fileName}`} onClick={() => retryItem(item.id)} disabled={uploadInProgress}>Retry</Button>
-              )}
-              {(item.status === "compressed" || item.status === "failed" || item.status === "cancelled") && (
-                <Button variant="ghost" size="sm" type="button" aria-label={`Remove ${item.fileName}`} onClick={() => removeItem(item.id)} disabled={uploadInProgress}>Remove</Button>
-              )}
-              </div>
-            </CardContent>
-          </Card>
+          <OptimizeItemCard
+            key={item.id}
+            item={item}
+            mutationLocked={uploads.isUploading}
+            uploadFailure={uploads.failureMessageFor(item.id)}
+            uploading={uploads.isItemUploading(item.id)}
+            onCancel={cancelItem}
+            onCompare={setCompareItemId}
+            onFormatChange={updateFormat}
+            onRemove={removeItem}
+            onRetry={retryItem}
+          />
         ))}
       </section>
 
       {saving && <p className="text-sm text-muted-foreground" role="status">Saving files...</p>}
-      {uploadingItems.size > 0 && <p className="text-sm text-muted-foreground" role="status">Uploading {uploadingItems.size} image(s)...</p>}
-      {uploadError && (
+      {uploads.uploadingItemCount > 0 && <p className="text-sm text-muted-foreground" role="status">Uploading {uploads.uploadingItemCount} image(s)...</p>}
+      {uploads.uploadError && (
         <Alert variant="destructive">
-          <AlertDescription>{uploadError}</AlertDescription>
+          <AlertDescription>{uploads.uploadError}</AlertDescription>
         </Alert>
       )}
       {saveError && (
@@ -886,19 +610,17 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
       {items.some((item) => item.status === "compressed") && (
         <div className="flex gap-2 flex-wrap">
-          <Button type="button" onClick={handleSaveToLocal} disabled={saving || uploadingItems.size > 0}>Save to local folder</Button>
-          {uploadFailedItems.size > 0 && (
-            <Button type="button" onClick={retryUploads} disabled={saving || uploadingItems.size > 0}>
-              Retry {uploadFailedItems.size} failed upload(s)
-              {Array.from(uploadFailedItems.values()).some(
-                (failure) => failure.code === "objectAlreadyExists",
-              ) ? " with new key" : ""}
+          <Button type="button" onClick={handleSaveToLocal} disabled={saving || uploads.isUploading}>Save to local folder</Button>
+          {uploads.failedUploadCount > 0 && (
+            <Button type="button" onClick={uploads.retryUploads} disabled={saving || uploads.isUploading}>
+              Retry {uploads.failedUploadCount} failed upload(s)
+              {uploads.hasCollisionFailure ? " with new key" : ""}
             </Button>
           )}
-          {newUploadItemCount > 0 && (
-            <Button type="button" onClick={uploadToS3} disabled={saving || uploadingItems.size > 0}>
-              {uploadFailedItems.size > 0
-                ? `Upload ${newUploadItemCount} new image(s) to S3`
+          {uploads.newUploadItemCount > 0 && (
+            <Button type="button" onClick={uploads.uploadToS3} disabled={saving || uploads.isUploading}>
+              {uploads.failedUploadCount > 0
+                ? `Upload ${uploads.newUploadItemCount} new image(s) to S3`
                 : "Upload to S3"}
             </Button>
           )}
