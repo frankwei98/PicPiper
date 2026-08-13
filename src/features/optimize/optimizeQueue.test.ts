@@ -4,6 +4,7 @@ import {
   defaultTargetFormat,
   formatBytes,
   getCompressionConcurrency,
+  isCurrentCompressionOutput,
   makeOutputFileName,
   makeUniqueOutputFileNames,
   trackDispatchedNames,
@@ -118,6 +119,17 @@ describe("optimizeQueue", () => {
     expect(shouldRequeueForGlobalSettings(item("inspecting"))).toBe(false);
     expect(shouldRequeueForGlobalSettings(item("failed"))).toBe(false);
     expect(shouldRequeueForGlobalSettings(item("cancelled"))).toBe(false);
+  });
+
+  it("recognizes only compressed outputs for the current quality", () => {
+    const compressed = { ...item("compressed"), outputPath: "/tmp/compressed.jpg" };
+
+    expect(isCurrentCompressionOutput(compressed, 85)).toBe(true);
+    expect(isCurrentCompressionOutput(compressed, 70)).toBe(false);
+    expect(isCurrentCompressionOutput(item("compressed"), 85)).toBe(false);
+    expect(
+      isCurrentCompressionOutput({ ...compressed, status: "queued" }, 85),
+    ).toBe(false);
   });
 
   it("formats bytes for UI", () => {

@@ -4,6 +4,7 @@ import { errorCode, errorMessage } from "../../lib/error";
 import { contentTypeForExtension } from "../../lib/imageFormats";
 import type { GalleryFocus } from "../../state/appState";
 import type { OptimizeItem, S3Profile } from "../../types";
+import { isCurrentCompressionOutput } from "./optimizeQueue";
 
 interface UploadFailure {
   code?: string;
@@ -161,9 +162,7 @@ export function useOptimizeUploads({
     const prefix = activeProfile.defaultPrefix || "images";
     const compressedItems = items.filter(
       (item) =>
-        item.status === "compressed" &&
-        item.outputPath &&
-        item.settings.quality === currentQuality &&
+        isCurrentCompressionOutput(item, currentQuality) &&
         !uploadedItemIds.has(item.id) &&
         !currentFailures.has(item.id),
     );
@@ -218,10 +217,7 @@ export function useOptimizeUploads({
     const currentFailures = failedUploadsRef.current;
     const failedItems = items.filter(
       (item) =>
-        item.status === "compressed" &&
-        item.outputPath &&
-        item.settings.quality === currentQuality &&
-        currentFailures.has(item.id),
+        isCurrentCompressionOutput(item, currentQuality) && currentFailures.has(item.id),
     );
     if (failedItems.length === 0) {
       setUploadError("No failed uploads to retry.");
@@ -260,9 +256,7 @@ export function useOptimizeUploads({
 
   const newUploadItemCount = items.filter(
     (item) =>
-      item.status === "compressed" &&
-      item.outputPath &&
-      item.settings.quality === currentQuality &&
+      isCurrentCompressionOutput(item, currentQuality) &&
       !uploadedItemIds.has(item.id) &&
       !failedUploads.has(item.id),
   ).length;

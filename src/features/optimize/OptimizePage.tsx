@@ -26,6 +26,7 @@ import {
   defaultTargetFormat,
   formatBytes,
   getCompressionConcurrency,
+  isCurrentCompressionOutput,
   makeUniqueOutputFileNames,
   trackDispatchedNames,
   shouldRequeueForGlobalSettings,
@@ -527,13 +528,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       }
 
       const outputPaths = items
-        .filter(
-          (item) =>
-            item.status === "compressed" &&
-            item.outputPath &&
-            item.settings.quality === quality,
-        )
-        .map((item) => item.outputPath as string);
+        .filter((item) => isCurrentCompressionOutput(item, quality))
+        .map((item) => item.outputPath);
 
       if (outputPaths.length === 0) {
         setSaveError("No compressed outputs to save.");
@@ -645,9 +641,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       )}
       {saveSuccess && <p className="text-sm text-muted-foreground" role="status">{saveSuccess}</p>}
 
-      {items.some(
-        (item) => item.status === "compressed" && item.settings.quality === quality,
-      ) && (
+      {items.some((item) => isCurrentCompressionOutput(item, quality)) && (
         <div className="flex gap-2 flex-wrap">
           <Button type="button" onClick={handleSaveToLocal} disabled={saving || uploads.isUploading}>Save to local folder</Button>
           {uploads.failedUploadCount > 0 && (
