@@ -63,7 +63,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const debounceRef = useRef<number | undefined>(undefined);
   const pendingQualityRef = useRef<number | undefined>(undefined);
   const qualityRef = useRef(quality);
-  const uploads = useOptimizeUploads({ activeProfile, items, namingTemplate, onUploadedToS3 });
+  const uploads = useOptimizeUploads({
+    activeProfile,
+    currentQuality: quality,
+    items,
+    namingTemplate,
+    onUploadedToS3,
+  });
 
   useEffect(() => {
     return () => {
@@ -521,7 +527,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       }
 
       const outputPaths = items
-        .filter((item) => item.status === "compressed" && item.outputPath)
+        .filter(
+          (item) =>
+            item.status === "compressed" &&
+            item.outputPath &&
+            item.settings.quality === quality,
+        )
         .map((item) => item.outputPath as string);
 
       if (outputPaths.length === 0) {
@@ -634,7 +645,9 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       )}
       {saveSuccess && <p className="text-sm text-muted-foreground" role="status">{saveSuccess}</p>}
 
-      {items.some((item) => item.status === "compressed") && (
+      {items.some(
+        (item) => item.status === "compressed" && item.settings.quality === quality,
+      ) && (
         <div className="flex gap-2 flex-wrap">
           <Button type="button" onClick={handleSaveToLocal} disabled={saving || uploads.isUploading}>Save to local folder</Button>
           {uploads.failedUploadCount > 0 && (

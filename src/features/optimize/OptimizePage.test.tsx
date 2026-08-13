@@ -784,7 +784,7 @@ describe("OptimizePage", () => {
     await waitFor(() => expect(uploadObject).toHaveBeenCalledTimes(1));
   });
 
-  it("defers a queued quality re-compression until the active upload finishes", async () => {
+  it("does not upload a stale output while quality re-compression is pending", async () => {
     const profile = {
       id: "p1",
       name: "Personal S3",
@@ -795,23 +795,13 @@ describe("OptimizePage", () => {
       pathStyle: false,
       defaultPrefix: "images/2026/06",
     };
-    let finishUpload!: (value: {
-      key: string;
-      size: number;
-      publicUrl: string;
-      isImage: boolean;
-    }) => void;
-    uploadObject.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishUpload = resolve;
-        }),
-    );
+    const onUploadedToS3 = vi.fn();
     const user = userEvent.setup();
     render(
       <OptimizePage
         activeProfile={profile}
         namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}"
+        onUploadedToS3={onUploadedToS3}
       />,
     );
 
@@ -821,22 +811,20 @@ describe("OptimizePage", () => {
     fireEvent.change(screen.getByRole("slider", { name: /quality/i }), {
       target: { value: "70" },
     });
+    expect(screen.queryByRole("button", { name: "Upload to S3" })).not.toBeInTheDocument();
+    expect(uploadObject).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(compressImage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({ quality: 70 }),
+        }),
+      );
+    });
+
     await user.click(screen.getByRole("button", { name: "Upload to S3" }));
-    await screen.findByText(/uploading 1 image/i);
-
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 450));
-    });
-    expect(compressImage).toHaveBeenCalledTimes(1);
-
-    finishUpload({
-      key: "images/2026/06/real-photo-abcdef12.webp",
-      size: 240_000,
-      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.webp",
-      isImage: true,
-    });
-    await waitFor(() => expect(screen.queryByText(/uploading 1 image/i)).not.toBeInTheDocument());
-    await waitFor(() => expect(compressImage).toHaveBeenCalledTimes(2));
+    expect(uploadObject).toHaveBeenCalledTimes(1);
+    expect(onUploadedToS3).toHaveBeenCalledTimes(1);
   });
 
   it("retry only uploads failed items and skips already uploaded ones", async () => {
