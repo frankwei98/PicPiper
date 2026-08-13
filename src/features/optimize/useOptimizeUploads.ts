@@ -12,6 +12,7 @@ interface UploadFailure {
 
 interface UseOptimizeUploadsOptions {
   activeProfile?: S3Profile;
+  currentQuality: number;
   items: OptimizeItem[];
   namingTemplate: string;
   onUploadedToS3?: (focus: GalleryFocus) => void;
@@ -25,6 +26,7 @@ interface UploadBatchResult {
 
 export function useOptimizeUploads({
   activeProfile,
+  currentQuality,
   items,
   namingTemplate,
   onUploadedToS3,
@@ -161,6 +163,7 @@ export function useOptimizeUploads({
       (item) =>
         item.status === "compressed" &&
         item.outputPath &&
+        item.settings.quality === currentQuality &&
         !uploadedItemIds.has(item.id) &&
         !currentFailures.has(item.id),
     );
@@ -214,7 +217,11 @@ export function useOptimizeUploads({
     const prefix = activeProfile.defaultPrefix || "images";
     const currentFailures = failedUploadsRef.current;
     const failedItems = items.filter(
-      (item) => item.status === "compressed" && item.outputPath && currentFailures.has(item.id),
+      (item) =>
+        item.status === "compressed" &&
+        item.outputPath &&
+        item.settings.quality === currentQuality &&
+        currentFailures.has(item.id),
     );
     if (failedItems.length === 0) {
       setUploadError("No failed uploads to retry.");
@@ -255,6 +262,7 @@ export function useOptimizeUploads({
     (item) =>
       item.status === "compressed" &&
       item.outputPath &&
+      item.settings.quality === currentQuality &&
       !uploadedItemIds.has(item.id) &&
       !failedUploads.has(item.id),
   ).length;
