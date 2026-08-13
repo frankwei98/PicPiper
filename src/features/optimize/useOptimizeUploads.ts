@@ -1,0 +1,255 @@
+import { useCallback, useRef, useState } from "react";
+import { namingApi, uploadApi } from "../../api/tauri";
+import { errorCode, errorMessage } from "../../lib/error";
+import { contentTypeForExtension } from "../../lib/imageFormats";
+import type { GalleryFocus } from "../../state/appState";
+import type { OptimizeItem, S3Profile } from "../../types";
+
+interface UploadFailure {
+  code?: string;
+  message: string;
+}
+
+interface UseOptimizeUploadsOptions {
+  activeProfile?: S3Profile;
+  items: OptimizeItem[];
+  namingTemplate: string;
+  onUploadedToS3?: (focus: GalleryFocus) => void;
+}
+
+interface UploadBatchResult {
+  newlyUploaded: string[];
+  newlyUploadedItemIds: string[];
+  failed: Map<string, UploadFailure>;
+}
+
+export function useOptimizeUploads({
+  activeProfile,
+  items,
+  namingTemplate,
+  onUploadedToS3,
+}: UseOptimizeUploadsOptions) {
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadingItemIds, setUploadingItemIds] = useState<Set<string>>(new Set());
+  const [failedUploads, setFailedUploads] = useState<Map<string, UploadFailure>>(new Map());
+  const [uploadedItemIds, setUploadedItemIds] = useState<Set<string>>(new Set());
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
+  const collisionRetryAttempts = useRef(new Map<string, number>());
+  const uploadInProgressRef = useRef(false);
+
+  const canMutateQueue = useCallback(() => !uploadInProgressRef.current, []);
+
+  const forgetItem = useCallback((itemId: string) => {
+    setUploadedItemIds((current) => {
+      const next = new Set(current);
+      next.delete(itemId);
+      return next;
+    });
+    setFailedUploads((current) => {
+      const next = new Map(current);
+      next.delete(itemId);
+      return next;
+    });
+    collisionRetryAttempts.current.delete(itemId);
+  }, []);
+
+  const reset = useCallback(() => {
+    setUploadedItemIds(new Set());
+    setFailedUploads(new Map());
+    setUploadedKeys([]);
+    collisionRetryAttempts.current.clear();
+  }, []);
+
+  const executeUploads = async (
+    uploadItems: OptimizeItem[],
+    profile: S3Profile,
+    prefix: string,
+    collisionRetryItemIds = new Set<string>(),
+  ): Promise<UploadBatchResult> => {
+    uploadInProgressRef.current = true;
+    const remainingItemIds = new Set(uploadItems.map((item) => item.id));
+    setUploadingItemIds(remainingItemIds);
+    const newlyUploaded: string[] = [];
+    const newlyUploadedItemIds: string[] = [];
+    const failed = new Map<string, UploadFailure>();
+
+    for (const item of uploadItems) {
+      const outputFileName = item.outputFileName ?? "image.webp";
+      const extension = item.settings.targetFormat;
+      try {
+        const collisionSuffix = collisionRetryItemIds.has(item.id)
+          ? `retry-${(collisionRetryAttempts.current.get(item.id) ?? 0) + 1}`
+          : undefined;
+        if (collisionSuffix) {
+          collisionRetryAttempts.current.set(
+            item.id,
+            (collisionRetryAttempts.current.get(item.id) ?? 0) + 1,
+          );
+        }
+        const { objectKey } = await namingApi.generateObjectKey({
+          sourcePath: item.outputPath as string,
+          outputFileName,
+          prefix,
+          namingTemplate,
+          ext: extension,
+          ...(collisionSuffix ? { collisionSuffix } : {}),
+        });
+
+        const result = await uploadApi.uploadObject({
+          profile,
+          sourcePath: item.outputPath as string,
+          objectKey,
+          contentType: contentTypeForExtension(extension),
+          sourceFilename: item.fileName,
+          outputFilename: outputFileName,
+          originalBytes: item.originalBytes,
+          targetFormat: extension,
+        });
+
+        newlyUploaded.push(result.key);
+        newlyUploadedItemIds.push(item.id);
+        collisionRetryAttempts.current.delete(item.id);
+      } catch (error) {
+        failed.set(item.id, {
+          code: errorCode(error),
+          message: errorMessage(error, "Upload failed"),
+        });
+      }
+
+      remainingItemIds.delete(item.id);
+      setUploadingItemIds(new Set(remainingItemIds));
+    }
+
+    setUploadingItemIds(new Set());
+    uploadInProgressRef.current = false;
+    return { newlyUploaded, newlyUploadedItemIds, failed };
+  };
+
+  const uploadToS3 = async () => {
+    if (!canMutateQueue()) return;
+    if (!activeProfile) {
+      setUploadError("Configure and select an S3 profile before uploading.");
+      return;
+    }
+    setUploadError(null);
+    if (failedUploads.size === 0) {
+      collisionRetryAttempts.current.clear();
+    }
+    const prefix = activeProfile.defaultPrefix || "images";
+    const compressedItems = items.filter(
+      (item) =>
+        item.status === "compressed" &&
+        item.outputPath &&
+        !uploadedItemIds.has(item.id) &&
+        !failedUploads.has(item.id),
+    );
+    if (compressedItems.length === 0) {
+      setUploadError("No compressed outputs to upload.");
+      return;
+    }
+
+    const { newlyUploaded, newlyUploadedItemIds, failed } = await executeUploads(
+      compressedItems,
+      activeProfile,
+      prefix,
+    );
+    const remainingFailures = new Map(failedUploads);
+    for (const item of compressedItems) {
+      remainingFailures.delete(item.id);
+    }
+    for (const [itemId, failure] of failed) {
+      remainingFailures.set(itemId, failure);
+    }
+    setFailedUploads(remainingFailures);
+    setUploadedItemIds((current) => new Set([...current, ...newlyUploadedItemIds]));
+
+    const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
+    setUploadedKeys(allUploadedKeys);
+
+    if (remainingFailures.size === 0) {
+      onUploadedToS3?.({
+        profileId: activeProfile.id,
+        prefix,
+        highlightedKeys: allUploadedKeys,
+      });
+    } else if (failed.size === 0) {
+      setUploadError(`${remainingFailures.size} failed upload(s) still need retrying.`);
+    } else {
+      setUploadError(
+        `${failed.size} of ${compressedItems.length} upload(s) failed. Fix and retry.`,
+      );
+    }
+  };
+
+  const retryUploads = async () => {
+    if (!canMutateQueue()) return;
+    if (!activeProfile) {
+      setUploadError("Configure and select an S3 profile before uploading.");
+      return;
+    }
+    setUploadError(null);
+    const prefix = activeProfile.defaultPrefix || "images";
+    const failedItems = items.filter(
+      (item) => item.status === "compressed" && item.outputPath && failedUploads.has(item.id),
+    );
+    if (failedItems.length === 0) {
+      setUploadError("No failed uploads to retry.");
+      return;
+    }
+
+    const collisionRetryItemIds = new Set(
+      failedItems
+        .filter((item) => failedUploads.get(item.id)?.code === "objectAlreadyExists")
+        .map((item) => item.id),
+    );
+    const { newlyUploaded, newlyUploadedItemIds, failed: stillFailed } = await executeUploads(
+      failedItems,
+      activeProfile,
+      prefix,
+      collisionRetryItemIds,
+    );
+    setFailedUploads(stillFailed);
+    setUploadedItemIds((current) => new Set([...current, ...newlyUploadedItemIds]));
+
+    const allUploadedKeys = [...uploadedKeys, ...newlyUploaded];
+    setUploadedKeys(allUploadedKeys);
+
+    if (stillFailed.size === 0) {
+      onUploadedToS3?.({
+        profileId: activeProfile.id,
+        prefix,
+        highlightedKeys: allUploadedKeys,
+      });
+    } else {
+      setUploadError(
+        `${stillFailed.size} of ${failedItems.length} upload(s) failed. Fix and retry.`,
+      );
+    }
+  };
+
+  const newUploadItemCount = items.filter(
+    (item) =>
+      item.status === "compressed" &&
+      item.outputPath &&
+      !uploadedItemIds.has(item.id) &&
+      !failedUploads.has(item.id),
+  ).length;
+
+  return {
+    canMutateQueue,
+    failedUploadCount: failedUploads.size,
+    failureMessageFor: (itemId: string) => failedUploads.get(itemId)?.message,
+    forgetItem,
+    hasCollisionFailure: Array.from(failedUploads.values()).some(
+      (failure) => failure.code === "objectAlreadyExists",
+    ),
+    isItemUploading: (itemId: string) => uploadingItemIds.has(itemId),
+    isUploading: uploadingItemIds.size > 0,
+    newUploadItemCount,
+    reset,
+    retryUploads,
+    uploadError,
+    uploadingItemCount: uploadingItemIds.size,
+    uploadToS3,
+  };
+}
