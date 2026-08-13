@@ -730,6 +730,59 @@ describe("OptimizePage", () => {
     });
   });
 
+  it("locks queue mutations while an upload snapshot is in flight", async () => {
+    const profile = {
+      id: "p1",
+      name: "Personal S3",
+      bucket: "images",
+      endpoint: "https://s3.example.com",
+      region: "auto",
+      accessKeyId: "AKIAEXAMPLE",
+      pathStyle: false,
+      defaultPrefix: "images/2026/06",
+    };
+    let finishUpload!: (value: {
+      key: string;
+      size: number;
+      publicUrl: string;
+      isImage: boolean;
+    }) => void;
+    uploadObject.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishUpload = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    render(
+      <OptimizePage
+        activeProfile={profile}
+        namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await screen.findByText(/1.2 MB.*240 KB/);
+    await user.click(screen.getByRole("button", { name: "Upload to S3" }));
+    await screen.findByText(/uploading 1 image/i);
+
+    expect(screen.getByRole("slider", { name: /quality/i })).toBeDisabled();
+    expect(screen.getByTestId("drop-zone")).toBeDisabled();
+    expect(screen.getByLabelText(/format for real-photo\.jpg/i)).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /remove real-photo\.jpg from queue/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^remove real-photo\.jpg$/i })).toBeDisabled();
+
+    finishUpload({
+      key: "images/2026/06/real-photo-abcdef12.webp",
+      size: 240_000,
+      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.webp",
+      isImage: true,
+    });
+    await waitFor(() => expect(uploadObject).toHaveBeenCalledTimes(1));
+  });
+
   it("retry only uploads failed items and skips already uploaded ones", async () => {
     const profile = {
       id: "p1",
