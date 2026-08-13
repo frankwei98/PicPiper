@@ -86,6 +86,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const tauriDragDropActive = useRef(false);
   const debounceRef = useRef<number | undefined>(undefined);
   const qualityRef = useRef(quality);
+  const uploadInProgressRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -94,6 +95,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   }, []);
 
   const removeItem = (id: string) => {
+    if (uploadInProgressRef.current) return;
     setItems((current) => current.filter((item) => item.id !== id));
     setUploadedItemIds((current) => {
       const next = new Set(current);
@@ -168,6 +170,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   }, []);
 
   const importImages = useCallback(async (paths: string[]) => {
+    if (uploadInProgressRef.current) return;
     setImporting(true);
     setDropError(null);
 
@@ -192,6 +195,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   }, [quality, inspectSingleItem]);
 
   const handleChooseImages = async () => {
+    if (uploadInProgressRef.current) return;
     const selected = await open({
       multiple: true,
       filters: [
@@ -215,6 +219,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const handleDrop = useCallback(async (event: React.DragEvent) => {
     event.preventDefault();
     setDragging(false);
+
+    if (uploadInProgressRef.current) return;
 
     // Skip DOM drop when Tauri webview drag/drop is handling it
     if (tauriDragDropActive.current) return;
@@ -394,6 +400,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   // --- Global settings requeue with debounce ---
   const scheduleGlobalRequeue = (nextQuality: number) => {
+    if (uploadInProgressRef.current) return;
     window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       optimizerRun.current = null;
@@ -427,6 +434,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const handleQualityChange = (nextQuality: number) => {
+    if (uploadInProgressRef.current) return;
     qualityRef.current = nextQuality;
     setQuality(nextQuality);
     scheduleGlobalRequeue(nextQuality);
@@ -434,6 +442,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
 
   // --- Per-item actions ---
   const updateFormat = (id: string, targetFormat: WritableImageFormat) => {
+    if (uploadInProgressRef.current) return;
     optimizerRun.current = null;
     preferredNameCounts.current.clear();
     setUploadedItemIds((current) => {
@@ -466,6 +475,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const cancelItem = (id: string) => {
+    if (uploadInProgressRef.current) return;
     setItems((current) =>
       current.map((item) =>
         item.id === id
@@ -481,6 +491,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const retryItem = (id: string) => {
+    if (uploadInProgressRef.current) return;
     const item = items.find((i) => i.id === id);
     if (item && item.originalBytes === 0) {
       const nextTaskVersion = (item.taskVersion ?? 0) + 1;
@@ -555,6 +566,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   const [uploadedItemIds, setUploadedItemIds] = useState<Set<string>>(new Set());
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const collisionRetryAttempts = useRef(new Map<string, number>());
+  const uploadInProgress = uploadingItems.size > 0;
 
   const executeUploads = async (
     uploadItems: OptimizeItem[],
@@ -565,6 +577,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     newlyUploadedItemIds: string[];
     failed: Map<string, UploadFailure>;
   }> => {
+    uploadInProgressRef.current = true;
     const itemIds = new Set(uploadItems.map((item) => item.id));
     setUploadingItems(itemIds);
     const newlyUploaded: string[] = [];
@@ -618,10 +631,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     }
 
     setUploadingItems(new Set());
+    uploadInProgressRef.current = false;
     return { newlyUploaded, newlyUploadedItemIds, failed };
   };
 
   const uploadToS3 = async () => {
+    if (uploadInProgressRef.current) return;
     if (!activeProfile) {
       setUploadError("Configure and select an S3 profile before uploading.");
       return;
@@ -673,6 +688,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   };
 
   const retryUploads = async () => {
+    if (uploadInProgressRef.current) return;
     if (!activeProfile) {
       setUploadError("Configure and select an S3 profile before uploading.");
       return;
@@ -738,7 +754,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           </span>
           <Label className="grid w-full gap-2 items-start">
             Quality {quality}%
-            <Slider aria-label="Quality" value={quality} onValueChange={handleQualityChange} min={1} max={100} />
+            <Slider aria-label="Quality" value={quality} onValueChange={handleQualityChange} min={1} max={100} disabled={uploadInProgress} />
           </Label>
         </div>
       </header>
@@ -746,7 +762,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       <button
         type="button"
         data-testid="drop-zone"
-        disabled={importing}
+        disabled={importing || uploadInProgress}
         className={cn(
           "w-full border-2 border-dashed rounded-xl bg-muted/40 p-12 px-8 text-center text-muted-foreground text-sm",
           "transition-[border-color,background-color] duration-150 ease-out cursor-pointer",
@@ -798,6 +814,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                 className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 aria-label={`Remove ${item.fileName} from queue`}
                 onClick={() => removeItem(item.id)}
+                disabled={uploadInProgress}
               >
                 <XIcon className="size-3" />
               </Button>
@@ -842,6 +859,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                     className="w-full"
                     value={item.settings.targetFormat}
                     onChange={(event) => updateFormat(item.id, event.target.value as WritableImageFormat)}
+                    disabled={uploadInProgress}
                   >
                     {AVAILABLE_OUTPUT_FORMATS.map((format) => (
                       <NativeSelectOption key={format} value={format}>
@@ -858,13 +876,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
                 <p className="text-muted-foreground text-xs mt-0.5">Uploading...</p>
               )}
               {(item.status === "inspecting" || item.status === "queued" || item.status === "compressing" || item.status === "loadingPreview") && (
-                <Button variant="ghost" size="sm" type="button" aria-label={`Cancel ${item.fileName}`} onClick={() => cancelItem(item.id)}>Cancel</Button>
+                <Button variant="ghost" size="sm" type="button" aria-label={`Cancel ${item.fileName}`} onClick={() => cancelItem(item.id)} disabled={uploadInProgress}>Cancel</Button>
               )}
               {(item.status === "failed" || item.status === "cancelled") && (
-                <Button variant="ghost" size="sm" type="button" aria-label={`Retry ${item.fileName}`} onClick={() => retryItem(item.id)}>Retry</Button>
+                <Button variant="ghost" size="sm" type="button" aria-label={`Retry ${item.fileName}`} onClick={() => retryItem(item.id)} disabled={uploadInProgress}>Retry</Button>
               )}
               {(item.status === "compressed" || item.status === "failed" || item.status === "cancelled") && (
-                <Button variant="ghost" size="sm" type="button" aria-label={`Remove ${item.fileName}`} onClick={() => removeItem(item.id)}>Remove</Button>
+                <Button variant="ghost" size="sm" type="button" aria-label={`Remove ${item.fileName}`} onClick={() => removeItem(item.id)} disabled={uploadInProgress}>Remove</Button>
               )}
               </div>
             </CardContent>
