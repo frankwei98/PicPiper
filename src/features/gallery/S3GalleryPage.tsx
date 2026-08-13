@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { fileNameFromPath } from "../../lib/path";
 import { errorMessage } from "../../lib/error";
+import { contentTypeForExtension, extensionsFor } from "../../lib/imageFormats";
 
 interface S3GalleryPageProps {
   galleryFocus: GalleryFocus;
@@ -238,7 +239,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         filters: [
           {
             name: "Images",
-            extensions: ["jpg", "jpeg", "png", "webp", "avif", "heif", "heic"],
+            extensions: extensionsFor("galleryUpload"),
           },
         ],
       });
@@ -264,21 +265,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
             ext,
           });
 
-          const contentTypeMap: Record<string, string> = {
-            jpg: "image/jpeg",
-            jpeg: "image/jpeg",
-            png: "image/png",
-            webp: "image/webp",
-            avif: "image/avif",
-            heif: "image/heif",
-            heic: "image/heic",
-          };
-
           const result = await uploadApi.uploadObject({
             profile: selectedProfile,
             sourcePath: filePath,
             objectKey,
-            contentType: contentTypeMap[ext] ?? "application/octet-stream",
+            contentType: contentTypeForExtension(ext),
           });
 
           newKeys.push(objectKey);

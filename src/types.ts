@@ -1,13 +1,10 @@
+import type { CompressibleImageFormat, WritableImageFormat } from "./lib/imageFormats";
+
 export type AppView = "optimize" | "gallery" | "settings";
+export type { CompressibleImageFormat, ImageFormat, WritableImageFormat } from "./lib/imageFormats";
 
-/** Formats that the built-in encoder can write to. */
-export type WritableImageFormat = "jpg" | "png" | "webp" | "avif";
-
-/** Formats that can be read/imported (superset of writable). */
-export type ReadableImageFormat = WritableImageFormat | "heif";
-
-/** Union of all image formats the app understands. */
-export type ImageFormat = ReadableImageFormat;
+/** @deprecated Use CompressibleImageFormat; this type describes the backend compression decoder. */
+export type ReadableImageFormat = CompressibleImageFormat;
 
 export type ImageStatus =
   | "inspecting"
@@ -22,7 +19,7 @@ export type ImageStatus =
 export interface ImageInspection {
   path: string;
   fileName: string;
-  sourceFormat: ReadableImageFormat | null;
+  sourceFormat: CompressibleImageFormat | null;
   originalBytes: number;
   width: number;
   height: number;
@@ -41,7 +38,7 @@ export interface OptimizeItem {
   id: string;
   sourcePath: string;
   fileName: string;
-  sourceFormat: ReadableImageFormat | "unknown";
+  sourceFormat: CompressibleImageFormat | "unknown";
   originalBytes: number;
   estimatedBytes?: number;
   outputBytes?: number;

@@ -155,9 +155,10 @@ describe("OptimizePage", () => {
 
     await user.click(screen.getByTestId("drop-zone"));
 
-    expect(mockDialogOpen).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockDialogOpen).toHaveBeenCalledWith({
       multiple: true,
-    }));
+      filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "avif"] }],
+    });
   });
 
   it("does not render preset controls or a manual Compress button", () => {
