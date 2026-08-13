@@ -1,6 +1,7 @@
 import type { OptimizeItem, WritableImageFormat } from "../../types";
+import { writableImageFormats } from "../../lib/imageFormats";
 
-export const AVAILABLE_OUTPUT_FORMATS = ["jpg", "png", "webp", "avif"] as const satisfies ReadonlyArray<WritableImageFormat>;
+export const AVAILABLE_OUTPUT_FORMATS = writableImageFormats();
 export const MAX_COMPRESSION_CONCURRENCY = 3;
 
 export type AvailableOutputFormat = (typeof AVAILABLE_OUTPUT_FORMATS)[number];

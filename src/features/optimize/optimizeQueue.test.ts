@@ -33,7 +33,6 @@ describe("optimizeQueue", () => {
     expect(defaultTargetFormat("png")).toBe("webp");
     expect(defaultTargetFormat("webp")).toBe("webp");
     expect(defaultTargetFormat("avif")).toBe("webp");
-    expect(defaultTargetFormat("heif")).toBe("webp");
     expect(defaultTargetFormat("unknown")).toBe("webp");
   });
 

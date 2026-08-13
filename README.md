@@ -6,9 +6,9 @@ Pic Piper is a Tauri desktop app for compressing images for internet sharing and
 
 ### Compress
 
-- Choose real image files (JPG, PNG, WebP, AVIF, HEIF/HEIC).
+- Choose JPG, PNG, WebP, or AVIF files for compression. HEIF/HEIC originals can still be uploaded directly from S3 Gallery.
 - Each file is inspected through the backend for format, dimensions, and size.
-- Tune quality, target format, and GPS removal per image.
+- Tune quality and target format; compression always removes metadata, including GPS data.
 - Compress images through the backend encoder.
 - Save compressed outputs to a user-selected local folder.
 

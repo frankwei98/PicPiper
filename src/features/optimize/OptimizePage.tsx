@@ -22,6 +22,7 @@ import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { fileNameFromPath } from "../../lib/path";
 import { errorCode, errorMessage } from "../../lib/error";
+import { contentTypeForExtension, extensionsFor } from "../../lib/imageFormats";
 import { XIcon } from "lucide-react";
 import {
   AVAILABLE_OUTPUT_FORMATS,
@@ -49,23 +50,6 @@ interface OptimizePageProps {
 interface UploadFailure {
   code?: string;
   message: string;
-}
-
-function contentTypeFor(format: string) {
-  switch (format) {
-    case "jpg":
-      return "image/jpeg";
-    case "png":
-      return "image/png";
-    case "webp":
-      return "image/webp";
-    case "avif":
-      return "image/avif";
-    case "heif":
-      return "image/heif";
-    default:
-      return "application/octet-stream";
-  }
 }
 
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
@@ -201,11 +185,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       filters: [
         {
           name: "Images",
-          // HEIF/HEIC intentionally excluded: the built-in optimizer decoder
-          // cannot decode them on any platform, so importing them would just
-          // surface a confusing "imageDecodeFailed" error. Raw upload via the
-          // S3 Gallery still accepts HEIC.
-          extensions: ["jpg", "jpeg", "png", "webp", "avif"],
+          extensions: extensionsFor("compressImport"),
         },
       ],
     });
@@ -608,7 +588,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           profile: activeProfile!,
           sourcePath: item.outputPath as string,
           objectKey,
-          contentType: contentTypeFor(ext),
+          contentType: contentTypeForExtension(ext),
           sourceFilename: item.fileName,
           outputFilename: outputFileName,
           originalBytes: item.originalBytes,

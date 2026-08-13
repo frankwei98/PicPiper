@@ -910,9 +910,12 @@ describe("S3GalleryPage", () => {
 
     await user.click(screen.getByRole("button", { name: /upload local images/i }));
 
-    expect(mockDialogOpen).toHaveBeenCalledWith(
-      expect.objectContaining({ multiple: true }),
-    );
+    expect(mockDialogOpen).toHaveBeenCalledWith({
+      multiple: true,
+      filters: [
+        { name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "avif", "heif", "heic"] },
+      ],
+    });
     expect(generateObjectKey).toHaveBeenCalledWith(
       expect.objectContaining({
         sourcePath: "/tmp/new-photo.jpg",
