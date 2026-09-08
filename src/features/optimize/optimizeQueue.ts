@@ -25,13 +25,20 @@ export function makeUniqueOutputFileNames(
   preferredCounts: Map<string, number>,
 ): Record<string, string> {
   const counts = new Map<string, number>(preferredCounts);
+  const usedNames = new Set<string>();
   const outputNames: Record<string, string> = {};
 
   for (const item of items) {
     const preferredName = makeOutputFileName(item.fileName, item.targetFormat);
-    const count = (counts.get(preferredName) ?? 0) + 1;
+    let count = (counts.get(preferredName) ?? 0) + 1;
+    let candidate = count === 1 ? preferredName : appendSuffix(preferredName, count);
+    while (usedNames.has(candidate)) {
+      count += 1;
+      candidate = appendSuffix(preferredName, count);
+    }
     counts.set(preferredName, count);
-    outputNames[item.id] = count === 1 ? preferredName : appendSuffix(preferredName, count);
+    usedNames.add(candidate);
+    outputNames[item.id] = candidate;
   }
 
   return outputNames;
