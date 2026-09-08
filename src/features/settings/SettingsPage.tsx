@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "../../api/tauri";
 import type { AppSettings } from "../../api/tauri";
 import type { S3Profile } from "../../types";
@@ -26,6 +26,21 @@ function upsertProfile(profiles: S3Profile[], profile: S3Profile): S3Profile[] {
   return next;
 }
 
+type ProfileField = "name" | "endpoint" | "region" | "bucket" | "accessKeyId" | "secretAccessKey" | "namingTemplate" | "publicBaseUrl" | "defaultPrefix";
+type FieldErrors = Partial<Record<ProfileField, string>>;
+
+function httpUrlError(value: string, label: string): string | undefined {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return `${label} must use http: or https: protocol.`;
+    if (!parsed.hostname) return `${label} must include a host.`;
+    if (parsed.username || parsed.password) return `${label} must not include credentials.`;
+    if (parsed.search || parsed.hash) return `${label} must not contain query strings or fragments.`;
+  } catch {
+    return `${label} is not a valid URL.`;
+  }
+}
+
 export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) {
   const [editingProfileId, setEditingProfileId] = useState(
     settings.defaultProfileId ?? settings.profiles[0]?.id ?? "",
@@ -44,6 +59,9 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [publicBaseUrl, setPublicBaseUrl] = useState(profile?.publicBaseUrl ?? "");
   const [defaultPrefix, setDefaultPrefix] = useState(profile?.defaultPrefix ?? "");
   const [pathStyle, setPathStyle] = useState(profile?.pathStyle ?? true);
+  const [makeDefault, setMakeDefault] = useState(profile?.id === settings.defaultProfileId);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const fieldRefs = useRef<Partial<Record<ProfileField, HTMLInputElement>>>({});
 
   // Settings arrive after the initial render. If the selected profile did not
   // exist in the initial placeholder settings, select the loaded default.
@@ -67,6 +85,8 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       setPublicBaseUrl("");
       setDefaultPrefix("");
       setPathStyle(true);
+      setMakeDefault(settings.profiles.length === 0 && !settings.defaultProfileId);
+      setFieldErrors({});
       return;
     }
     const p = settings.profiles.find((pr) => pr.id === editingProfileId);
@@ -80,7 +100,9 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     setPublicBaseUrl(p.publicBaseUrl ?? "");
     setDefaultPrefix(p.defaultPrefix);
     setPathStyle(p.pathStyle ?? true);
-  }, [editingProfileId, creatingNew, settings.profiles]);
+    setMakeDefault(p.id === settings.defaultProfileId);
+    setFieldErrors({});
+  }, [editingProfileId, creatingNew, settings.defaultProfileId, settings.profiles]);
 
   // Sync naming template separately — it is app-level, not profile-level, and
   // arrives asynchronously after App's initial render with defaults.
@@ -96,36 +118,32 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     event.preventDefault();
     setSaveError(null);
     setSaveMessage(null);
+    const errors: FieldErrors = {};
+    if (!name.trim()) errors.name = "Profile name is required.";
+    if (!endpoint.trim()) errors.endpoint = "Endpoint is required.";
+    else errors.endpoint = httpUrlError(endpoint, "Endpoint");
+    if (!region.trim()) errors.region = "Region is required.";
+    if (!bucket.trim()) errors.bucket = "Bucket is required.";
+    if (!accessKeyId.trim()) errors.accessKeyId = "Access key ID is required.";
+    if (!secretAccessKey && !profile?.credentialRef) errors.secretAccessKey = "Secret access key is required for a new profile.";
+    if (!namingTemplate.trim()) errors.namingTemplate = "Naming template is required.";
+    if (publicBaseUrl.trim()) errors.publicBaseUrl = httpUrlError(publicBaseUrl, "Public Base URL");
+    if (defaultPrefix.split("/").some((segment) => segment === "." || segment === "..")) {
+      errors.defaultPrefix = "Default prefix must not contain path traversal segments.";
+    } else if (Array.from(defaultPrefix).some((character) => /[\u0000-\u001f\u007f]/.test(character))) {
+      errors.defaultPrefix = "Default prefix must not contain control characters.";
+    }
+
+    const validationErrors = Object.fromEntries(Object.entries(errors).filter(([, value]) => value)) as FieldErrors;
+    setFieldErrors(validationErrors);
+    const firstInvalid = (Object.keys(validationErrors) as ProfileField[])[0];
+    if (firstInvalid) {
+      fieldRefs.current[firstInvalid]?.focus();
+      return;
+    }
     setSaving(true);
 
     try {
-      if (!secretAccessKey && !profile?.credentialRef) {
-        setSaving(false);
-        setSaveError("Secret access key is required for a new profile.");
-        return;
-      }
-
-      // Validate publicBaseUrl if provided
-      if (publicBaseUrl) {
-        try {
-          const parsed = new URL(publicBaseUrl);
-          if (parsed.search || parsed.hash) {
-            setSaving(false);
-            setSaveError("Public Base URL must not contain query strings or fragments.");
-            return;
-          }
-          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-            setSaving(false);
-            setSaveError("Public Base URL must use http: or https: protocol.");
-            return;
-          }
-        } catch {
-          setSaving(false);
-          setSaveError("Public Base URL is not a valid URL.");
-          return;
-        }
-      }
-
       const profileId = profile?.id || crypto.randomUUID();
       // Credential references are derived from the profile ID by the backend.
       // Persist the profile first so a failed settings write cannot orphan a
@@ -134,22 +152,26 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
 
       const savedProfile: S3Profile = {
         id: profileId,
-        name,
-        endpoint,
-        region,
-        bucket,
-        accessKeyId,
+        name: name.trim(),
+        endpoint: endpoint.trim(),
+        region: region.trim(),
+        bucket: bucket.trim(),
+        accessKeyId: accessKeyId.trim(),
         credentialRef,
         pathStyle,
-        publicBaseUrl: publicBaseUrl || undefined,
-        defaultPrefix,
+        publicBaseUrl: publicBaseUrl.trim() || undefined,
+        defaultPrefix: defaultPrefix.trim().replace(/^\/+|\/+$/g, ""),
       };
 
       const nextSettings: AppSettings = {
         ...settings,
         profiles: upsertProfile(settings.profiles, savedProfile),
-        namingTemplate,
-        defaultProfileId: savedProfile.id,
+        namingTemplate: namingTemplate.trim(),
+        defaultProfileId: makeDefault
+          ? savedProfile.id
+          : settings.defaultProfileId === savedProfile.id
+            ? undefined
+            : settings.defaultProfileId,
       };
 
       await settingsApi.saveSettings(nextSettings);
@@ -184,6 +206,16 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     }
   };
 
+  const fieldProps = (field: ProfileField) => ({
+    ref: (element: HTMLInputElement | null) => { if (element) fieldRefs.current[field] = element; },
+    "aria-invalid": Boolean(fieldErrors[field]),
+    "aria-describedby": fieldErrors[field] ? `${field}-error` : undefined,
+  });
+
+  const renderFieldError = (field: ProfileField) => fieldErrors[field]
+    ? <span id={`${field}-error`} className="text-xs text-destructive">{fieldErrors[field]}</span>
+    : null;
+
   return (
     <div className="grid max-w-5xl gap-6">
       <header className="flex justify-between items-start gap-6">
@@ -216,27 +248,33 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
             <form className="grid gap-4 grid-cols-2 max-lg:grid-cols-1" onSubmit={handleSaveProfile}>
               <Label className="grid gap-2 items-start">
                 Profile name
-                <Input value={name} onChange={(e) => setName(e.target.value)} />
+                <Input {...fieldProps("name")} value={name} onChange={(e) => setName(e.target.value)} />
+                {renderFieldError("name")}
               </Label>
               <Label className="grid gap-2 items-start">
                 Endpoint
-                <Input placeholder="https://s3.example.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
+                <Input {...fieldProps("endpoint")} placeholder="https://s3.example.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
+                {renderFieldError("endpoint")}
               </Label>
               <Label className="grid gap-2 items-start">
                 Region
-                <Input value={region} onChange={(e) => setRegion(e.target.value)} />
+                <Input {...fieldProps("region")} value={region} onChange={(e) => setRegion(e.target.value)} />
+                {renderFieldError("region")}
               </Label>
               <Label className="grid gap-2 items-start">
                 Bucket
-                <Input placeholder="my-image-bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} />
+                <Input {...fieldProps("bucket")} placeholder="my-image-bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} />
+                {renderFieldError("bucket")}
               </Label>
               <Label className="grid gap-2 items-start">
                 Access key ID
-                <Input value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
+                <Input {...fieldProps("accessKeyId")} value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
+                {renderFieldError("accessKeyId")}
               </Label>
               <Label className="grid gap-2 items-start">
                 Secret access key
-                <Input type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
+                <Input {...fieldProps("secretAccessKey")} type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
+                {renderFieldError("secretAccessKey")}
               </Label>
               <Label className="flex items-center justify-between gap-3 rounded-lg border p-3">
                 <span>Path style addressing</span>
@@ -244,15 +282,22 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
               </Label>
               <Label className="grid gap-2 items-start">
                 Naming template
-                <Input value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
+                <Input {...fieldProps("namingTemplate")} value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
+                {renderFieldError("namingTemplate")}
               </Label>
               <Label className="grid gap-2 items-start">
                 Public Base URL
-                <Input placeholder="https://cdn.example.com" value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} />
+                <Input {...fieldProps("publicBaseUrl")} placeholder="https://cdn.example.com" value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} />
+                {renderFieldError("publicBaseUrl")}
               </Label>
               <Label className="grid gap-2 items-start">
                 Default prefix
-                <Input placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
+                <Input {...fieldProps("defaultPrefix")} placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
+                {renderFieldError("defaultPrefix")}
+              </Label>
+              <Label className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <span>Use as default profile</span>
+                <Switch checked={makeDefault} onCheckedChange={setMakeDefault} />
               </Label>
               <div className="col-span-2 flex gap-2 max-lg:col-span-1">
                 <Button type="submit" disabled={saving}>Save profile</Button>

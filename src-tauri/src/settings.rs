@@ -5,6 +5,79 @@ use crate::{
     models::AppSettings,
 };
 
+fn validate_http_url(value: &str, field: &str) -> AppResult<()> {
+    let url = tauri::Url::parse(value)
+        .map_err(|_| AppError::new("invalidSettings", format!("{field} must be a valid URL.")))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err(AppError::new(
+            "invalidSettings",
+            format!("{field} must use http or https and include a host."),
+        ));
+    }
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(AppError::new("invalidSettings", format!("{field} must include a host and must not contain credentials, a query, or a fragment.")));
+    }
+    Ok(())
+}
+
+pub fn validate_settings(settings: &AppSettings) -> AppResult<()> {
+    if settings.naming_template.trim().is_empty() {
+        return Err(AppError::new(
+            "invalidSettings",
+            "Naming template is required.",
+        ));
+    }
+    if let Some(default_id) = settings.default_profile_id.as_deref() {
+        if !settings
+            .profiles
+            .iter()
+            .any(|profile| profile.id == default_id)
+        {
+            return Err(AppError::new(
+                "invalidSettings",
+                "Default profile must refer to an existing profile.",
+            ));
+        }
+    }
+    for profile in &settings.profiles {
+        for (field, value) in [
+            ("Profile ID", profile.id.as_str()),
+            ("Profile name", profile.name.as_str()),
+            ("Endpoint", profile.endpoint.as_str()),
+            ("Region", profile.region.as_str()),
+            ("Bucket", profile.bucket.as_str()),
+            ("Access key ID", profile.access_key_id.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(AppError::new(
+                    "invalidSettings",
+                    format!("{field} is required."),
+                ));
+            }
+        }
+        validate_http_url(&profile.endpoint, "Endpoint")?;
+        if let Some(url) = profile.public_base_url.as_deref() {
+            validate_http_url(url, "Public Base URL")?;
+        }
+        if profile.default_prefix.chars().any(char::is_control)
+            || profile
+                .default_prefix
+                .split('/')
+                .any(|part| matches!(part, "." | ".."))
+        {
+            return Err(AppError::new(
+                "invalidSettings",
+                "Default prefix must not contain control characters or path traversal segments.",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn load_settings(path: &Path) -> AppResult<AppSettings> {
     if !path.exists() {
         return Ok(AppSettings::default());
@@ -17,6 +90,7 @@ pub fn load_settings(path: &Path) -> AppResult<AppSettings> {
 }
 
 pub fn save_settings(path: &Path, settings: &AppSettings) -> AppResult<()> {
+    validate_settings(settings)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|err| AppError::new("settingsDirFailed", err.to_string()))?;
@@ -83,5 +157,40 @@ mod tests {
         // Original file should still be readable
         let loaded = load_settings(&path).unwrap();
         assert_eq!(loaded.default_output_dir, Some("/original".to_string()));
+    }
+
+    #[test]
+    fn rejects_invalid_profiles_before_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let settings = AppSettings {
+            profiles: vec![crate::models::S3Profile {
+                id: "profile".into(),
+                name: "Example".into(),
+                endpoint: "not-a-url".into(),
+                region: "auto".into(),
+                bucket: "images".into(),
+                access_key_id: "key".into(),
+                credential_ref: Some("s3:profile".into()),
+                path_style: true,
+                public_base_url: None,
+                default_prefix: "images".into(),
+            }],
+            default_profile_id: Some("profile".into()),
+            ..AppSettings::default()
+        };
+
+        let error = save_settings(&path, &settings).unwrap_err();
+        assert_eq!(error.code, "invalidSettings");
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn rejects_a_missing_default_profile() {
+        let settings = AppSettings {
+            default_profile_id: Some("missing".into()),
+            ..AppSettings::default()
+        };
+        assert!(validate_settings(&settings).is_err());
     }
 }
