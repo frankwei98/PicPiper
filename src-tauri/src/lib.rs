@@ -14,7 +14,8 @@ use models::{
     AppSettings, CompressImageRequest, CompressImageResult, CopyOutputsRequest,
     CreateOptimizerRunResponse, DeleteObjectRequest, DownloadObjectRequest, GalleryObject,
     GenerateObjectKeyRequest, GenerateObjectKeyResponse, ImageInspection, InspectImageRequest,
-    ListObjectsRequest, ListObjectsResponse, ReadThumbnailRequest, ReadThumbnailResponse,
+    ListObjectsRequest, ListObjectsResponse, ReadComparisonImageRequest,
+    ReadComparisonImageResponse, ReadThumbnailRequest, ReadThumbnailResponse,
     SaveCredentialRequest, SaveCredentialResponse, SaveSettingsRequest, UploadHistoryEntry,
     UploadObjectRequest,
 };
@@ -38,6 +39,15 @@ async fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnai
     tokio::task::spawn_blocking(move || thumbnail::read_thumbnail(request))
         .await
         .map_err(|err| error::AppError::new("thumbnailJoinFailed", err.to_string()))?
+}
+
+#[tauri::command]
+async fn read_comparison_image(
+    request: ReadComparisonImageRequest,
+) -> AppResult<ReadComparisonImageResponse> {
+    tokio::task::spawn_blocking(move || thumbnail::read_comparison_image(request))
+        .await
+        .map_err(|err| error::AppError::new("comparisonImageJoinFailed", err.to_string()))?
 }
 
 #[tauri::command]
@@ -226,6 +236,7 @@ pub fn run() {
             compress_image,
             copy_outputs_to_dir,
             read_thumbnail,
+            read_comparison_image,
             list_gallery_objects,
             delete_gallery_object,
             upload_gallery_object,

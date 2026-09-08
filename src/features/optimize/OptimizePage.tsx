@@ -31,6 +31,7 @@ import {
   trackDispatchedNames,
   shouldRequeueForGlobalSettings,
 } from "./optimizeQueue";
+import { ImageComparison } from "./ImageComparison";
 import { OptimizeItemCard } from "./OptimizeItemCard";
 import { useOptimizeUploads } from "./useOptimizeUploads";
 
@@ -685,7 +686,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
           open
           onOpenChange={(open) => { if (!open) setCompareItemId(null); }}
         >
-          <DialogContent className="sm:max-w-3xl">
+          <DialogContent className="sm:max-w-5xl max-h-[90dvh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{`Compare ${compareItem.fileName}`}</DialogTitle>
             </DialogHeader>
@@ -694,22 +695,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
               <p>Metadata: Removed during compression</p>
               <p>Output format: {compareItem.settings.targetFormat}</p>
             </div>
-            <div className="grid grid-cols-2 gap-6 max-md:grid-cols-1">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-2">Original</p>
-                {compareItem.originalPreviewUrl && (
-                  <img src={compareItem.originalPreviewUrl} alt="" className="w-full rounded-lg border" />
-                )}
-                <p className="text-xs text-muted-foreground mt-2">{formatBytes(compareItem.originalBytes)}</p>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-muted-foreground mb-2">Compressed</p>
-                {compareItem.compressedPreviewUrl && (
-                  <img src={compareItem.compressedPreviewUrl} alt="" className="w-full rounded-lg border" />
-                )}
-                <p className="text-xs text-muted-foreground mt-2">{formatBytes(compareItem.outputBytes ?? 0)}</p>
-              </div>
-            </div>
+            <p className="text-xs text-muted-foreground tabular-nums">
+              Size: {formatBytes(compareItem.originalBytes)} → {formatBytes(compareItem.outputBytes ?? 0)}
+            </p>
+            {compareItem.outputPath && (
+              <ImageComparison originalPath={compareItem.sourcePath} compressedPath={compareItem.outputPath} />
+            )}
             <DialogFooter>
               <DialogClose render={<Button variant="outline" />}>Close</DialogClose>
             </DialogFooter>

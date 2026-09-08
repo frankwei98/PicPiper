@@ -42,6 +42,16 @@ export interface ReadThumbnailResponse {
   dataUrl: string;
 }
 
+export interface ReadComparisonImageRequest {
+  path: string;
+}
+
+export interface ReadComparisonImageResponse {
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
 export const tauriApi = {
   inspectImage: (request: InspectImageRequest) =>
     invoke<ImageInspection>("inspect_image", { request }),
@@ -53,6 +63,8 @@ export const tauriApi = {
     invoke<string[]>("copy_outputs_to_dir", { request }),
   readThumbnail: (request: ReadThumbnailRequest) =>
     invoke<ReadThumbnailResponse>("read_thumbnail", { request }),
+  readComparisonImage: (request: ReadComparisonImageRequest) =>
+    invoke<ReadComparisonImageResponse>("read_comparison_image", { request }),
 };
 
 export interface ListGalleryObjectsRequest {

@@ -229,3 +229,17 @@ pub struct ReadThumbnailRequest {
 pub struct ReadThumbnailResponse {
     pub data_url: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadComparisonImageRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadComparisonImageResponse {
+    pub data_url: String,
+    pub width: u32,
+    pub height: u32,
+}
