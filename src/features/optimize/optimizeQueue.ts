@@ -85,5 +85,12 @@ export function formatBytes(bytes: number): string {
 
 export function savingsPercent(originalBytes: number, outputBytes: number): number {
   if (originalBytes <= 0) return 0;
-  return Math.max(0, Math.round((1 - outputBytes / originalBytes) * 100));
+  return Math.round((1 - outputBytes / originalBytes) * 100);
+}
+
+export function sizeChangeLabel(originalBytes: number, outputBytes: number): string {
+  if (originalBytes <= 0) return "Size change unavailable";
+  if (originalBytes === outputBytes) return "No size change";
+  const percent = Math.abs(savingsPercent(originalBytes, outputBytes));
+  return `${percent || "<1"}% ${outputBytes > originalBytes ? "larger" : "saved"}`;
 }

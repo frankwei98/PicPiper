@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { OptimizeItem, WritableImageFormat } from "../../types";
-import { AVAILABLE_OUTPUT_FORMATS, formatBytes, savingsPercent } from "./optimizeQueue";
+import { AVAILABLE_OUTPUT_FORMATS, formatBytes, sizeChangeLabel } from "./optimizeQueue";
 
 interface OptimizeItemCardProps {
   item: OptimizeItem;
@@ -86,7 +86,7 @@ export function OptimizeItemCard({
           ) : item.status === "compressed" ? (
             <p className="text-muted-foreground mt-0.5 text-xs text-pretty tabular-nums">
               {formatBytes(item.originalBytes)} {String.fromCodePoint(0x2192)}{" "}
-              {formatBytes(item.outputBytes ?? 0)} ({savingsPercent(item.originalBytes, item.outputBytes ?? 0)}% saved)
+              {formatBytes(item.outputBytes ?? 0)} ({sizeChangeLabel(item.originalBytes, item.outputBytes ?? 0)})
             </p>
           ) : item.originalBytes > 0 ? (
             <p className="text-muted-foreground mt-0.5 text-xs text-pretty tabular-nums">
@@ -94,6 +94,11 @@ export function OptimizeItemCard({
               {item.settings.targetFormat.toUpperCase()} | {formatBytes(item.originalBytes)}
             </p>
           ) : null}
+          {item.status === "compressed" && (item.outputBytes ?? 0) > item.originalBytes && (
+            <p className="text-destructive text-xs text-pretty" role="status">
+              This output is larger. Try lower quality or a different target format before saving.
+            </p>
+          )}
           {item.warning && (
             <p className="text-muted-foreground text-xs mt-0.5">{item.warning}</p>
           )}
