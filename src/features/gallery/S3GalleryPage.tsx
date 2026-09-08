@@ -337,10 +337,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const searchIsActive = Boolean(search.trim());
 
   const handleCopyUrl = async (obj: GalleryObject) => {
-    if (!obj.publicUrl) {
-      setCopyMessage("Public Base URL missing");
-      return;
-    }
+    if (!obj.publicUrl) return;
     try {
       await navigator.clipboard.writeText(obj.publicUrl);
       setCopyMessage("URL copied");
@@ -488,6 +485,18 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           onChange={(e) => setSearch(e.target.value)}
         />
       </section>
+      {selectedProfile && !selectedProfile.publicBaseUrl && (
+        <Alert>
+          <AlertDescription className="flex items-center justify-between gap-3 max-sm:items-start max-sm:flex-col">
+            <span>Public URLs are unavailable for this profile. Add a Public Base URL in Settings to preview, view, or copy object URLs.</span>
+            {onNavigate && (
+              <Button type="button" variant="outline" size="sm" onClick={() => onNavigate("settings")}>
+                Open Settings
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
       {copyMessage && (
         <p className="text-sm text-muted-foreground" role="status">{copyMessage}</p>
       )}
@@ -552,7 +561,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       )}
       {scopeReady && !loading && !error && filteredObjects.length > 0 && (
         <section className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-          {filteredObjects.map((obj) => (
+          {filteredObjects.map((obj, index) => {
+            const publicUrlReasonId = `public-url-unavailable-${index}`;
+            return (
             <Card
               key={obj.key}
               className={cn(
@@ -581,10 +592,10 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
                   {highlightedKeys.has(obj.key) && <Badge variant="secondary">New</Badge>}
                 </div>
                 <div className="grid gap-1.5 grid-cols-2">
-                  <Button variant="outline" size="sm" type="button" onClick={() => handleCopyUrl(obj)}>
+                  <Button variant="outline" size="sm" type="button" onClick={() => handleCopyUrl(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
                     Copy URL
                   </Button>
-                  <Button variant="outline" size="sm" type="button" onClick={() => handleView(obj)}>
+                  <Button variant="outline" size="sm" type="button" onClick={() => handleView(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
                     View
                   </Button>
                   <Button variant="outline" size="sm" type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
@@ -594,9 +605,15 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
                     Delete
                   </Button>
                 </div>
+                {!obj.publicUrl && (
+                  <p id={publicUrlReasonId} className="text-xs text-muted-foreground">
+                    Public URL unavailable. Configure a Public Base URL in Settings.
+                  </p>
+                )}
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </section>
       )}
       {scopeReady && nextContinuationToken && !error && (

@@ -446,7 +446,7 @@ describe("S3GalleryPage", () => {
     expect(writeText).toHaveBeenCalledWith("https://cdn.example.com/images/photo.webp");
   });
 
-  it("shows error when Copy URL is clicked but publicBaseUrl is missing", async () => {
+  it("disables public URL actions and links to Settings when Public Base URL is missing", async () => {
     listObjects.mockResolvedValue({
       objects: [
         {
@@ -459,17 +459,26 @@ describe("S3GalleryPage", () => {
       nextContinuationToken: null,
     });
     const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    const profileWithoutPublicUrl = { ...profile, publicBaseUrl: undefined };
     render(
       <S3GalleryPage
         galleryFocus={{ prefix: "images", highlightedKeys: [] }}
-        profiles={[profile]}
+        profiles={[profileWithoutPublicUrl]}
+        onNavigate={onNavigate}
       />,
     );
 
     await screen.findByText("images/photo.webp");
-    await user.click(screen.getByRole("button", { name: /copy url/i }));
-
-    expect(screen.getByText(/public base url/i)).toBeInTheDocument();
+    const copyButton = screen.getByRole("button", { name: /copy url/i });
+    const viewButton = screen.getByRole("button", { name: /view/i });
+    expect(copyButton).toBeDisabled();
+    expect(viewButton).toBeDisabled();
+    expect(copyButton).toHaveAccessibleDescription(/configure a public base url in settings/i);
+    expect(screen.getByText(/public urls are unavailable for this profile/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /open settings/i }));
+    expect(onNavigate).toHaveBeenCalledWith("settings");
+    expect(mockOpenUrl).not.toHaveBeenCalled();
   });
 
   it("opens public URL via the opener plugin when View is clicked", async () => {
