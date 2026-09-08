@@ -69,6 +69,24 @@ describe("optimizeQueue", () => {
     });
   });
 
+  it("does not let an explicit numeric stem collide with a generated suffix", () => {
+    const outputNames = makeUniqueOutputFileNames(
+      [
+        { id: "a", fileName: "photo.jpg", targetFormat: "webp" },
+        { id: "b", fileName: "photo.png", targetFormat: "webp" },
+        { id: "c", fileName: "photo-2.jpg", targetFormat: "webp" },
+      ],
+      new Map(),
+    );
+
+    expect(new Set(Object.values(outputNames)).size).toBe(3);
+    expect(outputNames).toEqual({
+      a: "photo.webp",
+      b: "photo-2.webp",
+      c: "photo-2-2.webp",
+    });
+  });
+
   it("does not reuse names from prior batches (cross-batch uniqueness)", () => {
     const counts = new Map<string, number>();
 

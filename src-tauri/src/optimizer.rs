@@ -1,5 +1,6 @@
 use std::{
-    fs, io,
+    fs,
+    io::{self, Write},
     path::{Path, PathBuf},
 };
 
@@ -88,29 +89,42 @@ pub fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageR
 
     // Defensive: reject output_file_name values that could escape output_dir.
     validate_output_file_name(&request.output_file_name)?;
+    if request.settings.target_format == ImageFormat::Heif {
+        return Err(AppError::new(
+            "codecUnavailable",
+            "HEIF/HEIC output is not available in the built-in encoder.",
+        ));
+    }
 
     fs::create_dir_all(&request.output_dir)
         .map_err(|err| AppError::new("outputDirFailed", err.to_string()))?;
-    let output_path = Path::new(&request.output_dir).join(&request.output_file_name);
+    let (reservation, mut output_file) =
+        reserve_unique_destination_file(Path::new(&request.output_dir), &request.output_file_name)
+            .map_err(|err| AppError::new("outputWriteFailed", err.to_string()))?;
+    let output_path = reservation.path();
 
     match request.settings.target_format {
-        ImageFormat::Jpg => write_jpeg(&image, &output_path, request.settings.quality)?,
+        ImageFormat::Jpg => write_jpeg(&image, &mut output_file, request.settings.quality)?,
         ImageFormat::Png => image
-            .save_with_format(&output_path, CodecFormat::Png)
+            .write_to(&mut output_file, CodecFormat::Png)
             .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))?,
-        ImageFormat::Webp => write_webp(&image, &output_path, request.settings.quality)?,
-        ImageFormat::Avif => write_avif(&image, &output_path, request.settings.quality)?,
-        ImageFormat::Heif => {
-            return Err(AppError::new(
-                "codecUnavailable",
-                "HEIF/HEIC output is not available in the built-in encoder.",
-            ));
-        }
+        ImageFormat::Webp => write_webp(&image, &mut output_file, request.settings.quality)?,
+        ImageFormat::Avif => write_avif(&image, &mut output_file, request.settings.quality)?,
+        ImageFormat::Heif => unreachable!("HEIF is rejected before reserving an output file"),
     }
 
-    let output_bytes = fs::metadata(&output_path)
+    output_file
+        .sync_all()
+        .map_err(|err| AppError::new("outputWriteFailed", err.to_string()))?;
+    let output_bytes = output_file
+        .metadata()
         .map_err(|err| AppError::new("outputReadFailed", err.to_string()))?
         .len();
+    let output_file_name = output_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| AppError::new("outputWriteFailed", "Could not read reserved filename."))?
+        .to_string();
 
     let warning = [
         gps_warning(request.settings.remove_gps),
@@ -124,7 +138,7 @@ pub fn compress_image(request: CompressImageRequest) -> AppResult<CompressImageR
     Ok(CompressImageResult {
         source_path: request.source_path,
         output_path: output_path.to_string_lossy().to_string(),
-        output_file_name: request.output_file_name,
+        output_file_name,
         original_bytes,
         output_bytes,
         target_format: request.settings.target_format,
@@ -434,27 +448,24 @@ fn estimate_bytes(original_bytes: u64, quality: u8) -> u64 {
         .round() as u64
 }
 
-fn write_jpeg(image: &DynamicImage, output_path: &Path, quality: u8) -> AppResult<()> {
-    let file = fs::File::create(output_path)
-        .map_err(|err| AppError::new("outputWriteFailed", err.to_string()))?;
-    let mut encoder = JpegEncoder::new_with_quality(file, quality.clamp(1, 100));
+fn write_jpeg(image: &DynamicImage, output: &mut fs::File, quality: u8) -> AppResult<()> {
+    let mut encoder = JpegEncoder::new_with_quality(output, quality.clamp(1, 100));
     encoder
         .encode_image(image)
         .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))
 }
 
-fn write_webp(image: &DynamicImage, output_path: &Path, quality: u8) -> AppResult<()> {
+fn write_webp(image: &DynamicImage, output: &mut fs::File, quality: u8) -> AppResult<()> {
     let rgba = image.to_rgba8();
     let encoder = webp::Encoder::from_rgba(&rgba, image.width(), image.height());
     let encoded = encoder.encode(quality.clamp(1, 100) as f32);
-    fs::write(output_path, &*encoded)
+    output
+        .write_all(&encoded)
         .map_err(|err| AppError::new("imageEncodeFailed", err.to_string()))
 }
 
-fn write_avif(image: &DynamicImage, output_path: &Path, quality: u8) -> AppResult<()> {
-    let file = fs::File::create(output_path)
-        .map_err(|err| AppError::new("outputWriteFailed", err.to_string()))?;
-    let encoder = AvifEncoder::new_with_speed_quality(file, 6, quality.clamp(1, 100));
+fn write_avif(image: &DynamicImage, output: &mut fs::File, quality: u8) -> AppResult<()> {
+    let encoder = AvifEncoder::new_with_speed_quality(output, 6, quality.clamp(1, 100));
     encoder
         .write_image(
             image.as_bytes(),
@@ -664,6 +675,84 @@ mod tests {
             image::open(result.output_path).unwrap().dimensions(),
             (24, 16)
         );
+    }
+
+    #[test]
+    fn compression_preserves_existing_output_and_returns_reserved_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        create_test_image(24, 16).save(&source).unwrap();
+        let existing = dir.path().join("photo.webp");
+        std::fs::write(&existing, b"existing output").unwrap();
+
+        let result = compress_image(CompressImageRequest {
+            source_path: source.to_string_lossy().to_string(),
+            output_dir: dir.path().to_string_lossy().to_string(),
+            output_file_name: "photo.webp".to_string(),
+            settings: CompressionSettings {
+                target_format: ImageFormat::Webp,
+                quality: 80,
+                remove_gps: true,
+            },
+        })
+        .unwrap();
+
+        assert_eq!(std::fs::read(existing).unwrap(), b"existing output");
+        assert_eq!(result.output_file_name, "photo-2.webp");
+        assert_eq!(
+            PathBuf::from(&result.output_path),
+            dir.path().join("photo-2.webp")
+        );
+        assert!(image::open(result.output_path).is_ok());
+    }
+
+    #[test]
+    fn concurrent_compressions_atomically_reserve_distinct_outputs() {
+        use std::sync::{Arc, Barrier};
+
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.png");
+        create_test_image(24, 16).save(&source).unwrap();
+        let barrier = Arc::new(Barrier::new(3));
+        let mut workers = Vec::new();
+
+        for _ in 0..2 {
+            let barrier = Arc::clone(&barrier);
+            let source_path = source.to_string_lossy().to_string();
+            let output_dir = dir.path().to_string_lossy().to_string();
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                compress_image(CompressImageRequest {
+                    source_path,
+                    output_dir,
+                    output_file_name: "photo.webp".to_string(),
+                    settings: CompressionSettings {
+                        target_format: ImageFormat::Webp,
+                        quality: 80,
+                        remove_gps: true,
+                    },
+                })
+                .unwrap()
+            }));
+        }
+
+        barrier.wait();
+        let mut results = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>();
+        results.sort_by(|left, right| left.output_file_name.cmp(&right.output_file_name));
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.output_file_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["photo-2.webp", "photo.webp"]
+        );
+        assert!(results
+            .iter()
+            .all(|result| image::open(&result.output_path).is_ok()));
     }
 
     #[test]
