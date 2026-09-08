@@ -139,6 +139,17 @@ describe("OptimizePage", () => {
     });
   });
 
+  it("reports larger outputs with a useful next step", async () => {
+    compressImage.mockResolvedValueOnce({ sourcePath: "/tmp/real-photo.jpg", outputPath: "/tmp/cache/photo.webp",
+      outputFileName: "photo.webp", originalBytes: 1_200_000, outputBytes: 1_800_000, targetFormat: "webp" });
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("drop-zone"));
+    expect(await screen.findByText(/50% larger/)).toBeVisible();
+    expect(screen.getByText(/Try lower quality or a different target format/)).toBeVisible();
+    expect(screen.queryByText(/0% saved/)).not.toBeInTheDocument();
+  });
+
   it("starts empty and asks the user to choose images", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
