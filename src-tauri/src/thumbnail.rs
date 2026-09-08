@@ -1,6 +1,9 @@
 use crate::{
     error::{AppError, AppResult},
-    models::{ReadThumbnailRequest, ReadThumbnailResponse},
+    models::{
+        ReadComparisonImageRequest, ReadComparisonImageResponse, ReadThumbnailRequest,
+        ReadThumbnailResponse,
+    },
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
@@ -86,6 +89,32 @@ pub fn read_thumbnail(request: ReadThumbnailRequest) -> AppResult<ReadThumbnailR
     }
 
     read_thumbnail_cpu(&request.path, max_size)
+}
+
+/// Decode one image at its native resolution, apply its EXIF orientation, and
+/// return the decoded pixels using a lossless transport format. This is kept
+/// separate from thumbnails so callers only pay the full-resolution decode and
+/// IPC cost while a comparison view is open.
+pub fn read_comparison_image(
+    request: ReadComparisonImageRequest,
+) -> AppResult<ReadComparisonImageResponse> {
+    let path = PathBuf::from(request.path);
+    let image = crate::optimizer::decode_image_with_orientation(&path)?;
+    let width = image.width();
+    let height = image.height();
+    let mut buffer = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut buffer, image::ImageFormat::Png)
+        .map_err(|err| AppError::new("comparisonImageEncodeFailed", err.to_string()))?;
+
+    Ok(ReadComparisonImageResponse {
+        data_url: format!(
+            "data:image/png;base64,{}",
+            BASE64_STANDARD.encode(buffer.into_inner())
+        ),
+        width,
+        height,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +373,41 @@ mod tests {
         });
         // Should fail (not panic) — file doesn't exist.
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn comparison_image_is_full_resolution_and_lossless() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("comparison.png");
+        let expected =
+            image::DynamicImage::ImageRgba8(image::ImageBuffer::from_fn(19, 13, |x, y| {
+                image::Rgba([x as u8, y as u8, 173, if x == 0 { 80 } else { 255 }])
+            }));
+        expected.save(&input).unwrap();
+
+        let response = read_comparison_image(ReadComparisonImageRequest {
+            path: input.to_string_lossy().to_string(),
+        })
+        .unwrap();
+        assert_eq!((response.width, response.height), (19, 13));
+        assert!(response.data_url.starts_with("data:image/png;base64,"));
+
+        let encoded = response.data_url.split_once(',').unwrap().1;
+        let decoded = image::load_from_memory(&BASE64_STANDARD.decode(encoded).unwrap()).unwrap();
+        assert_eq!(decoded.to_rgba8(), expected.to_rgba8());
+    }
+
+    #[test]
+    fn comparison_image_applies_exif_orientation() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("oriented.jpg");
+        write_orientation_fixture(&input);
+
+        let response = read_comparison_image(ReadComparisonImageRequest {
+            path: input.to_string_lossy().to_string(),
+        })
+        .unwrap();
+        assert_eq!((response.width, response.height), (3, 2));
     }
 
     #[test]

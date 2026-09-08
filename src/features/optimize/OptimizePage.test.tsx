@@ -67,6 +67,7 @@ vi.mock("../../api/tauri", async () => ({
     compressImage,
     copyOutputsToDir,
     readThumbnail,
+    readComparisonImage: vi.fn(async () => ({ dataUrl: "data:image/png;base64,comparison", width: 1200, height: 800 })),
   },
   uploadApi: {
     uploadObject,
@@ -230,7 +231,7 @@ describe("OptimizePage", () => {
     await user.click(previewButton);
 
     expect(screen.getByRole("dialog", { name: /compare real-photo\.jpg/i })).toBeInTheDocument();
-    expect(screen.getByText(/original/i)).toBeInTheDocument();
+    expect(await screen.findByText("Original", { exact: true })).toBeInTheDocument();
     expect(screen.getByText("Compressed", { exact: true })).toBeInTheDocument();
   });
 
