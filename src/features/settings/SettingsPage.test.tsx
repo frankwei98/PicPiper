@@ -322,6 +322,34 @@ describe("SettingsPage", () => {
     expect(onSettingsChange).toHaveBeenCalled();
   });
 
+  it("preserves the default profile when saving a different profile", async () => {
+    const user = userEvent.setup();
+    const profiles = [
+      { id: "default", name: "Default", endpoint: "https://s3.example.com", region: "auto", bucket: "one", accessKeyId: "key-one", credentialRef: "s3:default", pathStyle: true, defaultPrefix: "images" },
+      { id: "other", name: "Other", endpoint: "https://s3.example.com", region: "auto", bucket: "two", accessKeyId: "key-two", credentialRef: "s3:other", pathStyle: true, defaultPrefix: "images" },
+    ];
+
+    render(<SettingsPage settings={{ profiles, namingTemplate: "{slug}.{ext}", defaultProfileId: "default" }} onSettingsChange={() => {}} />);
+    await user.selectOptions(screen.getByRole("combobox"), "other");
+    expect(screen.getByLabelText("Use as default profile")).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ defaultProfileId: "default" }));
+  });
+
+  it("shows field errors and focuses the first invalid field", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+
+    await user.clear(screen.getByLabelText("Profile name"));
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    expect(screen.getByRole("textbox", { name: /profile name/i })).toHaveFocus();
+    expect(screen.getByText("Profile name is required.")).toBeInTheDocument();
+    expect(screen.getByText("Endpoint is required.")).toBeInTheDocument();
+    expect(saveSettings).not.toHaveBeenCalled();
+  });
+
   it("renders and saves path style addressing checkbox", async () => {
     const user = userEvent.setup();
     const onSettingsChange = vi.fn();
