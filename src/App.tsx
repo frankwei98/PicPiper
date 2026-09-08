@@ -34,8 +34,8 @@ function App() {
     };
   }, []);
 
-  const openGallery = (focus: GalleryFocus) => {
-    setNavigation({ view: "gallery", galleryFocus: focus });
+  const recordUpload = (focus: GalleryFocus) => {
+    setNavigation((current) => ({ ...current, galleryFocus: focus }));
   };
 
   const selectedProfile = useMemo(() => {
@@ -59,13 +59,15 @@ function App() {
           <AlertDescription>{settingsError}</AlertDescription>
         </Alert>
       )}
-      {navigation.view === "optimize" && (
+      <div hidden={navigation.view !== "optimize"}>
         <OptimizePage
           activeProfile={selectedProfile}
           namingTemplate={settings.namingTemplate}
-          onUploadedToS3={openGallery}
+          isActive={navigation.view === "optimize"}
+          onUploadedToS3={recordUpload}
+          onOpenGallery={() => setNavigation((current) => ({ ...current, view: "gallery" }))}
         />
-      )}
+      </div>
       {navigation.view === "gallery" && (
         <S3GalleryPage
           galleryFocus={navigation.galleryFocus}
@@ -75,9 +77,9 @@ function App() {
           onNavigate={(view) => setNavigation((prev) => ({ ...prev, view }))}
         />
       )}
-      {navigation.view === "settings" && (
+      <div hidden={navigation.view !== "settings"}>
         <SettingsPage settings={settings} onSettingsChange={setSettings} />
-      )}
+      </div>
     </Layout>
   );
 }

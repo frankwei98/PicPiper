@@ -41,12 +41,15 @@ const DEFAULT_SETTINGS: CompressionSettings = {
 };
 
 interface OptimizePageProps {
+  isActive?: boolean;
+  onOpenGallery?: () => void;
   onUploadedToS3?: (focus: GalleryFocus) => void;
   activeProfile?: S3Profile;
   namingTemplate: string;
 }
 
-export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: OptimizePageProps) {
+export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, isActive = true, onOpenGallery }: OptimizePageProps) {
+  const [uploadedFocus, setUploadedFocus] = useState<GalleryFocus | null>(null);
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [quality, setQuality] = useState(DEFAULT_SETTINGS.quality);
   const [compareItemId, setCompareItemId] = useState<string | null>(null);
@@ -69,7 +72,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
     currentQuality: quality,
     items,
     namingTemplate,
-    onUploadedToS3,
+    onUploadedToS3: (focus) => {
+      setUploadedFocus(focus);
+      onUploadedToS3?.(focus);
+    },
   });
 
   useEffect(() => {
@@ -225,6 +231,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
   }, []);
 
   useEffect(() => {
+    if (!isActive) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
@@ -260,7 +267,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
       tauriDragDropActive.current = false;
       unlisten?.();
     };
-  }, [importImages]);
+  }, [importImages, isActive]);
 
   // --- Bounded compression scheduler ---
   const runCompressionTask = useCallback(async (item: OptimizeItem, outputFileName: string) => {
@@ -639,6 +646,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
           <AlertDescription>{saveError}</AlertDescription>
         </Alert>
       )}
+      {uploadedFocus && (
+        <div className="flex flex-wrap items-center gap-2" role="status">
+          <p className="text-sm text-muted-foreground">Uploaded {uploadedFocus.highlightedKeys.length} image(s). Your local results are still available.</p>
+          {onOpenGallery && <Button variant="outline" onClick={onOpenGallery}>View uploaded images</Button>}
+        </div>
+      )}
       {saveSuccess && <p className="text-sm text-muted-foreground" role="status">{saveSuccess}</p>}
 
       {items.some((item) => isCurrentCompressionOutput(item, quality)) && (
@@ -660,7 +673,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3 }: 
         </div>
       )}
 
-      {compareItem && (
+      {compareItem && isActive && (
         <Dialog
           open
           onOpenChange={(open) => { if (!open) setCompareItemId(null); }}
