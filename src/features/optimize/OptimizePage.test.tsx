@@ -220,7 +220,7 @@ describe("OptimizePage", () => {
 
     expect(screen.getByRole("dialog", { name: /compare real-photo\.jpg/i })).toBeInTheDocument();
     expect(screen.getByText(/original/i)).toBeInTheDocument();
-    expect(screen.getByText(/compressed/i)).toBeInTheDocument();
+    expect(screen.getByText("Compressed", { exact: true })).toBeInTheDocument();
   });
 
   it("recompresses existing items after global quality changes", async () => {

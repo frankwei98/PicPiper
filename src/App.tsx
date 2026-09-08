@@ -39,14 +39,12 @@ function App() {
   };
 
   const selectedProfile = useMemo(() => {
-    const focusId = navigation.galleryFocus.profileId;
     const defaultId = settings.defaultProfileId;
     return (
-      (focusId ? settings.profiles.find((p) => p.id === focusId) : undefined) ??
       (defaultId ? settings.profiles.find((p) => p.id === defaultId) : undefined) ??
       settings.profiles[0]
     );
-  }, [navigation.galleryFocus.profileId, settings.defaultProfileId, settings.profiles]);
+  }, [settings.defaultProfileId, settings.profiles]);
 
   return (
     <Layout

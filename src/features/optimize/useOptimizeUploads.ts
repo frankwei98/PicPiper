@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { namingApi, uploadApi } from "../../api/tauri";
 import { errorCode, errorMessage } from "../../lib/error";
 import { contentTypeForExtension } from "../../lib/imageFormats";
@@ -32,6 +32,10 @@ export function useOptimizeUploads({
   namingTemplate,
   onUploadedToS3,
 }: UseOptimizeUploadsOptions) {
+  const targetKey = JSON.stringify([activeProfile?.id, activeProfile?.endpoint, activeProfile?.region,
+    activeProfile?.bucket, activeProfile?.defaultPrefix, activeProfile?.pathStyle, namingTemplate]);
+  const trackedTargetKey = useRef(targetKey);
+  const [batchProfile, setBatchProfile] = useState<S3Profile | undefined>();
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadingItemIds, setUploadingItemIds] = useState<Set<string>>(new Set());
   const [failedUploads, setFailedUploads] = useState<Map<string, UploadFailure>>(new Map());
@@ -80,6 +84,15 @@ export function useOptimizeUploads({
     return true;
   }, [canMutateQueue, updateFailedUploads]);
 
+  // A completed/failed upload belongs to one destination. When settings change
+  // during a batch, finish that captured batch before adopting the new target.
+  useEffect(() => {
+    if (trackedTargetKey.current === targetKey || uploadInProgressRef.current) return;
+    trackedTargetKey.current = targetKey;
+    reset();
+    setUploadError(null);
+  }, [targetKey, uploadingItemIds.size, reset]);
+
   const executeUploads = async (
     uploadItems: OptimizeItem[],
     profile: S3Profile,
@@ -87,6 +100,7 @@ export function useOptimizeUploads({
     collisionRetryItemIds = new Set<string>(),
   ): Promise<UploadBatchResult> => {
     uploadInProgressRef.current = true;
+    setBatchProfile(profile);
     const remainingItemIds = new Set(uploadItems.map((item) => item.id));
     setUploadingItemIds(remainingItemIds);
     const newlyUploaded: string[] = [];
@@ -277,5 +291,6 @@ export function useOptimizeUploads({
     uploadError,
     uploadingItemCount: uploadingItemIds.size,
     uploadToS3,
+    uploadProfile: uploadingItemIds.size > 0 ? batchProfile : activeProfile,
   };
 }

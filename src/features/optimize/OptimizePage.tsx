@@ -654,6 +654,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
       )}
       {saveSuccess && <p className="text-sm text-muted-foreground" role="status">{saveSuccess}</p>}
 
+      {items.length > 0 && (
+        <p className="text-sm text-muted-foreground break-words" aria-label="Upload destination">
+          {uploads.uploadProfile
+            ? `Upload destination: ${uploads.uploadProfile.name} · ${uploads.uploadProfile.bucket} / ${uploads.uploadProfile.defaultPrefix || "images"}`
+            : "Set an upload destination in Settings. Your compressed images will stay here."}
+        </p>
+      )}
       {items.some((item) => isCurrentCompressionOutput(item, quality)) && (
         <div className="flex gap-2 flex-wrap">
           <Button type="button" onClick={handleSaveToLocal} disabled={saving || uploads.isUploading}>Save to local folder</Button>
