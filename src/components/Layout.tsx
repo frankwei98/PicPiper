@@ -49,8 +49,8 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
   };
 
   return (
-    <main className="relative min-h-dvh bg-background">
-      <header className="sticky top-0 z-20 h-14 border-b bg-background/95 shadow-[0_1px_0_oklch(0_0_0/0.02)] backdrop-blur-md">
+    <main className="relative flex h-dvh flex-col overflow-hidden bg-background">
+      <header className="sticky top-0 z-20 h-14 shrink-0 border-b bg-background/95 shadow-[0_1px_0_oklch(0_0_0/0.02)] backdrop-blur-md">
         <div
           data-tauri-drag-region
           className="absolute inset-0"
@@ -99,7 +99,7 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
         id={`app-panel-${activeView}`}
         role="tabpanel"
         aria-labelledby={`app-tab-${activeView}`}
-        className="min-w-0 overflow-x-hidden px-10 pt-6 pb-8 max-md:px-6 max-sm:px-4 max-sm:pb-6"
+        className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-10 pt-6 pb-8 max-md:px-6 max-sm:px-4 max-sm:pb-6", activeView === "optimize" && "scroll-pb-64")}
       >
         {children}
       </section>
