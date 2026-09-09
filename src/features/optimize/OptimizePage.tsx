@@ -554,10 +554,14 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
     }
   };
 
+  const readyItems = items.filter((item) => isCurrentCompressionOutput(item, quality));
+  const readyOriginalBytes = readyItems.reduce((sum, item) => sum + item.originalBytes, 0);
+  const readyOutputBytes = readyItems.reduce((sum, item) => sum + (item.outputBytes ?? 0), 0);
+  const failedItemCount = items.filter((item) => item.status === "failed").length;
   const compareItem = compareItemId ? items.find((i) => i.id === compareItemId) : undefined;
 
   return (
-    <div className="grid w-full max-w-6xl gap-6">
+    <div className={cn("grid w-full max-w-6xl gap-6", items.length > 0 && "pb-64")}>
       <header className="grid grid-cols-[minmax(0,1fr)_minmax(12rem,25%)] items-end gap-5">
         <div className="min-w-0">
           <h2 className="text-3xl font-semibold tracking-tight text-balance">Compress</h2>
@@ -579,7 +583,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
         data-testid="drop-zone"
         disabled={importing || uploads.isUploading}
         className={cn(
-          "w-full border-2 border-dashed rounded-xl bg-muted/40 p-12 px-8 text-center text-muted-foreground text-sm",
+          "w-full border-2 border-dashed rounded-xl bg-muted/40 text-center text-muted-foreground text-sm",
+          items.length > 0 ? "flex items-center justify-center gap-3 p-4" : "p-12 px-8",
           "transition-[border-color,background-color] duration-150 ease-out cursor-pointer",
           "hover:border-foreground/30 hover:bg-muted/60",
           "disabled:cursor-not-allowed disabled:opacity-60",
@@ -590,7 +595,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
       >
-        <div className="text-base font-medium text-foreground mb-2">Drop images here</div>
+        <div className={cn("text-base font-medium text-foreground", items.length === 0 && "mb-2")}>{items.length > 0 ? "Add more images" : "Drop images here"}</div>
         <div className="text-sm text-muted-foreground">
           or{" "}
           <span className="px-1 text-foreground underline underline-offset-4">
@@ -635,6 +640,16 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
         ))}
       </section>
 
+      {items.length > 0 && (
+        <section
+          aria-label="Compression actions"
+          className="fixed inset-x-0 bottom-0 z-10 max-h-[40dvh] overflow-y-auto border-t bg-background px-10 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-sm max-md:px-6 max-sm:px-4"
+        >
+        <div className="grid max-w-6xl gap-2">
+          <p className="text-sm font-medium tabular-nums" role="status">
+            {readyItems.length} of {items.length} ready{failedItemCount > 0 ? ` · ${failedItemCount} failed` : ""}
+            {readyItems.length > 0 && ` · Ready total: ${formatBytes(readyOriginalBytes)} → ${formatBytes(readyOutputBytes)} · ${formatBytes(Math.abs(readyOriginalBytes - readyOutputBytes))} ${readyOutputBytes > readyOriginalBytes ? "larger" : "saved"}`}
+          </p>
       {saving && <p className="text-sm text-muted-foreground" role="status">Saving files...</p>}
       {uploads.uploadingItemCount > 0 && <p className="text-sm text-muted-foreground" role="status">Uploading {uploads.uploadingItemCount} image(s)...</p>}
       {uploads.uploadError && (
@@ -679,6 +694,10 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
             </Button>
           )}
         </div>
+      )}
+
+        </div>
+        </section>
       )}
 
       {compareItem && isActive && (

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -219,7 +219,7 @@ describe("OptimizePage", () => {
         settings: expect.objectContaining({ targetFormat: "webp", quality: 85, removeGps: true }),
       }),
     );
-    expect(await screen.findByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
   });
 
   it("opens a comparison dialog from a compressed preview", async () => {
@@ -241,7 +241,7 @@ describe("OptimizePage", () => {
 
     // Import and wait for initial compression with real timers
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText(/1.2 MB.*240 KB/);
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
     compressImage.mockClear();
 
     // Change quality via slider and wait for debounce (400ms) + scheduler
@@ -278,12 +278,12 @@ describe("OptimizePage", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    expect(await screen.findByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
 
-    expect(await screen.findByText(/1.2 MB.*120 KB/)).toBeInTheDocument();
-    expect(screen.queryByText(/1.2 MB.*240 KB/)).not.toBeInTheDocument();
+    expect(await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*120 KB/)).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Images to compress")).queryByText(/1.2 MB.*240 KB/)).not.toBeInTheDocument();
     expect(createOptimizerRun).toHaveBeenCalledTimes(2);
     expect(compressImage).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -297,7 +297,7 @@ describe("OptimizePage", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText(/1.2 MB.*240 KB/);
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
     compressImage.mockClear();
 
     await user.selectOptions(screen.getByLabelText(/format for real-photo\.jpg/i), "webp");
@@ -317,7 +317,7 @@ describe("OptimizePage", () => {
 
     // Import and compress
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText(/1.2 MB.*240 KB/);
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
     compressImage.mockClear();
 
     // Change format - should use fresh filename claim, not stale -2
@@ -584,7 +584,7 @@ describe("OptimizePage", () => {
     });
 
     expect(await screen.findByText(/cancelled/i)).toBeInTheDocument();
-    expect(screen.queryByText(/1.2 MB.*240 KB/)).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("Images to compress")).queryByText(/1.2 MB.*240 KB/)).not.toBeInTheDocument();
   });
 
   it("does not dispatch duplicate compression when quality changes during active compression", async () => {
@@ -644,7 +644,7 @@ describe("OptimizePage", () => {
 
     // Import and wait for automatic compression
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText(/1.2 MB.*240 KB/);
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
 
     // Click Save to local folder
     await user.click(screen.getByRole("button", { name: "Save to local folder" }));
@@ -663,7 +663,7 @@ describe("OptimizePage", () => {
 
     // Import and wait for automatic compression
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText(/1.2 MB.*240 KB/);
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
 
     // Save to local folder
     await user.click(screen.getByRole("button", { name: "Save to local folder" }));
@@ -714,7 +714,7 @@ describe("OptimizePage", () => {
 
     // Import and wait for automatic compression
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText(/1.2 MB.*240 KB/);
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
 
     // Click Upload to S3
     await user.click(screen.getByRole("button", { name: "Upload to S3" }));
@@ -775,7 +775,7 @@ describe("OptimizePage", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText(/1.2 MB.*240 KB/);
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
     await user.click(screen.getByRole("button", { name: "Upload to S3" }));
     await screen.findByText(/uploading 1 image/i);
 
@@ -818,7 +818,7 @@ describe("OptimizePage", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText(/1.2 MB.*240 KB/);
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
 
     fireEvent.change(screen.getByRole("slider", { name: /quality/i }), {
       target: { value: "70" },
@@ -1143,7 +1143,7 @@ describe("OptimizePage", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText(/1.2 MB.*240 KB/);
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
 
     // compressImage was called (per-item API)
     expect(compressImage).toHaveBeenCalled();
