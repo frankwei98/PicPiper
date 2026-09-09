@@ -151,6 +151,18 @@ describe("OptimizePage", () => {
     expect(screen.queryByText(/0% saved/)).not.toBeInTheDocument();
   });
 
+  it("ignores late native drop callbacks after leaving the page", async () => {
+    const { rerender } = render(<OptimizePage namingTemplate="{slug}.{ext}" isActive />);
+    await waitFor(() => expect(mockOnDragDropEvent).toHaveBeenCalled());
+    const calls = mockOnDragDropEvent.mock.calls as unknown as Array<[(event: {
+      payload: { type: "drop"; paths: string[] };
+    }) => Promise<void>]>;
+    const staleHandler = calls[0][0];
+    rerender(<OptimizePage namingTemplate="{slug}.{ext}" isActive={false} />);
+    await act(async () => { await staleHandler({ payload: { type: "drop", paths: ["/tmp/late.jpg"] } }); });
+    expect(inspectImage).not.toHaveBeenCalled();
+  });
+
   it("starts empty and asks the user to choose images", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 

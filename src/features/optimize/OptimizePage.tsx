@@ -50,7 +50,7 @@ interface OptimizePageProps {
 }
 
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, isActive = true, onOpenGallery }: OptimizePageProps) {
-  const [uploadedFocus, setUploadedFocus] = useState<GalleryFocus | null>(null);
+  const [uploadedFocus, setUploadedFocus] = useState<(GalleryFocus & { destination: string }) | null>(null);
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const [quality, setQuality] = useState(DEFAULT_SETTINGS.quality);
   const [compareItemId, setCompareItemId] = useState<string | null>(null);
@@ -74,7 +74,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
     items,
     namingTemplate,
     onUploadedToS3: (focus) => {
-      setUploadedFocus(focus);
+      setUploadedFocus({ ...focus, destination: activeProfile ? `${activeProfile.name} · ${activeProfile.bucket} / ${focus.prefix}` : focus.profileId ?? "S3" });
       onUploadedToS3?.(focus);
     },
   });
@@ -87,6 +87,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
 
   const removeItem = (id: string) => {
     if (!uploads.canMutateQueue()) return;
+    setUploadedFocus(null);
     setItems((current) => current.filter((item) => item.id !== id));
     uploads.forgetItem(id);
   };
@@ -153,6 +154,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
 
   const importImages = useCallback(async (paths: string[]) => {
     if (!uploads.canMutateQueue()) return;
+    setUploadedFocus(null);
     setImporting(true);
     setDropError(null);
 
@@ -239,6 +241,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
     try {
       getCurrentWebview()
         .onDragDropEvent(async (event) => {
+          if (disposed) return;
           if (event.payload.type === "over") {
             setDragging(true);
             return;
@@ -381,6 +384,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
   const applyGlobalRequeue = useCallback((nextQuality: number) => {
     if (!uploads.canMutateQueue()) return false;
 
+    setUploadedFocus(null);
     pendingQualityRef.current = undefined;
     optimizerRun.current = null;
     preferredNameCounts.current.clear();
@@ -445,6 +449,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
   // --- Per-item actions ---
   const updateFormat = (id: string, targetFormat: WritableImageFormat) => {
     if (!uploads.canMutateQueue()) return;
+    setUploadedFocus(null);
     optimizerRun.current = null;
     preferredNameCounts.current.clear();
     uploads.forgetItem(id);
@@ -664,7 +669,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
       )}
       {uploadedFocus && (
         <div className="flex flex-wrap items-center gap-2" role="status">
-          <p className="text-sm text-muted-foreground">Uploaded {uploadedFocus.highlightedKeys.length} image(s). Your local results are still available.</p>
+          <p className="text-sm text-muted-foreground">Uploaded {uploadedFocus.highlightedKeys.length} image(s) to {uploadedFocus.destination}. Your local results are still available.</p>
           {onOpenGallery && <Button variant="outline" onClick={onOpenGallery}>View uploaded images</Button>}
         </div>
       )}
