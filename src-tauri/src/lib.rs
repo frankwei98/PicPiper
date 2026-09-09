@@ -16,8 +16,8 @@ use models::{
     GenerateObjectKeyRequest, GenerateObjectKeyResponse, ImageInspection, InspectImageRequest,
     ListObjectsRequest, ListObjectsResponse, ReadComparisonImageRequest,
     ReadComparisonImageResponse, ReadThumbnailRequest, ReadThumbnailResponse,
-    SaveCredentialRequest, SaveCredentialResponse, SaveSettingsRequest, UploadHistoryEntry,
-    UploadObjectRequest,
+    SaveCredentialRequest, SaveCredentialResponse, SaveSettingsRequest, TestS3ConnectionRequest,
+    UploadHistoryEntry, UploadObjectRequest,
 };
 use state::{AppPaths, CompressionLimiter, HistoryStore};
 use tauri::{Manager, State};
@@ -97,6 +97,36 @@ async fn list_gallery_objects(
 ) -> AppResult<ListObjectsResponse> {
     let secret = credentials::load_secret(&paths.credential_dir, &request.profile.id)?;
     gallery::list_objects(request, secret).await
+}
+
+#[tauri::command]
+async fn test_s3_connection(
+    paths: State<'_, AppPaths>,
+    request: TestS3ConnectionRequest,
+) -> AppResult<()> {
+    settings::validate_profile(&request.profile)?;
+    let secret = match request.secret_access_key {
+        Some(secret) if !secret.is_empty() => secret,
+        _ => credentials::load_secret(&paths.credential_dir, &request.profile.id)?,
+    };
+    let list_request = ListObjectsRequest {
+        prefix: request.profile.default_prefix.clone(),
+        profile: request.profile,
+        continuation_token: None,
+        page_size: Some(1),
+    };
+    tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        gallery::list_objects(list_request, secret),
+    )
+    .await
+    .map_err(|_| {
+        error::AppError::new(
+            "s3TestTimedOut",
+            "Connection test timed out after 30 seconds.",
+        )
+    })??;
+    Ok(())
 }
 
 #[tauri::command]
@@ -238,6 +268,7 @@ pub fn run() {
             read_thumbnail,
             read_comparison_image,
             list_gallery_objects,
+            test_s3_connection,
             delete_gallery_object,
             upload_gallery_object,
             download_gallery_object,

@@ -113,11 +113,18 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const connectionGenerationRef = useRef(0);
 
-  const handleSaveProfile = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setSaveError(null);
-    setSaveMessage(null);
+  useEffect(() => {
+    connectionGenerationRef.current += 1;
+    setConnectionMessage(null);
+    setConnectionError(null);
+  }, [name, endpoint, region, bucket, accessKeyId, secretAccessKey, pathStyle, publicBaseUrl, defaultPrefix, editingProfileId, creatingNew]);
+
+  const validateProfileFields = (missingSecretMessage: string): FieldErrors => {
     const errors: FieldErrors = {};
     if (!name.trim()) errors.name = "Profile name is required.";
     if (!endpoint.trim()) errors.endpoint = "Endpoint is required.";
@@ -125,16 +132,64 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     if (!region.trim()) errors.region = "Region is required.";
     if (!bucket.trim()) errors.bucket = "Bucket is required.";
     if (!accessKeyId.trim()) errors.accessKeyId = "Access key ID is required.";
-    if (!secretAccessKey && !profile?.credentialRef) errors.secretAccessKey = "Secret access key is required for a new profile.";
-    if (!namingTemplate.trim()) errors.namingTemplate = "Naming template is required.";
+    if (!secretAccessKey && !profile?.credentialRef) errors.secretAccessKey = missingSecretMessage;
     if (publicBaseUrl.trim()) errors.publicBaseUrl = httpUrlError(publicBaseUrl, "Public Base URL");
     if (defaultPrefix.split("/").some((segment) => segment === "." || segment === "..")) {
       errors.defaultPrefix = "Default prefix must not contain path traversal segments.";
     } else if (Array.from(defaultPrefix).some((character) => /[\u0000-\u001f\u007f]/.test(character))) {
       errors.defaultPrefix = "Default prefix must not contain control characters.";
     }
+    return Object.fromEntries(Object.entries(errors).filter(([, value]) => value)) as FieldErrors;
+  };
 
-    const validationErrors = Object.fromEntries(Object.entries(errors).filter(([, value]) => value)) as FieldErrors;
+  const draftProfile = (id: string): S3Profile => ({
+    id,
+    name: name.trim(),
+    endpoint: endpoint.trim(),
+    region: region.trim(),
+    bucket: bucket.trim(),
+    accessKeyId: accessKeyId.trim(),
+    credentialRef: profile?.credentialRef,
+    pathStyle,
+    publicBaseUrl: publicBaseUrl.trim() || undefined,
+    defaultPrefix: defaultPrefix.trim().replace(/^\/+|\/+$/g, ""),
+  });
+
+  const handleTestConnection = async () => {
+    const generation = ++connectionGenerationRef.current;
+    setConnectionMessage(null);
+    setConnectionError(null);
+    const validationErrors = validateProfileFields("Enter a secret access key to test this new profile.");
+    setFieldErrors(validationErrors);
+    const firstInvalid = (Object.keys(validationErrors) as ProfileField[])[0];
+    if (firstInvalid) {
+      fieldRefs.current[firstInvalid]?.focus();
+      return;
+    }
+
+    setTestingConnection(true);
+    try {
+      await settingsApi.testS3Connection({
+        profile: draftProfile(profile?.id ?? crypto.randomUUID()),
+        ...(secretAccessKey ? { secretAccessKey } : {}),
+      });
+      if (generation !== connectionGenerationRef.current) return;
+      setConnectionMessage("Connection successful. Bucket listing works.");
+    } catch (error) {
+      if (generation !== connectionGenerationRef.current) return;
+      setConnectionError(errorMessage(error, "Connection test failed."));
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const handleSaveProfile = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaveError(null);
+    setSaveMessage(null);
+    const errors = validateProfileFields("Secret access key is required for a new profile.");
+    if (!namingTemplate.trim()) errors.namingTemplate = "Naming template is required.";
+    const validationErrors = errors;
     setFieldErrors(validationErrors);
     const firstInvalid = (Object.keys(validationErrors) as ProfileField[])[0];
     if (firstInvalid) {
@@ -151,16 +206,8 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       const credentialRef = secretAccessKey ? `s3:${profileId}` : profile!.credentialRef!;
 
       const savedProfile: S3Profile = {
-        id: profileId,
-        name: name.trim(),
-        endpoint: endpoint.trim(),
-        region: region.trim(),
-        bucket: bucket.trim(),
-        accessKeyId: accessKeyId.trim(),
+        ...draftProfile(profileId),
         credentialRef,
-        pathStyle,
-        publicBaseUrl: publicBaseUrl.trim() || undefined,
-        defaultPrefix: defaultPrefix.trim().replace(/^\/+|\/+$/g, ""),
       };
 
       const nextSettings: AppSettings = {
@@ -301,6 +348,9 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
               </Label>
               <div className="col-span-2 flex gap-2 max-lg:col-span-1">
                 <Button type="submit" disabled={saving}>Save profile</Button>
+                <Button variant="outline" type="button" onClick={handleTestConnection} disabled={testingConnection || saving}>
+                  {testingConnection ? "Testing..." : "Test connection"}
+                </Button>
                 <Button
                   variant="outline"
                   type="button"
@@ -312,6 +362,10 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
             </form>
             {saving && <p className="text-sm text-muted-foreground">Saving profile...</p>}
             {saveMessage && <p className="text-sm text-muted-foreground">{saveMessage}</p>}
+            {connectionMessage && <p className="text-sm text-muted-foreground" role="status">{connectionMessage}</p>}
+            {connectionError && (
+              <Alert variant="destructive"><AlertDescription>{connectionError}</AlertDescription></Alert>
+            )}
             {saveError && (
               <Alert variant="destructive">
                 <AlertDescription>{saveError}</AlertDescription>
