@@ -44,36 +44,41 @@ pub fn validate_settings(settings: &AppSettings) -> AppResult<()> {
         }
     }
     for profile in &settings.profiles {
-        for (field, value) in [
-            ("Profile ID", profile.id.as_str()),
-            ("Profile name", profile.name.as_str()),
-            ("Endpoint", profile.endpoint.as_str()),
-            ("Region", profile.region.as_str()),
-            ("Bucket", profile.bucket.as_str()),
-            ("Access key ID", profile.access_key_id.as_str()),
-        ] {
-            if value.trim().is_empty() {
-                return Err(AppError::new(
-                    "invalidSettings",
-                    format!("{field} is required."),
-                ));
-            }
-        }
-        validate_http_url(&profile.endpoint, "Endpoint")?;
-        if let Some(url) = profile.public_base_url.as_deref() {
-            validate_http_url(url, "Public Base URL")?;
-        }
-        if profile.default_prefix.chars().any(char::is_control)
-            || profile
-                .default_prefix
-                .split('/')
-                .any(|part| matches!(part, "." | ".."))
-        {
+        validate_profile(profile)?;
+    }
+    Ok(())
+}
+
+pub fn validate_profile(profile: &crate::models::S3Profile) -> AppResult<()> {
+    for (field, value) in [
+        ("Profile ID", profile.id.as_str()),
+        ("Profile name", profile.name.as_str()),
+        ("Endpoint", profile.endpoint.as_str()),
+        ("Region", profile.region.as_str()),
+        ("Bucket", profile.bucket.as_str()),
+        ("Access key ID", profile.access_key_id.as_str()),
+    ] {
+        if value.trim().is_empty() {
             return Err(AppError::new(
                 "invalidSettings",
-                "Default prefix must not contain control characters or path traversal segments.",
+                format!("{field} is required."),
             ));
         }
+    }
+    validate_http_url(&profile.endpoint, "Endpoint")?;
+    if let Some(url) = profile.public_base_url.as_deref() {
+        validate_http_url(url, "Public Base URL")?;
+    }
+    if profile.default_prefix.chars().any(char::is_control)
+        || profile
+            .default_prefix
+            .split('/')
+            .any(|part| matches!(part, "." | ".."))
+    {
+        return Err(AppError::new(
+            "invalidSettings",
+            "Default prefix must not contain control characters or path traversal segments.",
+        ));
     }
     Ok(())
 }

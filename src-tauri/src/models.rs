@@ -75,6 +75,13 @@ pub struct SaveCredentialResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct TestS3ConnectionRequest {
+    pub profile: S3Profile,
+    pub secret_access_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct CompressionSettings {
     pub target_format: ImageFormat,
     pub quality: u8,

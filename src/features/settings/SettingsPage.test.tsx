@@ -3,17 +3,19 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AppSettings } from "../../api/tauri";
 
-const { saveSettings, saveS3Secret } = vi.hoisted(() => ({
+const { saveSettings, saveS3Secret, testS3Connection } = vi.hoisted(() => ({
   saveSettings: vi.fn(async (_settings?: AppSettings) => {}),
   saveS3Secret: vi.fn(async () => ({
     credentialRef: "s3:personal",
   })),
+  testS3Connection: vi.fn(async () => {}),
 }));
 
 vi.mock("../../api/tauri", async () => ({
   settingsApi: {
     saveSettings,
     saveS3Secret,
+    testS3Connection,
   },
 }));
 
@@ -25,6 +27,8 @@ describe("SettingsPage", () => {
     saveSettings.mockResolvedValue(undefined);
     saveS3Secret.mockReset();
     saveS3Secret.mockResolvedValue({ credentialRef: "s3:personal" });
+    testS3Connection.mockReset();
+    testS3Connection.mockResolvedValue(undefined);
   });
 
   it("renders a save action for profile settings", () => {
@@ -632,5 +636,102 @@ describe("SettingsPage", () => {
       }),
     );
     expect(onSettingsChange).toHaveBeenCalled();
+  });
+
+  it("tests the current draft with an unsaved secret without saving it", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPage
+        settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }}
+        onSettingsChange={() => {}}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Profile name"));
+    await user.type(screen.getByLabelText("Profile name"), "Draft R2");
+    await user.type(screen.getByLabelText("Endpoint"), "https://example.r2.cloudflarestorage.com");
+    await user.type(screen.getByLabelText("Bucket"), "images");
+    await user.type(screen.getByLabelText("Access key ID"), "draft-key");
+    await user.type(screen.getByLabelText("Secret access key"), "unsaved-secret");
+    await user.type(screen.getByLabelText("Default prefix"), "draft/images");
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    expect(testS3Connection).toHaveBeenCalledWith({
+      profile: expect.objectContaining({
+        name: "Draft R2",
+        endpoint: "https://example.r2.cloudflarestorage.com",
+        bucket: "images",
+        accessKeyId: "draft-key",
+        defaultPrefix: "draft/images",
+      }),
+      secretAccessKey: "unsaved-secret",
+    });
+    expect(await screen.findByText(/connection successful/i)).toBeInTheDocument();
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(saveS3Secret).not.toHaveBeenCalled();
+  });
+
+  it("tests an existing profile using its stored secret fallback", async () => {
+    const user = userEvent.setup();
+    const existing = {
+      id: "personal",
+      name: "Personal R2",
+      endpoint: "https://example.r2.cloudflarestorage.com",
+      region: "auto",
+      bucket: "images",
+      accessKeyId: "stored-key",
+      credentialRef: "s3:personal",
+      pathStyle: true,
+      defaultPrefix: "images",
+    };
+    render(
+      <SettingsPage
+        settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }}
+        onSettingsChange={() => {}}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    expect(testS3Connection).toHaveBeenCalledWith({ profile: existing });
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(saveS3Secret).not.toHaveBeenCalled();
+  });
+
+  it("shows a connection failure without saving the draft", async () => {
+    const user = userEvent.setup();
+    testS3Connection.mockRejectedValueOnce(new Error("Access denied"));
+    const existing = {
+      id: "personal", name: "Personal R2", endpoint: "https://s3.example.com",
+      region: "auto", bucket: "images", accessKeyId: "key", credentialRef: "s3:personal",
+      pathStyle: true, defaultPrefix: "images",
+    };
+    render(<SettingsPage settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    expect(await screen.findByText("Access denied")).toBeInTheDocument();
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(saveS3Secret).not.toHaveBeenCalled();
+  });
+
+  it("ignores a connection result after the draft changes", async () => {
+    const user = userEvent.setup();
+    let resolveTest!: () => void;
+    testS3Connection.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveTest = resolve; }));
+    const existing = {
+      id: "personal", name: "Personal R2", endpoint: "https://s3.example.com",
+      region: "auto", bucket: "images", accessKeyId: "key", credentialRef: "s3:personal",
+      pathStyle: true, defaultPrefix: "images",
+    };
+    render(<SettingsPage settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await user.clear(screen.getByLabelText("Endpoint"));
+    await user.type(screen.getByLabelText("Endpoint"), "https://new.s3.example.com");
+    resolveTest();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /test connection/i })).toBeEnabled());
+    expect(screen.queryByText(/connection successful/i)).not.toBeInTheDocument();
   });
 });
