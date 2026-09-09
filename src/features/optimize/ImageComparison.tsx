@@ -147,7 +147,7 @@ function ComparisonPane({ ref, label, image, mode, onScroll }: ComparisonPanePro
         aria-label={`${label} image pane`}
         data-testid={`${label.toLowerCase()}-comparison-pane`}
         className={cn(
-          "h-[52dvh] min-h-64 rounded-lg border focus-visible:outline-2 focus-visible:outline-ring overscroll-contain bg-[repeating-conic-gradient(var(--muted)_0_25%,transparent_0_50%)_50%/16px_16px]",
+          "h-[40dvh] min-h-32 rounded-lg border focus-visible:outline-2 focus-visible:outline-ring overscroll-contain bg-[repeating-conic-gradient(var(--muted)_0_25%,transparent_0_50%)_50%/16px_16px]",
           mode === "actual" ? "overflow-auto" : "grid place-items-center overflow-hidden",
         )}
         onScroll={onScroll}

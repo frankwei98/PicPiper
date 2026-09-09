@@ -709,7 +709,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
             <DialogHeader>
               <DialogTitle>{`Compare ${compareItem.fileName}`}</DialogTitle>
             </DialogHeader>
-            <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <p>Quality: {compareItem.settings.quality}</p>
               <p>Metadata: Removed during compression</p>
               <p>Output format: {compareItem.settings.targetFormat}</p>
