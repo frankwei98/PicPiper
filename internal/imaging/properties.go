@@ -163,73 +163,9 @@ func properties(file *os.File) sourceProperties {
 		}
 	} else if string(magic[4:8]) == "ftyp" {
 		result.sequence = string(magic[8:]) == "avis"
-		scanColorBoxes(file, 0, info.Size(), 0, &result)
+		scanItemColorProperties(file, info.Size(), &result)
 	}
 	return result
-}
-
-func scanColorBoxes(file *os.File, start, end int64, depth int, result *sourceProperties) {
-	remaining := 10000
-	var walk func(int64, int64, int)
-	walk = func(start, end int64, depth int) {
-		if depth > 8 {
-			return
-		}
-		for position := start; position+8 <= end && remaining > 0; {
-			remaining--
-			var header [16]byte
-			if _, err := file.ReadAt(header[:8], position); err != nil {
-				return
-			}
-			size := int64(binary.BigEndian.Uint32(header[:4]))
-			headerSize := int64(8)
-			if size == 1 {
-				if _, err := file.ReadAt(header[8:], position+8); err != nil {
-					return
-				}
-				extended := binary.BigEndian.Uint64(header[8:])
-				if extended > uint64(end-position) {
-					return
-				}
-				size, headerSize = int64(extended), 16
-			} else if size == 0 {
-				size = end - position
-			}
-			if size < headerSize || size > end-position {
-				return
-			}
-			payload, limit := position+headerSize, position+size
-			switch string(header[4:8]) {
-			case "meta":
-				walk(payload+4, limit, depth+1)
-			case "iprp", "ipco":
-				walk(payload, limit, depth+1)
-			case "colr":
-				if length := limit - payload; length >= 4 && length <= 4<<20 {
-					data := make([]byte, length)
-					if _, err := file.ReadAt(data, payload); err == nil {
-						switch string(data[:4]) {
-						case "prof", "rICC":
-							result.profilePresent, result.profile = true, data[4:]
-						case "nclx":
-							if len(data) >= 11 {
-								primaries := binary.BigEndian.Uint16(data[4:6])
-								transfer := binary.BigEndian.Uint16(data[6:8])
-								if transfer == 16 || transfer == 18 {
-									result.hdr, result.hdrPrimaries, result.hdrTransfer = true, primaries, transfer
-								}
-								if primaries == 12 && transfer == 13 {
-									result.profilePresent, result.profile = true, displayP3Profile()
-								}
-							}
-						}
-					}
-				}
-			}
-			position += size
-		}
-	}
-	walk(start, end, depth)
 }
 
 func validateColorProperties(metadata sourceProperties) error {
