@@ -94,7 +94,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
     items,
     namingTemplate,
     onUploadedToS3: (focus) => {
-      setUploadedFocus({ ...focus, destination: activeProfile ? `${activeProfile.name} · ${activeProfile.bucket} / ${focus.prefix}` : focus.profileId ?? "S3" });
+      setUploadedFocus({ ...focus, destination: activeProfile ? `${activeProfile.name} / ${activeProfile.bucket} / ${focus.prefix}` : focus.profileId ?? "S3" });
       onUploadedToS3?.(focus);
     },
   });
@@ -734,7 +734,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
               </p>
               <p className="action-destination" aria-label="Upload destination">
                 {uploads.uploadProfile
-                  ? `Upload destination: ${uploads.uploadProfile.name} · ${uploads.uploadProfile.bucket} / ${uploads.uploadProfile.defaultPrefix || "images"}`
+                  ? `Upload destination: ${uploads.uploadProfile.name} / ${uploads.uploadProfile.bucket} / ${uploads.uploadProfile.defaultPrefix || "images"}`
                   : "Set an upload destination in Settings. Your compressed images will stay here."}
               </p>
             </div>

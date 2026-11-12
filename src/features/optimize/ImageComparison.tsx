@@ -72,7 +72,7 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
     <div className="compare-root">
       <div className="compare-toolbar">
         <p>
-          {mode === "fit" ? "Images fitted to each pane" : "100% scale · scroll either image to compare details"}
+          {mode === "fit" ? "Images fitted to each pane" : "100% scale. Scroll either image to compare details."}
         </p>
         <div className="compare-zooms" role="group" aria-label="Comparison zoom">
           <Button
