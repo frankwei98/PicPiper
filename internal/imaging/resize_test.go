@@ -1,0 +1,60 @@
+package imaging
+
+import (
+	"context"
+	"image"
+	"image/color"
+	"strings"
+	"testing"
+)
+
+func TestResizeFitsLongestEdgeWithoutCroppingOrUpscaling(t *testing.T) {
+	for _, tc := range []struct{ width, height, limit, wantWidth, wantHeight int }{
+		{600, 400, 128, 128, 85},
+		{400, 600, 128, 85, 128},
+		{60, 40, 128, 60, 40},
+		{600, 1, 128, 128, 1},
+	} {
+		source := fixture(t, image.NewNRGBA(image.Rect(0, 0, tc.width, tc.height)))
+		service := New(t.TempDir())
+		run := call(t, service, "create_optimizer_run", request{}).(map[string]string)
+		result := call(t, service, "compress_image", request{SourcePath: source, OutputDir: run["outputDir"], OutputFileName: "resized.png", Settings: settings{TargetFormat: "png", MaxDimension: tc.limit}}).(Result)
+		img, _, err := decode(context.Background(), result.OutputPath)
+		if err != nil || img.Bounds().Dx() != tc.wantWidth || img.Bounds().Dy() != tc.wantHeight || result.Width != tc.wantWidth || result.Height != tc.wantHeight {
+			t.Fatalf("%+v: unexpected resize result %+v %v", tc, result, err)
+		}
+		if tc.width > tc.limit && !strings.Contains(result.Warning, "without cropping") {
+			t.Fatal("resize must be visible in result feedback")
+		}
+	}
+}
+
+func TestDownsamplingFiltersFineDetailAndPreservesTransparentColors(t *testing.T) {
+	checker := image.NewNRGBA(image.Rect(0, 0, 128, 128))
+	for y := 0; y < 128; y++ {
+		for x := 0; x < 128; x++ {
+			value := uint8(0)
+			if (x+y)%2 == 0 {
+				value = 255
+			}
+			checker.SetNRGBA(x, y, color.NRGBA{R: value, G: value, B: value, A: 255})
+		}
+	}
+	filtered := resize(checker, 8, 8)
+	for _, pixel := range []image.Point{{1, 1}, {4, 4}, {6, 6}} {
+		value := filtered.NRGBAAt(pixel.X, pixel.Y)
+		if value.R < 110 || value.R > 145 || value.A != 255 {
+			t.Fatalf("fine detail aliased rather than being filtered: %+v", value)
+		}
+	}
+	alpha := image.NewNRGBA(image.Rect(0, 0, 32, 16))
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			alpha.SetNRGBA(x, y, color.NRGBA{R: 255, A: 255})
+		}
+	}
+	edge := resize(alpha, 8, 4).NRGBAAt(3, 2)
+	if edge.A == 0 || edge.R < 245 || edge.G != 0 || edge.B != 0 {
+		t.Fatalf("transparent edge gained a dark fringe: %+v", edge)
+	}
+}
