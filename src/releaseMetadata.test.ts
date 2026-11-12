@@ -29,7 +29,7 @@ describe("desktop release configuration", () => {
     expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).some((name) => name.startsWith("@tauri-apps/"))).toBe(false);
   });
 
-  it("checks both languages before packaging the MVP", async () => {
+  it("checks TypeScript and Go before packaging the MVP", async () => {
     const workflow = await read(".github/workflows/release.yml");
     expect(workflow).toMatch(/needs: quality/);
     expect(workflow).toContain("pnpm test");

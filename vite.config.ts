@@ -12,7 +12,7 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     host: "127.0.0.1",
-    watch: { ignored: ["**/build/**", "**/.mygo/**", "**/src-tauri/**"] },
+    watch: { ignored: ["**/build/**", "**/.mygo/**"] },
   },
   test: {
     environment: "jsdom",
