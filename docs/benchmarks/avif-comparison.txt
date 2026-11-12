@@ -1,0 +1,68 @@
+# github.com/frankwei98/PicPiper/internal/imaging.test
+ld: warning: ignoring duplicate libraries: '-lm', '/Users/frankwei/Code/DesktopApp/pic-piper/.tools/native-avif/darwin-arm64-74845887371a/install/lib/libaom.a', '/Users/frankwei/Code/DesktopApp/pic-piper/.tools/native-avif/darwin-arm64-74845887371a/install/lib/libavif.a', '/Users/frankwei/Code/DesktopApp/pic-piper/.tools/native-webp/darwin-arm64-e8dcd7e2af55/install/lib/libsharpyuv.a', '/Users/frankwei/Code/DesktopApp/pic-piper/.tools/native-webp/darwin-arm64-e8dcd7e2af55/install/lib/libwebp.a'
+goos: darwin
+goarch: arm64
+pkg: github.com/frankwei98/PicPiper/internal/imaging
+cpu: Apple M1 Pro
+BenchmarkAVIFCompression/gradient/q55/previous-8         	       3	 317757958 ns/op	        38.60 RGB-PSNR-dB	         0.9565 RGB-SSIM	     26141 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q55/previous-8         	       3	 322758542 ns/op	        38.60 RGB-PSNR-dB	         0.9565 RGB-SSIM	     26141 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q55/previous-8         	       3	 316489194 ns/op	        38.60 RGB-PSNR-dB	         0.9565 RGB-SSIM	     26141 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q55/current-8          	       3	  72497653 ns/op	        40.24 RGB-PSNR-dB	         0.9748 RGB-SSIM	     15956 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q55/current-8          	       3	  71924486 ns/op	        40.24 RGB-PSNR-dB	         0.9748 RGB-SSIM	     15956 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q55/current-8          	       3	  71814222 ns/op	        40.24 RGB-PSNR-dB	         0.9748 RGB-SSIM	     15956 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q85/previous-8         	       3	 336984555 ns/op	        41.07 RGB-PSNR-dB	         0.9684 RGB-SSIM	     67126 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q85/previous-8         	       3	 353702736 ns/op	        41.07 RGB-PSNR-dB	         0.9684 RGB-SSIM	     67126 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q85/previous-8         	       3	 347927583 ns/op	        41.07 RGB-PSNR-dB	         0.9684 RGB-SSIM	     67126 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q85/current-8          	       3	  83327097 ns/op	        43.89 RGB-PSNR-dB	         0.9840 RGB-SSIM	     38405 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q85/current-8          	       3	  83828764 ns/op	        43.89 RGB-PSNR-dB	         0.9840 RGB-SSIM	     38405 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/gradient/q85/current-8          	       3	  87025736 ns/op	        43.89 RGB-PSNR-dB	         0.9840 RGB-SSIM	     38405 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q55/previous-8          	       3	 199593500 ns/op	        44.17 RGB-PSNR-dB	         0.9873 RGB-SSIM	     13664 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q55/previous-8          	       3	 200163750 ns/op	        44.17 RGB-PSNR-dB	         0.9873 RGB-SSIM	     13664 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q55/previous-8          	       3	 201272764 ns/op	        44.17 RGB-PSNR-dB	         0.9873 RGB-SSIM	     13664 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q55/current-8           	       3	  32309195 ns/op	        47.20 RGB-PSNR-dB	         0.9948 RGB-SSIM	      7198 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q55/current-8           	       3	  31938847 ns/op	        47.20 RGB-PSNR-dB	         0.9948 RGB-SSIM	      7198 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q55/current-8           	       3	  32675403 ns/op	        47.20 RGB-PSNR-dB	         0.9948 RGB-SSIM	      7198 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q85/previous-8          	       3	 223062486 ns/op	        47.10 RGB-PSNR-dB	         0.9931 RGB-SSIM	     26793 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q85/previous-8          	       3	 219919180 ns/op	        47.10 RGB-PSNR-dB	         0.9931 RGB-SSIM	     26793 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q85/previous-8          	       3	 222955486 ns/op	        47.10 RGB-PSNR-dB	         0.9931 RGB-SSIM	     26793 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q85/current-8           	       3	  39279958 ns/op	        49.35 RGB-PSNR-dB	         0.9960 RGB-SSIM	     13492 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q85/current-8           	       3	  39268181 ns/op	        49.35 RGB-PSNR-dB	         0.9960 RGB-SSIM	     13492 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/texture/q85/current-8           	       3	  39399806 ns/op	        49.35 RGB-PSNR-dB	         0.9960 RGB-SSIM	     13492 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q55/previous-8             	       3	 365608222 ns/op	        36.98 RGB-PSNR-dB	         0.9726 RGB-SSIM	     19483 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q55/previous-8             	       3	 321813250 ns/op	        36.98 RGB-PSNR-dB	         0.9726 RGB-SSIM	     19483 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q55/previous-8             	       3	 349431097 ns/op	        36.98 RGB-PSNR-dB	         0.9726 RGB-SSIM	     19483 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q55/current-8              	       3	 162012208 ns/op	        44.36 RGB-PSNR-dB	         0.9946 RGB-SSIM	     13860 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q55/current-8              	       3	 159158820 ns/op	        44.36 RGB-PSNR-dB	         0.9946 RGB-SSIM	     13860 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q55/current-8              	       3	 167636556 ns/op	        44.36 RGB-PSNR-dB	         0.9946 RGB-SSIM	     13860 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q85/previous-8             	       3	 363601778 ns/op	        44.48 RGB-PSNR-dB	         0.9913 RGB-SSIM	     28744 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q85/previous-8             	       3	 368048167 ns/op	        44.48 RGB-PSNR-dB	         0.9913 RGB-SSIM	     28744 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q85/previous-8             	       3	 375849653 ns/op	        44.48 RGB-PSNR-dB	         0.9913 RGB-SSIM	     28744 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q85/current-8              	       3	 181952083 ns/op	        47.21 RGB-PSNR-dB	         0.9946 RGB-SSIM	     23551 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q85/current-8              	       3	 180994347 ns/op	        47.21 RGB-PSNR-dB	         0.9946 RGB-SSIM	     23551 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/text/q85/current-8              	       3	 191975958 ns/op	        47.21 RGB-PSNR-dB	         0.9946 RGB-SSIM	     23551 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q55/previous-8            	       3	 287210986 ns/op	        46.65 RGB-PSNR-dB	         0.9941 RGB-SSIM	     30553 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q55/previous-8            	       3	 269601389 ns/op	        46.65 RGB-PSNR-dB	         0.9941 RGB-SSIM	     30553 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q55/previous-8            	       3	 269990389 ns/op	        46.65 RGB-PSNR-dB	         0.9941 RGB-SSIM	     30553 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q55/current-8             	       3	  83655653 ns/op	        52.39 RGB-PSNR-dB	         0.9963 RGB-SSIM	      5682 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q55/current-8             	       3	  84152931 ns/op	        52.39 RGB-PSNR-dB	         0.9963 RGB-SSIM	      5682 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q55/current-8             	       3	  86364347 ns/op	        52.39 RGB-PSNR-dB	         0.9963 RGB-SSIM	      5682 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q85/previous-8            	       3	 284799805 ns/op	        47.90 RGB-PSNR-dB	         0.9942 RGB-SSIM	     45930 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q85/previous-8            	       3	 283801486 ns/op	        47.90 RGB-PSNR-dB	         0.9942 RGB-SSIM	     45930 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q85/previous-8            	       3	 283922430 ns/op	        47.90 RGB-PSNR-dB	         0.9942 RGB-SSIM	     45930 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q85/current-8             	       3	  91368070 ns/op	        52.74 RGB-PSNR-dB	         0.9963 RGB-SSIM	      8882 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q85/current-8             	       3	  91281431 ns/op	        52.74 RGB-PSNR-dB	         0.9963 RGB-SSIM	      8882 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/alpha/q85/current-8             	       3	  91533278 ns/op	        52.74 RGB-PSNR-dB	         0.9963 RGB-SSIM	      8882 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q55/previous-8            	       3	 246870444 ns/op	        37.20 RGB-PSNR-dB	         0.9472 RGB-SSIM	     24889 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q55/previous-8            	       3	 247354125 ns/op	        37.20 RGB-PSNR-dB	         0.9472 RGB-SSIM	     24889 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q55/previous-8            	       3	 245148208 ns/op	        37.20 RGB-PSNR-dB	         0.9472 RGB-SSIM	     24889 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q55/current-8             	       3	  67064319 ns/op	        37.62 RGB-PSNR-dB	         0.9513 RGB-SSIM	     23064 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q55/current-8             	       3	  66961444 ns/op	        37.62 RGB-PSNR-dB	         0.9513 RGB-SSIM	     23064 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q55/current-8             	       3	  66924167 ns/op	        37.62 RGB-PSNR-dB	         0.9513 RGB-SSIM	     23064 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q85/previous-8            	       3	 315781472 ns/op	        42.05 RGB-PSNR-dB	         0.9759 RGB-SSIM	     61153 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q85/previous-8            	       3	 316987597 ns/op	        42.05 RGB-PSNR-dB	         0.9759 RGB-SSIM	     61153 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q85/previous-8            	       3	 314565042 ns/op	        42.05 RGB-PSNR-dB	         0.9759 RGB-SSIM	     61153 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q85/current-8             	       3	  83817611 ns/op	        42.37 RGB-PSNR-dB	         0.9771 RGB-SSIM	     58435 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q85/current-8             	       3	  83743722 ns/op	        42.37 RGB-PSNR-dB	         0.9771 RGB-SSIM	     58435 bytes/output	         0 max-alpha-error
+BenchmarkAVIFCompression/photo/q85/current-8             	       3	  83383653 ns/op	        42.37 RGB-PSNR-dB	         0.9771 RGB-SSIM	     58435 bytes/output	         0 max-alpha-error
+PASS
+ok  	github.com/frankwei98/PicPiper/internal/imaging	55.054s

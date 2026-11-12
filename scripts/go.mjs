@@ -1,10 +1,13 @@
 import { spawn } from "node:child_process";
-import { prepareNativeWebP } from "./native-webp.mjs";
+import { prepareNativeCodecs } from "./native-codecs.mjs";
 
 // Use bundled codecs on every machine, independent of installed shared libraries.
 const tags = new Set(["nodynamic"]);
-const native = ["build", "test", "run", "vet", "generate"].includes(process.argv[2]) ? await prepareNativeWebP() : null;
-if (native) tags.add("nativewebp");
+const native = ["build", "test", "run", "vet", "generate"].includes(process.argv[2]) ? await prepareNativeCodecs() : null;
+if (native) {
+  tags.add("nativewebp");
+  tags.add("nativeavif");
+}
 const flags = (process.env.GOFLAGS ?? "").replace(/(?:^|\s)-tags(?:=|\s+)([^\s]+)/g, (_, value) => {
   for (const tag of value.split(",")) tags.add(tag);
   return "";

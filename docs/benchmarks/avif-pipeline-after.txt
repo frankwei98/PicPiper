@@ -1,0 +1,14 @@
+# github.com/frankwei98/PicPiper/internal/imaging.test
+ld: warning: ignoring duplicate libraries: '-lm', '/Users/frankwei/Code/DesktopApp/pic-piper/.tools/native-avif/darwin-arm64-74845887371a/install/lib/libaom.a', '/Users/frankwei/Code/DesktopApp/pic-piper/.tools/native-avif/darwin-arm64-74845887371a/install/lib/libavif.a', '/Users/frankwei/Code/DesktopApp/pic-piper/.tools/native-webp/darwin-arm64-e8dcd7e2af55/install/lib/libsharpyuv.a', '/Users/frankwei/Code/DesktopApp/pic-piper/.tools/native-webp/darwin-arm64-e8dcd7e2af55/install/lib/libwebp.a'
+goos: darwin
+goarch: arm64
+pkg: github.com/frankwei98/PicPiper/internal/imaging
+cpu: Apple M1 Pro
+BenchmarkIsolatedImagePipeline/avif/cold-8         	       3	1050005139 ns/op	     38405 bytes/output
+BenchmarkIsolatedImagePipeline/avif/cold-8         	       3	1039244403 ns/op	     38405 bytes/output
+BenchmarkIsolatedImagePipeline/avif/cold-8         	       3	1037082958 ns/op	     38405 bytes/output
+BenchmarkIsolatedImagePipeline/avif/warm-8         	       3	 289172681 ns/op	     38405 bytes/output
+BenchmarkIsolatedImagePipeline/avif/warm-8         	       3	 292595847 ns/op	     38405 bytes/output
+BenchmarkIsolatedImagePipeline/avif/warm-8         	       3	 289546833 ns/op	     38405 bytes/output
+PASS
+ok  	github.com/frankwei98/PicPiper/internal/imaging	18.379s

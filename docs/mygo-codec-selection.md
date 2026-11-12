@@ -1,5 +1,7 @@
 # Go/MyGo image codec selection
 
+Later implementation updates: [native WebP and worker reuse](image-pipeline-performance.md), then [native AVIF and compression tuning](avif-performance.md). The recommendations below describe the earlier codec-selection review.
+
 Research date: 2026-11-12. Scope: macOS arm64 first, Go/MyGo desktop app, two-digit decimal MB app package, no local Rust installation, still-image read/write for WebP, AVIF, JPEG XL, and HEIC. This compares the exact modules in [`go.mod`](../go.mod) with Apple Image I/O and native codec stacks. It does not repeat the implementation or test results in [`mygo-codec-results.md`](mygo-codec-results.md).
 
 The later [workbench polish](image-workbench-polish.md) adds cancellable worker processes, 16-bit PNG handling, animated WebP preservation and a small CoreGraphics RGB profile conversion bridge. It records the latest package sizes and validation; the measurements below describe this earlier codec-selection review.

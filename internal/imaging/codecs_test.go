@@ -182,6 +182,13 @@ func TestModernCodecsConcurrentFirstUse(t *testing.T) {
 				var output bytes.Buffer
 				if err := encodeModern(&output, image.NewNRGBA(image.Rect(0, 0, 8, 8)), format, 85); err != nil {
 					t.Error(err)
+					return
+				}
+				if format == "avif" {
+					decoded, err := decodePixels(bytes.NewReader(output.Bytes()), format)
+					if err != nil || decoded.Bounds() != image.Rect(0, 0, 8, 8) {
+						t.Errorf("concurrent AVIF roundtrip: %v", err)
+					}
 				}
 			case 2:
 				// Even corrupt inputs initialize the registered JPEG XL decoder.

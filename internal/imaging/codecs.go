@@ -17,7 +17,7 @@ import (
 )
 
 // The bundled WASM codecs share unsynchronized runtime initialization state.
-// Serialize their entry points; JPEG, PNG, and bundled WebP remain parallel.
+// Serialize their entry points; native encoders and JPEG/PNG/WebP stay parallel.
 var codecMu sync.Mutex
 
 func decodeConfig(reader io.Reader) (image.Config, string, error) {
@@ -127,14 +127,12 @@ func encodeModern(writer io.Writer, img image.Image, format string, quality int)
 	if format == "webp" {
 		return encodeWebP(writer, img, quality)
 	}
+	if format == "avif" {
+		return encodeAVIF(writer, img, quality)
+	}
 	codecMu.Lock()
 	defer codecMu.Unlock()
 	switch format {
-	case "avif":
-		return avif.Encode(writer, img, avif.Options{
-			Quality: quality, QualityAlpha: 100, Speed: 8,
-			ChromaSubsampling: image.YCbCrSubsampleRatio444,
-		})
 	case "jxl":
 		return jpegxl.Encode(writer, img, jpegxl.Options{Quality: quality, Effort: 3, Lossless: quality == 100})
 	default:
