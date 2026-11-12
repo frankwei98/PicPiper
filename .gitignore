@@ -26,3 +26,9 @@ dist-ssr
 # Local planning/mockup artifacts
 .superpowers/
 .claude/
+
+# MyGo build products and local dependencies
+.mygo/
+build/
+.tools/
+.pnpm-store/
