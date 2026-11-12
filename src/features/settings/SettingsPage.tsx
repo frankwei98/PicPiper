@@ -4,7 +4,6 @@ import type { AppSettings } from "../../api/backend";
 import type { S3Profile } from "../../types";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -260,109 +259,133 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   });
 
   const renderFieldError = (field: ProfileField) => fieldErrors[field]
-    ? <span id={`${field}-error`} className="text-xs text-destructive">{fieldErrors[field]}</span>
+    ? <span id={`${field}-error`} className="field-error">{fieldErrors[field]}</span>
     : null;
 
   return (
-    <div className="grid max-w-5xl gap-6">
-      <header className="flex justify-between items-start gap-6">
+    <div className="page settings-page">
+      <header className="page-head">
         <div>
-          <h2 className="text-3xl font-semibold tracking-tight text-balance">Settings</h2>
-          <p className="text-muted-foreground mt-2 text-sm text-pretty">Manage S3 profiles, naming, and output defaults.</p>
+          <h2 className="page-title">Settings</h2>
+          <p className="page-note">Manage S3 profiles, naming, and output defaults.</p>
         </div>
       </header>
-      <section className="grid gap-6">
+      <form className="settings-sheet" onSubmit={handleSaveProfile}>
         {settings.profiles.length > 1 && (
-          <Label className="grid gap-2 items-start">
-            Editing profile
-            <NativeSelect
-              className="w-full max-w-sm"
-              value={editingProfileId}
-              onChange={(e) => setEditingProfileId(e.target.value)}
-            >
-              {settings.profiles.map((p) => (
-                <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </Label>
+          <div className="settings-scope">
+            <Label>
+              Editing profile
+              <NativeSelect
+                value={editingProfileId}
+                onChange={(e) => setEditingProfileId(e.target.value)}
+              >
+                {settings.profiles.map((p) => (
+                  <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </Label>
+          </div>
         )}
-        <Card>
-          <CardHeader>
-            <CardTitle>Profile</CardTitle>
-            <CardDescription>S3 credentials are stored locally on this device.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <form className="grid gap-4 grid-cols-2 max-lg:grid-cols-1" onSubmit={handleSaveProfile}>
-              <Label className="grid gap-2 items-start">
-                Profile name
-                <Input {...fieldProps("name")} value={name} onChange={(e) => setName(e.target.value)} />
-                {renderFieldError("name")}
-              </Label>
-              <Label className="grid gap-2 items-start">
-                Endpoint
-                <Input {...fieldProps("endpoint")} placeholder="https://s3.example.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-                {renderFieldError("endpoint")}
-              </Label>
-              <Label className="grid gap-2 items-start">
-                Region
-                <Input {...fieldProps("region")} value={region} onChange={(e) => setRegion(e.target.value)} />
-                {renderFieldError("region")}
-              </Label>
-              <Label className="grid gap-2 items-start">
-                Bucket
-                <Input {...fieldProps("bucket")} placeholder="my-image-bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} />
-                {renderFieldError("bucket")}
-              </Label>
-              <Label className="grid gap-2 items-start">
-                Access key ID
-                <Input {...fieldProps("accessKeyId")} value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
-                {renderFieldError("accessKeyId")}
-              </Label>
-              <Label className="grid gap-2 items-start">
-                Secret access key
-                <Input {...fieldProps("secretAccessKey")} type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
-                {renderFieldError("secretAccessKey")}
-              </Label>
-              <Label className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                <span>Path style addressing</span>
-                <Switch checked={pathStyle} onCheckedChange={setPathStyle} />
-              </Label>
-              <Label className="grid gap-2 items-start">
-                Naming template
-                <Input {...fieldProps("namingTemplate")} value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
-                {renderFieldError("namingTemplate")}
-              </Label>
-              <Label className="grid gap-2 items-start">
-                Public Base URL
-                <Input {...fieldProps("publicBaseUrl")} placeholder="https://cdn.example.com" value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} />
-                {renderFieldError("publicBaseUrl")}
-              </Label>
-              <Label className="grid gap-2 items-start">
-                Default prefix
-                <Input {...fieldProps("defaultPrefix")} placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
-                {renderFieldError("defaultPrefix")}
-              </Label>
-              <Label className="flex items-center justify-between gap-3 rounded-lg border p-3">
-                <span>Use as default profile</span>
-                <Switch checked={makeDefault} onCheckedChange={setMakeDefault} />
-              </Label>
-              <div className="col-span-2 flex gap-2 max-lg:col-span-1">
-                <Button type="submit" disabled={saving}>Save profile</Button>
-                <Button variant="outline" type="button" onClick={handleTestConnection} disabled={testingConnection || saving}>
-                  {testingConnection ? "Testing..." : "Test connection"}
-                </Button>
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => setCreatingNew(true)}
-                >
-                  Add profile
-                </Button>
-              </div>
-            </form>
-            {saving && <p className="text-sm text-muted-foreground">Saving profile...</p>}
-            {saveMessage && <p className="text-sm text-muted-foreground">{saveMessage}</p>}
-            {connectionMessage && <p className="text-sm text-muted-foreground" role="status">{connectionMessage}</p>}
+
+        <section className="settings-group">
+          <div className="settings-group-head">
+            <h3>Connection</h3>
+            <p>The endpoint, region, and bucket that Pic Piper signs requests against.</p>
+          </div>
+          <div className="field-grid">
+            <Label className="field">
+              <span>Profile name</span>
+              <Input {...fieldProps("name")} value={name} onChange={(e) => setName(e.target.value)} />
+              {renderFieldError("name")}
+            </Label>
+            <Label className="field">
+              <span>Endpoint</span>
+              <Input {...fieldProps("endpoint")} placeholder="https://s3.example.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
+              {renderFieldError("endpoint")}
+            </Label>
+            <Label className="field">
+              <span>Region</span>
+              <Input {...fieldProps("region")} value={region} onChange={(e) => setRegion(e.target.value)} />
+              {renderFieldError("region")}
+            </Label>
+            <Label className="field">
+              <span>Bucket</span>
+              <Input {...fieldProps("bucket")} placeholder="my-image-bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} />
+              {renderFieldError("bucket")}
+            </Label>
+          </div>
+        </section>
+
+        <section className="settings-group">
+          <div className="settings-group-head">
+            <h3>Credentials</h3>
+            <p>Credentials are stored locally on this device as private files with restricted permissions. Not synced or encrypted.</p>
+          </div>
+          <div className="field-grid">
+            <Label className="field">
+              <span>Access key ID</span>
+              <Input {...fieldProps("accessKeyId")} value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
+              {renderFieldError("accessKeyId")}
+            </Label>
+            <Label className="field">
+              <span>Secret access key</span>
+              <Input {...fieldProps("secretAccessKey")} type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
+              {renderFieldError("secretAccessKey")}
+            </Label>
+            <Label className="field-switch">
+              <span>Path style addressing<small>Use bucket-in-path requests when your provider requires them.</small></span>
+              <Switch aria-label="Path style addressing" checked={pathStyle} onCheckedChange={setPathStyle} />
+            </Label>
+            <Label className="field-switch">
+              <span>Use as default profile<small>New compressions upload here unless you choose another profile.</small></span>
+              <Switch aria-label="Use as default profile" checked={makeDefault} onCheckedChange={setMakeDefault} />
+            </Label>
+          </div>
+        </section>
+
+        <section className="settings-group">
+          <div className="settings-group-head">
+            <h3>Publishing</h3>
+            <p>How object keys are built and where public links point.</p>
+          </div>
+          <div className="field-grid">
+            <Label className="field">
+              <span>Naming template</span>
+              <Input {...fieldProps("namingTemplate")} value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
+              {renderFieldError("namingTemplate")}
+            </Label>
+            <Label className="field">
+              <span>Public Base URL</span>
+              <Input {...fieldProps("publicBaseUrl")} placeholder="https://cdn.example.com" value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} />
+              {renderFieldError("publicBaseUrl")}
+            </Label>
+            <Label className="field">
+              <span>Default prefix</span>
+              <Input {...fieldProps("defaultPrefix")} placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
+              {renderFieldError("defaultPrefix")}
+            </Label>
+          </div>
+        </section>
+
+        <footer className="settings-actions">
+          <Button type="submit" disabled={saving}>Save profile</Button>
+          <Button variant="outline" type="button" onClick={handleTestConnection} disabled={testingConnection || saving}>
+            {testingConnection ? "Testing..." : "Test connection"}
+          </Button>
+          <Button
+            variant="ghost"
+            type="button"
+            onClick={() => setCreatingNew(true)}
+          >
+            Add profile
+          </Button>
+        </footer>
+
+        {(saving || saveMessage || connectionMessage || connectionError || saveError) && (
+          <div className="settings-status">
+            {saving && <p>Saving profile...</p>}
+            {saveMessage && <p>{saveMessage}</p>}
+            {connectionMessage && <p role="status">{connectionMessage}</p>}
             {connectionError && (
               <Alert variant="destructive"><AlertDescription>{connectionError}</AlertDescription></Alert>
             )}
@@ -371,9 +394,9 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
                 <AlertDescription>{saveError}</AlertDescription>
               </Alert>
             )}
-          </CardContent>
-        </Card>
-      </section>
+          </div>
+        )}
+      </form>
     </div>
   );
 }

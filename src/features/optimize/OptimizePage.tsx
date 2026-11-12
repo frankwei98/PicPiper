@@ -15,7 +15,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OptimizeWorkspace, type CompressionPreset } from "./OptimizeWorkspace";
-import { cn } from "@/lib/utils";
 import { fileNameFromPath } from "../../lib/path";
 import { errorMessage } from "../../lib/error";
 import { extensionsFor } from "../../lib/imageFormats";
@@ -674,41 +673,25 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
   const compareItem = compareItemId ? items.find((i) => i.id === compareItemId) : undefined;
 
   return (
-    <div className="compression-page">
-      <header className="compression-page-heading">
-        <h2>Prepare images</h2>
-        <p>Preview, compare, and export.</p>
+    <div className="bench">
+      <header className="bench-head">
+        <div>
+          <h2>Prepare images</h2>
+          <p className="bench-sub">Preview, compare, and export. Originals stay untouched.</p>
+        </div>
       </header>
 
-      <button
-        type="button"
-        data-testid="image-drop-zone"
-        disabled={importing || saving || uploads.isUploading}
-        className={cn(
-          "relative w-full rounded-lg border border-dashed bg-card text-left text-sm text-muted-foreground",
-          "flex min-h-16 items-center justify-between gap-4 px-4 py-2.5",
-          "transition-colors duration-150 ease-out cursor-pointer hover:border-primary/60 hover:bg-accent/35",
-          "disabled:cursor-not-allowed disabled:opacity-60",
-          dragging && "border-primary bg-accent text-foreground",
-        )}
-        onClick={handleChooseImages}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-      >
-        <span className={cn("grid gap-2", items.length > 0 && "flex-1")}>
-          <span className="text-base font-semibold text-foreground">{items.length > 0 ? "Add images to this batch" : "Drop images to start"}</span>
-          <span className="text-xs text-muted-foreground">JPEG, PNG, WebP, AVIF, JPEG XL, and HEIF/HEIC · Choose or drop files</span>
-        </span>
-        <span className="inline-flex h-9 shrink-0 items-center rounded-md bg-primary px-3.5 text-xs font-semibold text-primary-foreground">Choose images</span>
-      </button>
-
-      {dropError && (
-        <Alert variant="destructive">
-          <AlertDescription>{dropError}</AlertDescription>
-        </Alert>
+      {(dropError || importNotice) && (
+        <div className="bench-notices">
+          {dropError && (
+            <Alert variant="destructive">
+              <AlertDescription>{dropError}</AlertDescription>
+            </Alert>
+          )}
+          {importNotice && <p role="status">{importNotice}</p>}
+        </div>
       )}
-      {importNotice && <p className="text-xs text-muted-foreground" role="status">{importNotice}</p>}
+
       <OptimizeWorkspace
         items={items}
         selectedId={selectedItemId}
@@ -732,73 +715,80 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
         onRetry={retryItem}
         uploadFailure={uploads.failureMessageFor}
         isUploading={uploads.isItemUploading}
+        onChooseImages={handleChooseImages}
+        chooseDisabled={importing || saving || uploads.isUploading}
+        dragging={dragging}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
       />
 
       {items.length > 0 && (
-        <section
-          aria-label="Compression actions"
-          className="compression-actions"
-        >
-        <div className="compression-actions-content">
-          <p className="compression-totals" role="status">
-            {readyItems.length} of {items.length} ready{failedItemCount > 0 ? ` · ${failedItemCount} failed` : ""}
-            {readyItems.length > 0 && ` · Ready total: ${formatBytes(readyOriginalBytes)} → ${formatBytes(readyOutputBytes)} · ${formatBytes(Math.abs(readyOriginalBytes - readyOutputBytes))} ${readyOutputBytes > readyOriginalBytes ? "larger" : "saved"}`}
-          </p>
-      {saving && <p className="text-sm text-muted-foreground" role="status">Saving files...</p>}
-      {uploads.uploadingItemCount > 0 && <p className="text-sm text-muted-foreground" role="status">Uploading {uploads.uploadingItemCount} image(s)...</p>}
-      {uploads.uploadError && (
-        <Alert variant="destructive">
-          <AlertDescription>{uploads.uploadError}</AlertDescription>
-        </Alert>
-      )}
-      {saveError && (
-        <Alert variant="destructive">
-          <AlertDescription>{saveError}</AlertDescription>
-        </Alert>
-      )}
-      {uploadedFocus && (
-        <div className="compression-upload-feedback" role="status">
-          <p title={`Uploaded to ${uploadedFocus.destination}`}>Uploaded {uploadedFocus.highlightedKeys.length} image(s) to {uploadedFocus.destination}. Local results retained.</p>
-          {onOpenGallery && <Button variant="outline" onClick={onOpenGallery}>View uploaded images</Button>}
-        </div>
-      )}
-      {saveSuccess && <p className="text-sm text-muted-foreground" role="status">{saveSuccess}</p>}
+        <section aria-label="Compression actions" className="bench-actions">
+          <div className="action-layout">
+            <div className="action-summary">
+              <p className="action-totals" role="status">
+                <strong>{readyItems.length} of {items.length} ready</strong>
+                {failedItemCount > 0 ? `, ${failedItemCount} failed` : ""}
+                {readyItems.length > 0 && `, ${formatBytes(readyOriginalBytes)} → ${formatBytes(readyOutputBytes)}, ${formatBytes(Math.abs(readyOriginalBytes - readyOutputBytes))} ${readyOutputBytes > readyOriginalBytes ? "larger" : "saved"}`}
+              </p>
+              <p className="action-destination" aria-label="Upload destination">
+                {uploads.uploadProfile
+                  ? `Upload destination: ${uploads.uploadProfile.name} · ${uploads.uploadProfile.bucket} / ${uploads.uploadProfile.defaultPrefix || "images"}`
+                  : "Set an upload destination in Settings. Your compressed images will stay here."}
+              </p>
+            </div>
+            <div className="action-buttons">
+              {items.some((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)) && <Button type="button" size="sm" variant="ghost" disabled={saving || uploads.isUploading} onClick={() => {
+                importGeneration.current += 1;
+                itemsRef.current.filter((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)).forEach(cancelBackendTask);
+                setItems((current) => current.map((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status) ? { ...item, status: "cancelled", cancelling: true, taskVersion: (item.taskVersion ?? 0) + 1 } : item));
+              }}>Stop batch</Button>}
+              {items.some((item) => item.status === "failed" || item.status === "cancelled") && <Button type="button" size="sm" variant="ghost" disabled={saving || uploads.isUploading} onClick={() => items.filter((item) => item.status === "failed" || item.status === "cancelled").forEach((item) => retryItem(item.id))}>Retry unfinished</Button>}
+              {items.some((item) => isCurrentCompressionOutput(item, quality)) && (
+                <>
+                  <Button type="button" variant="outline" onClick={handleSaveToLocal} disabled={saving || uploads.isUploading}>Save to local folder</Button>
+                  {uploads.failedUploadCount > 0 && (
+                    <Button type="button" variant="outline" onClick={uploads.retryUploads} disabled={saving || uploads.isUploading}>
+                      Retry {uploads.failedUploadCount} failed upload(s)
+                      {uploads.hasCollisionFailure ? " with new key" : ""}
+                    </Button>
+                  )}
+                  {uploads.newUploadItemCount > 0 && (
+                    <Button type="button" onClick={uploads.uploadToS3} disabled={saving || uploads.isUploading}>
+                      {uploads.failedUploadCount > 0
+                        ? `Upload ${uploads.newUploadItemCount} new image(s) to S3`
+                        : "Upload to S3"}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
 
-      {items.length > 0 && (
-        <p className="compression-upload-destination" aria-label="Upload destination">
-          {uploads.uploadProfile
-            ? `Upload destination: ${uploads.uploadProfile.name} · ${uploads.uploadProfile.bucket} / ${uploads.uploadProfile.defaultPrefix || "images"}`
-            : "Set an upload destination in Settings. Your compressed images will stay here."}
-        </p>
-      )}
-      <div className="compression-batch-buttons">
-        {items.some((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)) && <Button type="button" size="sm" variant="outline" disabled={saving || uploads.isUploading} onClick={() => {
-          importGeneration.current += 1;
-          itemsRef.current.filter((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)).forEach(cancelBackendTask);
-          setItems((current) => current.map((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status) ? { ...item, status: "cancelled", cancelling: true, taskVersion: (item.taskVersion ?? 0) + 1 } : item));
-        }}>Stop batch</Button>}
-        {items.some((item) => item.status === "failed" || item.status === "cancelled") && <Button type="button" size="sm" variant="outline" disabled={saving || uploads.isUploading} onClick={() => items.filter((item) => item.status === "failed" || item.status === "cancelled").forEach((item) => retryItem(item.id))}>Retry unfinished</Button>}
-      </div>
-      {items.some((item) => isCurrentCompressionOutput(item, quality)) && (
-        <div className="compression-export-buttons">
-          <Button type="button" onClick={handleSaveToLocal} disabled={saving || uploads.isUploading}>Save to local folder</Button>
-          {uploads.failedUploadCount > 0 && (
-            <Button type="button" onClick={uploads.retryUploads} disabled={saving || uploads.isUploading}>
-              Retry {uploads.failedUploadCount} failed upload(s)
-              {uploads.hasCollisionFailure ? " with new key" : ""}
-            </Button>
+          {(saving || uploads.uploadingItemCount > 0 || uploads.uploadError || saveError || uploadedFocus || saveSuccess) && (
+            <div className="action-extra">
+              {saving && <p role="status">Saving files...</p>}
+              {uploads.uploadingItemCount > 0 && <p role="status">Uploading {uploads.uploadingItemCount} image(s)...</p>}
+              {uploads.uploadError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{uploads.uploadError}</AlertDescription>
+                </Alert>
+              )}
+              {saveError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{saveError}</AlertDescription>
+                </Alert>
+              )}
+              {uploadedFocus && (
+                <div className="upload-feedback" role="status">
+                  <p title={`Uploaded to ${uploadedFocus.destination}`}>Uploaded {uploadedFocus.highlightedKeys.length} image(s) to {uploadedFocus.destination}. Local results retained.</p>
+                  {onOpenGallery && <Button variant="outline" size="sm" onClick={onOpenGallery}>View uploaded images</Button>}
+                </div>
+              )}
+              {saveSuccess && <p role="status">{saveSuccess}</p>}
+            </div>
           )}
-          {uploads.newUploadItemCount > 0 && (
-            <Button type="button" onClick={uploads.uploadToS3} disabled={saving || uploads.isUploading}>
-              {uploads.failedUploadCount > 0
-                ? `Upload ${uploads.newUploadItemCount} new image(s) to S3`
-                : "Upload to S3"}
-            </Button>
-          )}
-        </div>
-      )}
-
-        </div>
         </section>
       )}
 
