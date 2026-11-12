@@ -1,5 +1,7 @@
 # 图片处理性能改进（2026-11-12）
 
+后续的 [AVIF 体积与速度优化](avif-performance.md) 在本报告基础上进一步调整 AVIF 搜索并加入静态原生编码；下文保留本轮原始结果。
+
 本次实现包含静态原生 WebP 编码、两个可复用的隔离 worker，以及 PNG 的 8 位 YCbCr 路径和快速无损压缩。基线是 `origin/migration/mygo` 的 `f68b8a2262d12f1f017c3a76fa1db0dba5729079`，修改位于 `codex/perf-image-pipeline`。
 
 ## 测量条件

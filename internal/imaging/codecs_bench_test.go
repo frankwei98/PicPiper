@@ -8,7 +8,8 @@ import (
 	"testing"
 )
 
-func BenchmarkEncodeFormats(b *testing.B) {
+func lossyCodecFixture(tb testing.TB) image.Image {
+	tb.Helper()
 	// Match the packaged-app smoke fixture, including its JPEG source encoding.
 	fixture := image.NewRGBA(image.Rect(0, 0, 1200, 800))
 	for y := 0; y < 800; y++ {
@@ -18,12 +19,17 @@ func BenchmarkEncodeFormats(b *testing.B) {
 	}
 	var source bytes.Buffer
 	if err := jpeg.Encode(&source, fixture, &jpeg.Options{Quality: 98}); err != nil {
-		b.Fatal(err)
+		tb.Fatal(err)
 	}
 	img, err := jpeg.Decode(bytes.NewReader(source.Bytes()))
 	if err != nil {
-		b.Fatal(err)
+		tb.Fatal(err)
 	}
+	return img
+}
+
+func BenchmarkEncodeFormats(b *testing.B) {
+	img := lossyCodecFixture(b)
 	for _, format := range []string{"jpg", "png", "webp", "avif", "jxl"} {
 		b.Run(format, func(b *testing.B) {
 			var output bytes.Buffer

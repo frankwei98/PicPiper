@@ -32,7 +32,7 @@ jobs:
           cache: true
       - run: pnpm install --frozen-lockfile
       - name: Install native codec build tools
-        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+        run: sudo apt-get update && sudo apt-get install -y cmake pkg-config build-essential nasm
       - name: Verify frontend and Go
         run: |
           pnpm test

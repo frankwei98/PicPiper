@@ -1,0 +1,14 @@
+# github.com/frankwei98/PicPiper/internal/imaging.test
+ld: warning: ignoring duplicate libraries: '-lm', '/private/tmp/picpiper-avif-tuning/before/.tools/native-webp/darwin-arm64-18bcc3048bbc/install/lib/libsharpyuv.a', '/private/tmp/picpiper-avif-tuning/before/.tools/native-webp/darwin-arm64-18bcc3048bbc/install/lib/libwebp.a'
+goos: darwin
+goarch: arm64
+pkg: github.com/frankwei98/PicPiper/internal/imaging
+cpu: Apple M1 Pro
+BenchmarkIsolatedImagePipeline/avif/cold-8         	       3	1296732042 ns/op	     67126 bytes/output
+BenchmarkIsolatedImagePipeline/avif/cold-8         	       3	1262265167 ns/op	     67126 bytes/output
+BenchmarkIsolatedImagePipeline/avif/cold-8         	       3	1279175167 ns/op	     67126 bytes/output
+BenchmarkIsolatedImagePipeline/avif/warm-8         	       3	 546756444 ns/op	     67126 bytes/output
+BenchmarkIsolatedImagePipeline/avif/warm-8         	       3	 571729528 ns/op	     67126 bytes/output
+BenchmarkIsolatedImagePipeline/avif/warm-8         	       3	 558440611 ns/op	     67126 bytes/output
+PASS
+ok  	github.com/frankwei98/PicPiper/internal/imaging	20.672s
