@@ -26,23 +26,34 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
 
   useEffect(() => {
     let active = true;
+    let cancelled = false;
+    const taskId = `comparison:${crypto.randomUUID()}`;
+    const cancelReads = () => {
+      if (cancelled) return;
+      cancelled = true;
+      void imageApi.cancelImageTask({ taskId }).catch(() => {
+        // Closing the app may also close the bridge; ignore late results below.
+      });
+    };
     setImages(null);
     setLoadError(null);
 
     Promise.all([
-      imageApi.readComparisonImage({ path: originalPath }),
-      imageApi.readComparisonImage({ path: compressedPath }),
+      imageApi.readComparisonImage({ taskId, path: originalPath }),
+      imageApi.readComparisonImage({ taskId, path: compressedPath }),
     ]).then(
       ([original, compressed]) => {
         if (active) setImages({ original, compressed });
       },
       (error: unknown) => {
+        cancelReads();
         if (active) setLoadError(errorMessage(error, "The image could not be decoded."));
       },
     );
 
     return () => {
       active = false;
+      cancelReads();
     };
   }, [compressedPath, loadAttempt, originalPath]);
 

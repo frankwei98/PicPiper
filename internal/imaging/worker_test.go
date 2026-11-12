@@ -15,12 +15,18 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if len(os.Args) == 4 && os.Args[1] == "--image-worker" && os.Args[3] == "compress_image" {
+	if len(os.Args) == 4 && os.Args[1] == "--image-worker" && (os.Args[3] == "compress_image" || os.Args[3] == "read_comparison_image") {
 		// A deterministic stand-in for a synchronous codec that never returns.
 		// The real packaged smoke separately exercises the actual codecs.
 		payload, _ := io.ReadAll(os.Stdin)
 		var req request
 		_ = json.Unmarshal(payload, &req)
+		if os.Args[3] == "read_comparison_image" && filepath.Ext(req.Path) == ".blocked-comparison" {
+			_ = os.WriteFile(req.Path+".started", []byte("started"), 0600)
+			for {
+				time.Sleep(time.Second)
+			}
+		}
 		if req.SourcePath == "blocked-test-codec" {
 			_ = os.WriteFile(filepath.Join(req.OutputDir, "partial.png"), []byte("partial"), 0600)
 			for {
@@ -105,6 +111,66 @@ func TestCancelledCodecProcessIsTerminatedAndRemovesPartialOutput(t *testing.T) 
 	output := value.(map[string]any)["outputPath"].(string)
 	if _, err := inspect(output); err != nil {
 		t.Fatalf("retry did not produce a complete image: %v", err)
+	}
+}
+
+func TestComparisonCancellationReleasesBothWorkerSlots(t *testing.T) {
+	service := NewIsolated(t.TempDir())
+	t.Cleanup(service.Close)
+	finished := make(chan error, 2)
+	paths := []string{filepath.Join(service.dataDir, "original.blocked-comparison"), filepath.Join(service.dataDir, "compressed.blocked-comparison")}
+	for _, path := range paths {
+		payload, _ := json.Marshal(request{TaskID: "comparison:closed", Path: path})
+		go func() {
+			_, err := service.Call(context.Background(), "read_comparison_image", payload)
+			finished <- err
+		}()
+	}
+	deadline := time.After(5 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		_, first := os.Stat(paths[0] + ".started")
+		_, second := os.Stat(paths[1] + ".started")
+		if first == nil && second == nil {
+			break
+		}
+		select {
+		case err := <-finished:
+			t.Fatalf("comparison worker exited early: %v", err)
+		case <-deadline:
+			t.Fatal("both comparison workers did not start")
+		case <-ticker.C:
+		}
+	}
+	payload, _ := json.Marshal(request{TaskID: "comparison:closed"})
+	if _, err := service.Call(context.Background(), "cancel_image_task", payload); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		select {
+		case err := <-finished:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("comparison was not cancelled: %v", err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("closed comparison kept a worker occupied")
+		}
+	}
+	if len(service.workers) != 0 {
+		t.Fatal("comparison did not release both slots")
+	}
+	// Late bridge dispatch must not resurrect a closed comparison.
+	payload, _ = json.Marshal(request{TaskID: "comparison:closed", Path: paths[0]})
+	if _, err := service.Call(context.Background(), "read_comparison_image", payload); !errors.Is(err, context.Canceled) {
+		t.Fatalf("late comparison restarted: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	source := fixture(t, image.NewNRGBA(image.Rect(0, 0, 16, 8)))
+	payload, _ = json.Marshal(request{TaskID: "new-import", Path: source})
+	if _, err := service.Call(ctx, "inspect_image", payload); err != nil {
+		t.Fatalf("new import blocked by closed comparison: %v", err)
 	}
 }
 

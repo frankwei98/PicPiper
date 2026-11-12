@@ -63,6 +63,7 @@ export interface ReadThumbnailResponse {
 }
 
 export interface ReadComparisonImageRequest {
+  taskId: string;
   path: string;
 }
 
