@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import App from "./App";
 
-vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeClipboard: vi.fn(), onFileDrop: vi.fn(() => vi.fn()) }));
+vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeClipboard: vi.fn(), onFileDrop: vi.fn(() => vi.fn()), onImagesOpened: vi.fn(() => vi.fn()) }));
 vi.mock("./api/backend", () => ({
   settingsApi: { loadSettings: vi.fn(async () => ({ profiles: [], namingTemplate: "{slug}.{ext}" })) },
   imageApi: {}, galleryApi: {}, uploadApi: {}, namingApi: {},

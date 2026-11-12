@@ -11,7 +11,7 @@ const { settings } = vi.hoisted(() => ({ settings: {
     bucket: id, accessKeyId: "fake", defaultPrefix: "images", pathStyle: true })),
   defaultProfileId: "a", namingTemplate: "{slug}.{ext}",
 } }));
-vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeClipboard: vi.fn(), onFileDrop: vi.fn(() => vi.fn()) }));
+vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeClipboard: vi.fn(), onFileDrop: vi.fn(() => vi.fn()), onImagesOpened: vi.fn(() => vi.fn()) }));
 vi.mock("./api/backend", () => ({ settingsApi: { loadSettings: vi.fn(async () => settings) } }));
 vi.mock("./features/optimize/OptimizePage", () => ({ OptimizePage: ({ activeProfile, onUploadedToS3 }: {
   activeProfile?: S3Profile; onUploadedToS3: (focus: GalleryFocus) => void;
