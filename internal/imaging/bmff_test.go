@@ -86,23 +86,33 @@ func TestColorPropertiesFollowPrimaryItemAssociations(t *testing.T) {
 }
 
 func TestAssociatedICCAndP3IgnoreOtherItemsHDR(t *testing.T) {
-	for _, property := range [][]byte{bmffBox("colr", []byte("profprimary ICC")), nclxProperty(12, 13)} {
-		pitm := bmffBox("pitm", []byte{0, 0, 0, 0, 0, 7})
-		ipco := bmffBox("ipco", append(nclxProperty(9, 16), property...))
-		ipma := bmffBox("ipma", []byte{0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 1, 0x81, 0, 7, 1, 0x82})
-		children := append(pitm, bmffBox("iprp", append(ipco, ipma...))...)
-		data := append(bmffBox("ftyp", []byte("heic\x00\x00\x00\x00mif1")), bmffBox("meta", append(make([]byte, 4), children...))...)
-		path := filepath.Join(t.TempDir(), "color.heic")
-		if err := os.WriteFile(path, data, 0600); err != nil {
-			t.Fatal(err)
-		}
-		got := imageProperties(path)
-		if got.hdr || !got.profilePresent || len(got.profile) == 0 {
-			t.Fatalf("primary profile lost or another item's HDR adopted: %+v", got)
-		}
-		if bytes.Contains(property, []byte("prof")) && string(got.profile) != "primary ICC" {
-			t.Fatal("wrong item's ICC")
-		}
+	for _, tc := range []struct {
+		name     string
+		property []byte
+		profile  []byte
+	}{
+		{"ICC", bmffBox("colr", []byte("profprimary ICC")), []byte("primary ICC")},
+		// P3 is still detected when the platform cannot synthesize its ICC data.
+		{"DisplayP3", nclxProperty(12, 13), displayP3Profile()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pitm := bmffBox("pitm", []byte{0, 0, 0, 0, 0, 7})
+			ipco := bmffBox("ipco", append(nclxProperty(9, 16), tc.property...))
+			ipma := bmffBox("ipma", []byte{0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 1, 0x81, 0, 7, 1, 0x82})
+			children := append(pitm, bmffBox("iprp", append(ipco, ipma...))...)
+			data := append(bmffBox("ftyp", []byte("heic\x00\x00\x00\x00mif1")), bmffBox("meta", append(make([]byte, 4), children...))...)
+			path := filepath.Join(t.TempDir(), "color.heic")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			got := imageProperties(path)
+			if got.hdr || !got.profilePresent {
+				t.Fatalf("primary profile lost or another item's HDR adopted: %+v", got)
+			}
+			if !bytes.Equal(got.profile, tc.profile) {
+				t.Fatal("primary item's profile does not match the platform's expected ICC data")
+			}
+		})
 	}
 }
 
