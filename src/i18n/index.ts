@@ -1,5 +1,10 @@
 import { useSyncExternalStore } from "react";
 import en from "./locales/en.json";
+import zhCN from "./locales/zh-CN.json";
+import fr from "./locales/fr.json";
+import es from "./locales/es.json";
+import ja from "./locales/ja.json";
+import ko from "./locales/ko.json";
 
 export type MessageKey = keyof typeof en;
 export type Catalog = Record<MessageKey, string>;
@@ -14,7 +19,7 @@ export const languages = [
 export type Locale = (typeof languages)[number]["id"];
 export type LanguagePreference = Locale | "system";
 const storageKey = "pic-piper.language";
-const catalogs: Record<Locale, Catalog> = { en, "zh-CN": en, fr: en, es: en, ja: en, ko: en };
+const catalogs: Record<Locale, Catalog> = { en, "zh-CN": zhCN, fr, es, ja, ko };
 
 export function resolveLocale(preferred: readonly string[]): Locale {
   for (const language of preferred) {
