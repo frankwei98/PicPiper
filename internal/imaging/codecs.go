@@ -125,7 +125,7 @@ func encodeAnimation(writer io.Writer, animation *webp.WEBP, format string, qual
 
 func encodeModern(writer io.Writer, img image.Image, format string, quality int) error {
 	if format == "webp" {
-		return webp.Encode(writer, img, webp.Options{Quality: quality, Method: 4, Exact: true})
+		return encodeWebP(writer, img, quality)
 	}
 	codecMu.Lock()
 	defer codecMu.Unlock()

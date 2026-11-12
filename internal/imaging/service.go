@@ -10,7 +10,6 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -31,6 +30,8 @@ type Service struct {
 	cacheDir      string
 	workers       chan struct{}
 	jobs          imageJobs
+	workerMu      sync.Mutex
+	idleWorkers   []*imageWorker
 	executable    string
 	executableErr error
 	lifetime      context.Context
@@ -50,6 +51,7 @@ func (s *Service) Close() {
 		for range cap(s.workers) {
 			s.workers <- struct{}{}
 		}
+		s.closeIdleWorkers()
 		for range cap(s.workers) {
 			<-s.workers
 		}
@@ -443,7 +445,7 @@ func (s *Service) compress(ctx context.Context, req request) (Result, error) {
 		}
 		err = jpeg.Encode(output, img, &jpeg.Options{Quality: min(100, max(1, req.Settings.Quality))})
 	} else if req.Settings.TargetFormat == "png" {
-		err = png.Encode(output, img)
+		err = encodePNG(output, img)
 		warning += " PNG is lossless; the quality slider does not affect PNG output."
 	} else {
 		err = encodeModern(output, img, req.Settings.TargetFormat, min(100, max(1, req.Settings.Quality)))
@@ -497,7 +499,7 @@ func thumbnail(ctx context.Context, req request) (any, error) {
 		mime = "image/jpeg"
 		err = jpeg.Encode(&buffer, img, &jpeg.Options{Quality: 80})
 	} else {
-		err = png.Encode(&buffer, img)
+		err = encodePNG(&buffer, img)
 	}
 	if err != nil {
 		return nil, err
@@ -511,7 +513,7 @@ func comparison(ctx context.Context, path string) (any, error) {
 		return nil, err
 	}
 	var buffer bytes.Buffer
-	if err := png.Encode(&buffer, img); err != nil {
+	if err := encodePNG(&buffer, img); err != nil {
 		return nil, err
 	}
 	return map[string]any{"dataUrl": "data:image/png;base64," + base64.StdEncoding.EncodeToString(buffer.Bytes()), "width": img.Bounds().Dx(), "height": img.Bounds().Dy()}, nil

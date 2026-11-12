@@ -5,7 +5,6 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
-	"image/png"
 	"testing"
 )
 
@@ -34,7 +33,7 @@ func BenchmarkEncodeFormats(b *testing.B) {
 				case "jpg":
 					return jpeg.Encode(&output, img, &jpeg.Options{Quality: 85})
 				case "png":
-					return png.Encode(&output, img)
+					return encodePNG(&output, img)
 				default:
 					return encodeModern(&output, img, format, 85)
 				}
