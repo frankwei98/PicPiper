@@ -9,9 +9,9 @@ function serializedAppError(error: unknown): SerializedAppError | undefined {
 }
 
 /**
- * Returns a user-safe message from either a native Error or a serialized Tauri
- * command error. Tauri rejects command promises with the serialized Rust error
- * object, which is not an instance of JavaScript's Error.
+ * Returns a user-safe message from either a native Error or a serialized
+ * structured error returned by the Go/MyGo backend. Backend errors cross the
+ * bridge as plain objects, which are not instances of JavaScript's Error.
  */
 export function errorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message;

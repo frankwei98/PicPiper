@@ -1032,7 +1032,7 @@ describe("S3GalleryPage", () => {
     expect(screen.getByText(/second-photo\.jpg: network timeout/i)).toBeInTheDocument();
   });
 
-  it("shows the message from a serialized Tauri upload error", async () => {
+  it("shows the message from a serialized backend upload error", async () => {
     mockDialogOpen.mockResolvedValueOnce(["/tmp/conflict.jpg"] as unknown as string);
     uploadObject.mockRejectedValueOnce({
       code: "objectAlreadyExists",

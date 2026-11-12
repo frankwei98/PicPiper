@@ -2,7 +2,7 @@
 
 ## Stack and boundaries
 
-This branch builds the Go/MyGo MVP. `src-tauri/` is retained only as reference; use the current package scripts and Go module, without installing or invoking Rust.
+Pic Piper uses Go/MyGo and React. Use the current package scripts and Go module for builds and tests.
 
 - React features and their behavior tests live together under `src/features/`.
 - `src/api/backend.ts` owns typed operation wrappers and structured business errors. `src/platform/desktop.ts` owns native dialogs, clipboard, and file-open/drop subscriptions.

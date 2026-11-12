@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { errorCode, errorMessage } from "./error";
 
-describe("Tauri error helpers", () => {
-  it("reads the message and code from a serialized AppError", () => {
+describe("structured backend error helpers", () => {
+  it("reads the message and code from a serialized backend error", () => {
     const error = {
       code: "objectAlreadyExists",
       message: "An object with this key already exists.",

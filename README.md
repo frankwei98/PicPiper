@@ -1,6 +1,6 @@
 # Pic Piper
 
-Pic Piper is a small desktop image workbench built with Go, [MyGo](https://mygo.egoist.dev/docs), and React. This branch rebuilds the original Rust/Tauri app to evaluate native WebView packaging, build costs, and everyday usability. The first target is macOS on Apple Silicon.
+Pic Piper is a small desktop image workbench built with Go, [MyGo](https://mygo.egoist.dev/docs), and React, with batch compression, full-resolution comparisons, and S3-compatible storage. The first target is macOS on Apple Silicon.
 
 ## What the MVP does
 
@@ -85,4 +85,4 @@ pnpm smoke
 
 The S3 implementation uses the Go standard library with SigV4 signing. Local tests cover signing, conditional uploads, pagination, safe downloads, settings, and credentials; a live AWS/R2 account is not part of automated validation.
 
-See [the compression workbench changes and validation](docs/image-workbench-polish.md) for the current experience and limitations. [The migration plan](docs/mygo-migration-plan.md), [framework research](docs/mygo-framework-research.md), and [MVP validation results](docs/mygo-mvp-results.md) record the earlier scope and measurements. The old `src-tauri/` tree remains as reference; current build commands do not use it.
+See [the compression workbench changes and validation](docs/image-workbench-polish.md) for the current experience and limitations. [The migration plan](docs/mygo-migration-plan.md), [framework research](docs/mygo-framework-research.md), and [MVP validation results](docs/mygo-mvp-results.md) record the earlier scope and measurements.
