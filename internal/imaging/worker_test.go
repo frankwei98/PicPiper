@@ -1,56 +1,150 @@
 package imaging
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"image"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/frankwei98/PicPiper/internal/apperror"
 )
 
 func TestMain(m *testing.M) {
-	if len(os.Args) == 4 && os.Args[1] == "--image-worker" && (os.Args[3] == "compress_image" || os.Args[3] == "read_comparison_image") {
-		// A deterministic stand-in for a synchronous codec that never returns.
-		// The real packaged smoke separately exercises the actual codecs.
-		payload, _ := io.ReadAll(os.Stdin)
-		var req request
-		_ = json.Unmarshal(payload, &req)
-		if os.Args[3] == "read_comparison_image" && filepath.Ext(req.Path) == ".blocked-comparison" {
-			_ = os.WriteFile(req.Path+".started", []byte("started"), 0600)
-			for {
-				time.Sleep(time.Second)
+	if len(os.Args) == 3 && os.Args[1] == "--image-worker" {
+		service := New(os.Args[2])
+		defer service.Close()
+		serveWorker(os.Stdin, os.Stdout, func(ctx context.Context, operation string, payload json.RawMessage) (any, error) {
+			// A deterministic stand-in for a synchronous codec that never returns.
+			// The real packaged smoke separately exercises the actual codecs.
+			var req request
+			_ = json.Unmarshal(payload, &req)
+			if req.Path == "worker-pid" {
+				return map[string]int{"pid": os.Getpid()}, nil
 			}
-		}
-		if req.SourcePath == "blocked-test-codec" {
-			_ = os.WriteFile(filepath.Join(req.OutputDir, "partial.png"), []byte("partial"), 0600)
-			for {
-				time.Sleep(time.Second)
+			if req.Path == "worker-exit" {
+				os.Exit(7)
 			}
-		}
-		var result any
-		var err error
-		result, err = New(os.Args[2]).Call(context.Background(), os.Args[3], payload)
-		response := workerReply{}
-		if err != nil {
-			if !errors.As(err, &response.Error) {
-				response.Error = apperror.New("imageProcessingFailed", "The test image worker failed.")
+			if operation == "read_comparison_image" && filepath.Ext(req.Path) == ".blocked-comparison" {
+				_ = os.WriteFile(req.Path+".started", []byte("started"), 0600)
+				for {
+					time.Sleep(time.Second)
+				}
 			}
-		} else {
-			response.Data, _ = json.Marshal(result)
-		}
-		_ = json.NewEncoder(os.Stdout).Encode(response)
+			if req.SourcePath == "blocked-test-codec" {
+				_ = os.WriteFile(filepath.Join(req.OutputDir, "partial.png"), []byte("partial"), 0600)
+				for {
+					time.Sleep(time.Second)
+				}
+			}
+			return service.Call(ctx, operation, payload)
+		})
 		return
 	}
 	if RunWorker() {
 		return
 	}
 	os.Exit(m.Run())
+}
+
+func TestWorkerSurvivesBusinessErrorsAndIsReplacedAfterCrash(t *testing.T) {
+	service := NewIsolated(t.TempDir())
+	t.Cleanup(service.Close)
+	pid := workerPID(t, service)
+	payload, _ := json.Marshal(request{Path: filepath.Join(service.dataDir, "missing.jpg")})
+	if _, err := service.Call(context.Background(), "inspect_image", payload); err == nil {
+		t.Fatal("missing input should return a business error")
+	}
+	if got := workerPID(t, service); got != pid {
+		t.Fatal("a business error discarded a healthy codec process")
+	}
+	payload, _ = json.Marshal(request{Path: "worker-exit"})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := service.Call(ctx, "inspect_image", payload); err == nil {
+		t.Fatal("worker crash should return an error")
+	}
+	if got := workerPID(t, service); got == pid {
+		t.Fatal("a crashed worker was reused")
+	}
+}
+
+func TestWorkerProtocolProcessesMultipleRequestsAndRejectsInvalidOperations(t *testing.T) {
+	var input, output bytes.Buffer
+	encoder := json.NewEncoder(&input)
+	for _, operation := range []string{"inspect_image", "not-an-image-operation", "read_thumbnail"} {
+		if err := encoder.Encode(workerRequest{Operation: operation, Payload: json.RawMessage(`{}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	calls := 0
+	serveWorker(&input, &output, func(_ context.Context, operation string, _ json.RawMessage) (any, error) {
+		calls++
+		return operation, nil
+	})
+	decoder := json.NewDecoder(&output)
+	for i, want := range []string{"inspect_image", "", "read_thumbnail"} {
+		var response workerReply
+		if err := decoder.Decode(&response); err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 {
+			if response.Error == nil || response.Error.Code != "invalidRequest" {
+				t.Fatalf("invalid operation was dispatched: %+v", response)
+			}
+			continue
+		}
+		var got string
+		if err := json.Unmarshal(response.Data, &got); err != nil || got != want {
+			t.Fatalf("protocol lost request order: got %s, want %s", response.Data, want)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("worker dispatched %d operations, want 2", calls)
+	}
+}
+
+func TestServiceCloseReapsIdleWorker(t *testing.T) {
+	service := NewIsolated(t.TempDir())
+	t.Cleanup(service.Close)
+	workerPID(t, service)
+	worker := service.idleWorkers[0]
+	service.Close()
+	if worker.command.ProcessState == nil {
+		t.Fatal("close did not wait for the idle codec process")
+	}
+	payload, _ := json.Marshal(request{Path: "worker-pid"})
+	if _, err := service.Call(context.Background(), "inspect_image", payload); !errors.Is(err, context.Canceled) {
+		t.Fatalf("closed service restarted a worker: %v", err)
+	}
+}
+
+func TestIsolatedWorkerReusesProcess(t *testing.T) {
+	service := NewIsolated(t.TempDir())
+	t.Cleanup(service.Close)
+	pid := workerPID(t, service)
+	for range 3 {
+		if got := workerPID(t, service); got != pid {
+			t.Fatalf("each request starts a new codec process: first PID %d, next PID %d", pid, got)
+		}
+	}
+}
+
+func workerPID(t *testing.T, service *Service) int {
+	t.Helper()
+	payload, err := json.Marshal(request{Path: "worker-pid"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	value, err := service.Call(ctx, "inspect_image", payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return int(value.(map[string]any)["pid"].(float64))
 }
 
 func TestCancelledCodecProcessIsTerminatedAndRemovesPartialOutput(t *testing.T) {

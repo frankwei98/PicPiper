@@ -1,0 +1,45 @@
+goos: darwin
+goarch: arm64
+pkg: github.com/frankwei98/PicPiper/internal/imaging
+cpu: Apple M1 Pro
+BenchmarkEncodeFormats/jpg-8       	       3	  11926139 ns/op	     60110 bytes/output	    4544 B/op	       7 allocs/op
+BenchmarkEncodeFormats/jpg-8       	       3	  14231889 ns/op	     60110 bytes/output	    4544 B/op	       7 allocs/op
+BenchmarkEncodeFormats/jpg-8       	       3	  11806250 ns/op	     60110 bytes/output	    4544 B/op	       7 allocs/op
+BenchmarkEncodeFormats/png-8       	       3	  91830945 ns/op	    898805 bytes/output	 4233093 B/op	  960027 allocs/op
+BenchmarkEncodeFormats/png-8       	       3	  90251750 ns/op	    898805 bytes/output	 4231245 B/op	  960025 allocs/op
+BenchmarkEncodeFormats/png-8       	       3	  91133792 ns/op	    898805 bytes/output	 4231320 B/op	  960026 allocs/op
+BenchmarkEncodeFormats/webp-8      	       3	 229353764 ns/op	     26472 bytes/output	29961968 B/op	     237 allocs/op
+BenchmarkEncodeFormats/webp-8      	       3	 240648181 ns/op	     26472 bytes/output	29961978 B/op	     237 allocs/op
+BenchmarkEncodeFormats/webp-8      	       3	 229316847 ns/op	     26472 bytes/output	29961968 B/op	     237 allocs/op
+BenchmarkEncodeFormats/avif-8      	       3	 360575500 ns/op	     67126 bytes/output	213716957 B/op	    8330 allocs/op
+BenchmarkEncodeFormats/avif-8      	       3	 345601611 ns/op	     67126 bytes/output	213715061 B/op	    8327 allocs/op
+BenchmarkEncodeFormats/avif-8      	       3	 348068472 ns/op	     67126 bytes/output	213715136 B/op	    8328 allocs/op
+BenchmarkEncodeFormats/jxl-8       	       3	 172397417 ns/op	     20481 bytes/output	468116893 B/op	    7410 allocs/op
+BenchmarkEncodeFormats/jxl-8       	       3	 174337458 ns/op	     20481 bytes/output	468116968 B/op	    7411 allocs/op
+BenchmarkEncodeFormats/jxl-8       	       3	 220682208 ns/op	     20481 bytes/output	468116968 B/op	    7411 allocs/op
+BenchmarkIsolatedImagePipeline/png/cold-8         	       3	 320246069 ns/op	    898805 bytes/output	  745773 B/op	     659 allocs/op
+BenchmarkIsolatedImagePipeline/png/cold-8         	       3	 325726236 ns/op	    898805 bytes/output	  733072 B/op	     590 allocs/op
+BenchmarkIsolatedImagePipeline/png/cold-8         	       3	 359100861 ns/op	    898805 bytes/output	  722101 B/op	     553 allocs/op
+BenchmarkIsolatedImagePipeline/png/warm-8         	       3	 312337083 ns/op	    898805 bytes/output	  717514 B/op	     519 allocs/op
+BenchmarkIsolatedImagePipeline/png/warm-8         	       3	 315040097 ns/op	    898805 bytes/output	  714629 B/op	     509 allocs/op
+BenchmarkIsolatedImagePipeline/png/warm-8         	       3	 310330056 ns/op	    898805 bytes/output	  722896 B/op	     540 allocs/op
+BenchmarkIsolatedImagePipeline/webp/cold-8        	       3	 445677542 ns/op	     26472 bytes/output	  718181 B/op	     551 allocs/op
+BenchmarkIsolatedImagePipeline/webp/cold-8        	       3	 442783139 ns/op	     26472 bytes/output	  724816 B/op	     577 allocs/op
+BenchmarkIsolatedImagePipeline/webp/cold-8        	       3	 452517389 ns/op	     26472 bytes/output	  726906 B/op	     580 allocs/op
+BenchmarkIsolatedImagePipeline/webp/warm-8        	       3	 439448167 ns/op	     26472 bytes/output	  715408 B/op	     525 allocs/op
+BenchmarkIsolatedImagePipeline/webp/warm-8        	       3	 444845653 ns/op	     26472 bytes/output	  711893 B/op	     507 allocs/op
+BenchmarkIsolatedImagePipeline/webp/warm-8        	       3	 443061931 ns/op	     26472 bytes/output	  711824 B/op	     503 allocs/op
+BenchmarkIsolatedImagePipeline/avif/cold-8        	       3	2117425764 ns/op	     67126 bytes/output	  746181 B/op	     587 allocs/op
+BenchmarkIsolatedImagePipeline/avif/cold-8        	       3	2535522639 ns/op	     67126 bytes/output	  739690 B/op	     564 allocs/op
+BenchmarkIsolatedImagePipeline/avif/cold-8        	       3	2113889264 ns/op	     67126 bytes/output	  734005 B/op	     545 allocs/op
+BenchmarkIsolatedImagePipeline/avif/warm-8        	       3	2089313639 ns/op	     67126 bytes/output	  730922 B/op	     518 allocs/op
+BenchmarkIsolatedImagePipeline/avif/warm-8        	       3	2147274042 ns/op	     67126 bytes/output	  729088 B/op	     504 allocs/op
+BenchmarkIsolatedImagePipeline/avif/warm-8        	       3	2139160625 ns/op	     67126 bytes/output	  728005 B/op	     502 allocs/op
+BenchmarkIsolatedImagePipeline/jxl/cold-8         	       3	1238941278 ns/op	     20481 bytes/output	  742613 B/op	     576 allocs/op
+BenchmarkIsolatedImagePipeline/jxl/cold-8         	       3	1242711931 ns/op	     20481 bytes/output	  733877 B/op	     544 allocs/op
+BenchmarkIsolatedImagePipeline/jxl/cold-8         	       3	1201503042 ns/op	     20481 bytes/output	  743488 B/op	     578 allocs/op
+BenchmarkIsolatedImagePipeline/jxl/warm-8         	       3	1282740264 ns/op	     20481 bytes/output	  733930 B/op	     531 allocs/op
+BenchmarkIsolatedImagePipeline/jxl/warm-8         	       3	1260241306 ns/op	     20481 bytes/output	  730794 B/op	     508 allocs/op
+BenchmarkIsolatedImagePipeline/jxl/warm-8         	       3	1232136875 ns/op	     20481 bytes/output	  730810 B/op	     518 allocs/op
+PASS
+ok  	github.com/frankwei98/PicPiper/internal/imaging	100.141s

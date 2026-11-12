@@ -16,6 +16,7 @@ describe("desktop release configuration", () => {
     expect(app.frontendDist).toBe("dist");
     expect(app.out).not.toBe(app.frontendDist);
     expect(app.identifier).toBe("xyz.frankwei.pic-piper.mygo");
+    expect(app.macos.minimumSystemVersion).toBe("13.0");
   });
 
   it("pins the bridge runtime and Go framework to the same version", async () => {
@@ -33,7 +34,8 @@ describe("desktop release configuration", () => {
     expect(workflow).toMatch(/needs: quality/);
     expect(workflow).toContain("pnpm test");
     expect(workflow).toContain("pnpm build:web");
-    expect(workflow).toContain("go test -race ./internal/...");
+    expect(workflow).toContain("node scripts/go.mjs test -race ./internal/...");
+    expect(workflow).toContain("CGO_ENABLED=0 node scripts/go.mjs test ./internal/...");
     expect(workflow).toContain("pnpm smoke");
     expect(workflow).not.toMatch(/cargo|rust-toolchain|tauri-action/);
   });
