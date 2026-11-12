@@ -1,4 +1,6 @@
 allowBuilds:
   esbuild: true
+minimumReleaseAgeExclude:
+  - mygo-runtime@0.9.0
 overrides:
   zod: 3.25.76

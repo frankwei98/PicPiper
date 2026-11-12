@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { settingsApi } from "../../api/tauri";
-import type { AppSettings } from "../../api/tauri";
+import { settingsApi } from "../../api/backend";
+import type { AppSettings } from "../../api/backend";
 import type { S3Profile } from "../../types";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";

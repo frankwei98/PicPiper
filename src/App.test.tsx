@@ -1,11 +1,18 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { vi } from "vitest";
 import App from "./App";
 
+vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeClipboard: vi.fn(), onFileDrop: vi.fn(() => vi.fn()) }));
+vi.mock("./api/backend", () => ({
+  settingsApi: { loadSettings: vi.fn(async () => ({ profiles: [], namingTemplate: "{slug}.{ext}" })) },
+  imageApi: {}, galleryApi: {}, uploadApi: {}, namingApi: {},
+}));
+
 describe("App", () => {
-  it("renders the app views as tabs without a brand lockup", () => {
+  it("renders the image workbench identity and app views", () => {
     render(<App />);
 
-    expect(screen.queryByText("Pic Piper")).not.toBeInTheDocument();
+    expect(screen.getByText("Pic Piper")).toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: "Views" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Compress/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /S3 Gallery/ })).toBeInTheDocument();

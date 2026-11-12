@@ -3,9 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { createOptimizerRun, inspectImage, compressImage, copyOutputsToDir, readThumbnail, mockDialogOpen, mockOnDragDropEvent, uploadObject, generateObjectKey } = vi.hoisted(() => {
+const { cancelImageTask, createOptimizerRun, inspectImage, compressImage, copyOutputsToDir, readThumbnail, mockDialogOpen, mockOnFileDrop, uploadObject, generateObjectKey } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async (..._args: unknown[]) => ["/tmp/real-photo.jpg"]);
   return {
+    cancelImageTask: vi.fn(async () => {}),
     createOptimizerRun: vi.fn(async () => ({
       runId: "run-1",
       outputDir: "/tmp/pic-piper/run-1",
@@ -37,31 +38,27 @@ const { createOptimizerRun, inspectImage, compressImage, copyOutputsToDir, readT
       dataUrl: path.includes("pic-piper") ? "data:image/jpeg;base64,COMPRESSED" : "data:image/jpeg;base64,ORIGINAL",
     })),
     mockDialogOpen,
-    mockOnDragDropEvent: vi.fn(async () => vi.fn()),
+    mockOnFileDrop: vi.fn((_listener: (paths: string[]) => void) => vi.fn()),
     uploadObject: vi.fn(async () => ({
-      key: "images/2026/06/real-photo-abcdef12.webp",
+      key: "images/2026/06/real-photo-abcdef12.jpg",
       size: 240_000,
-      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.webp",
+      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.jpg",
       isImage: true,
     })),
     generateObjectKey: vi.fn(async () => ({
-      objectKey: "images/2026/06/real-photo-abcdef12.webp",
+      objectKey: "images/2026/06/real-photo-abcdef12.jpg",
     })),
   };
 });
 
-vi.mock("@tauri-apps/plugin-dialog", async () => ({
+vi.mock("@/platform/desktop", async () => ({
   open: mockDialogOpen,
+  onFileDrop: mockOnFileDrop,
 }));
 
-vi.mock("@tauri-apps/api/webview", async () => ({
-  getCurrentWebview: () => ({
-    onDragDropEvent: mockOnDragDropEvent,
-  }),
-}));
-
-vi.mock("../../api/tauri", async () => ({
-  tauriApi: {
+vi.mock("../../api/backend", async () => ({
+  imageApi: {
+    cancelImageTask,
     createOptimizerRun,
     inspectImage,
     compressImage,
@@ -113,13 +110,13 @@ function installDefaultMocks() {
     dataUrl: path.includes("pic-piper") ? "data:image/jpeg;base64,COMPRESSED" : "data:image/jpeg;base64,ORIGINAL",
   }));
   uploadObject.mockImplementation(async () => ({
-    key: "images/2026/06/real-photo-abcdef12.webp",
+    key: "images/2026/06/real-photo-abcdef12.jpg",
     size: 240_000,
-    publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.webp",
+    publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.jpg",
     isImage: true,
   }));
   generateObjectKey.mockImplementation(async () => ({
-    objectKey: "images/2026/06/real-photo-abcdef12.webp",
+    objectKey: "images/2026/06/real-photo-abcdef12.jpg",
   }));
 }
 
@@ -141,57 +138,265 @@ describe("OptimizePage", () => {
   });
 
   it("reports larger outputs with a useful next step", async () => {
-    compressImage.mockResolvedValueOnce({ sourcePath: "/tmp/real-photo.jpg", outputPath: "/tmp/cache/photo.webp",
-      outputFileName: "photo.webp", originalBytes: 1_200_000, outputBytes: 1_800_000, targetFormat: "webp" });
+    compressImage.mockResolvedValueOnce({ sourcePath: "/tmp/real-photo.jpg", outputPath: "/tmp/cache/photo.jpg",
+      outputFileName: "photo.jpg", originalBytes: 1_200_000, outputBytes: 1_800_000, targetFormat: "jpg" });
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{slug}.{ext}" />);
-    await user.click(screen.getByTestId("drop-zone"));
-    expect(await screen.findByText(/50% larger/)).toBeVisible();
+    await user.click(screen.getByTestId("image-drop-zone"));
+    expect(await within(screen.getByRole("region", { name: "Images to compress" })).findByText(/50% larger/)).toBeVisible();
     expect(screen.getByText(/Try lower quality or a different target format/)).toBeVisible();
     expect(screen.queryByText(/0% saved/)).not.toBeInTheDocument();
   });
 
-  it("ignores late native drop callbacks after leaving the page", async () => {
+  it("unsubscribes native file drops when leaving the page", () => {
+    const unsubscribe = vi.fn();
+    mockOnFileDrop.mockReturnValueOnce(unsubscribe);
     const { rerender } = render(<OptimizePage namingTemplate="{slug}.{ext}" isActive />);
-    await waitFor(() => expect(mockOnDragDropEvent).toHaveBeenCalled());
-    const calls = mockOnDragDropEvent.mock.calls as unknown as Array<[(event: {
-      payload: { type: "drop"; paths: string[] };
-    }) => Promise<void>]>;
-    const staleHandler = calls[0][0];
+    expect(mockOnFileDrop).toHaveBeenCalled();
     rerender(<OptimizePage namingTemplate="{slug}.{ext}" isActive={false} />);
-    await act(async () => { await staleHandler({ payload: { type: "drop", paths: ["/tmp/late.jpg"] } }); });
-    expect(inspectImage).not.toHaveBeenCalled();
+    expect(unsubscribe).toHaveBeenCalledOnce();
   });
 
   it("starts empty and asks the user to choose images", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    expect(screen.getByRole("heading", { name: "Compress" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Prepare images" })).toBeInTheDocument();
     expect(screen.queryByText("Optimize")).not.toBeInTheDocument();
     expect(screen.getByText(/choose images/i)).toBeInTheDocument();
     expect(screen.queryByText("photo-01.jpg")).not.toBeInTheDocument();
     expect(screen.queryByText("/sample/photo-01.jpg")).not.toBeInTheDocument();
   });
 
+  it.each(["webp", "avif", "jxl"])("dispatches a %s encode with the matching output filename", async (format) => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
+    await user.selectOptions(screen.getByLabelText("Format for real-photo.jpg"), format);
+    await waitFor(() => {
+      expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({
+        outputFileName: `real-photo.${format}`,
+        settings: expect.objectContaining({ targetFormat: format, quality: 85 }),
+      }));
+    });
+  });
+
   it("opens the image picker when the drop zone is clicked", async () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    await user.click(screen.getByTestId("drop-zone"));
+    await user.click(screen.getByTestId("image-drop-zone"));
 
     expect(mockDialogOpen).toHaveBeenCalledWith({
       multiple: true,
-      filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "avif"] }],
+      filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "avif", "jxl", "heif", "heic"] }],
     });
   });
 
-  it("does not render preset controls or a manual Compress button", () => {
+  it("offers batch presets and starts compression without a manual Compress button", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    expect(screen.queryByLabelText(/preset/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Batch preset" })).toHaveValue("original");
     expect(screen.queryByRole("button", { name: /^compress$/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/metadata.*removed during compression/i)).toBeInTheDocument();
+    expect(screen.getByText(/location data removed/i)).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: /quality/i })).toBeInTheDocument();
+  });
+
+  it("applies a batch preset to new images and restores full dimensions for lossless output", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Batch preset" }), "balanced");
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
+    expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "webp", quality: 82 }) }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Longest edge" }), "1280");
+    await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ maxDimension: 1280 }) })));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Batch preset" }), "lossless");
+    await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "jxl", quality: 100, maxDimension: undefined }) })));
+    expect(screen.getByRole("combobox", { name: "Longest edge" })).toHaveValue("0");
+  });
+
+  it("uses PNG for lossless high-bit-depth images and WebP for animations", async () => {
+    inspectImage.mockImplementationOnce(async () => ({
+      id: "precision", sourcePath: "/tmp/real-photo.jpg", fileName: "precision.png", sourceFormat: "png",
+      originalBytes: 1200, estimatedBytes: 1200, status: "queued", bitDepth: 16, frameCount: 1,
+      settings: { targetFormat: "png", quality: 85, removeGps: true },
+    }));
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Batch preset" }), "lossless");
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare precision.png" });
+    expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "png", quality: 100 }) }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Batch preset" }), "balanced");
+    await screen.findByRole("button", { name: "Compare precision.png" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Batch preset" }), "lossless");
+    await screen.findByRole("button", { name: "Compare precision.png" });
+    expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "png", quality: 100 }) }));
+    await user.click(screen.getByRole("button", { name: "Clear batch" }));
+    inspectImage.mockImplementationOnce(async () => ({
+      id: "animation", sourcePath: "/tmp/real-photo.jpg", fileName: "animation.webp", sourceFormat: "webp",
+      originalBytes: 1200, estimatedBytes: 1200, status: "queued", bitDepth: 8, frameCount: 2,
+      settings: { targetFormat: "webp", quality: 85, removeGps: true },
+    }));
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare animation.webp" });
+    expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "webp", quality: 100 }) }));
+  });
+
+  it("requires confirmation for a static animation export and can restore all frames", async () => {
+    inspectImage.mockImplementationOnce(async () => ({
+      id: "animation", sourcePath: "/tmp/real-photo.jpg", fileName: "animation.webp", sourceFormat: "webp",
+      originalBytes: 1200, estimatedBytes: 1200, status: "queued", frameCount: 2,
+      settings: { targetFormat: "webp", quality: 85, removeGps: true },
+    }));
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare animation.webp" });
+    const calls = compressImage.mock.calls.length;
+    await user.selectOptions(screen.getByLabelText("Format for animation.webp"), "png");
+    expect(screen.getByRole("dialog", { name: "Export the first frame?" })).toBeVisible();
+    expect(compressImage).toHaveBeenCalledTimes(calls);
+    await user.click(screen.getByRole("button", { name: "Keep animation" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Format for animation.webp")).toHaveValue("webp");
+    await user.selectOptions(screen.getByLabelText("Format for animation.webp"), "png");
+    await user.click(screen.getByRole("button", { name: "Export first frame" }));
+    await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "png", animationMode: "firstFrame" }) })));
+    await screen.findByRole("button", { name: "Compare animation.webp" });
+    expect(screen.getByLabelText("Animation output")).toHaveValue("firstFrame");
+    await user.selectOptions(screen.getByLabelText("Animation output"), "preserve");
+    await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "webp", animationMode: "preserve" }) })));
+    await screen.findByRole("button", { name: "Compare animation.webp" });
+    await user.selectOptions(screen.getByLabelText("Batch preset"), "small");
+    await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "webp", quality: 55 }) })));
+  });
+
+  it("offers explicit first-frame extraction when sequence frame count is unavailable", async () => {
+    inspectImage.mockImplementationOnce(async () => ({
+      id: "sequence", sourcePath: "/tmp/real-photo.jpg", fileName: "sequence.avif", sourceFormat: "avif",
+      originalBytes: 1200, estimatedBytes: 1200, status: "queued", frameCount: 1, animated: true,
+      settings: { targetFormat: "avif", quality: 85, removeGps: true },
+    }));
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare sequence.avif" });
+    await user.selectOptions(screen.getByLabelText("Animation output"), "firstFrame");
+    await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "avif", animationMode: "firstFrame" }) })));
+  });
+
+  it("explains that HDR previews and export share SDR tone mapping", async () => {
+    inspectImage.mockImplementationOnce(async () => ({
+      id: "hdr", sourcePath: "/tmp/real-photo.jpg", fileName: "hdr.png", sourceFormat: "png",
+      originalBytes: 1200, estimatedBytes: 1200, status: "queued", bitDepth: 16, hdr: true,
+      settings: { targetFormat: "png", quality: 85, removeGps: true },
+    }));
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare hdr.png" });
+    expect(screen.getByText(/HDR preview and export are tone-mapped/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Compare hdr.png" }));
+    expect(await screen.findByText(/HDR original shown with the same SDR tone mapping/)).toBeVisible();
+  });
+
+  it("reloads the original preview when a setting change cancels its first read", async () => {
+    let finishOriginal!: (value: { dataUrl: string }) => void;
+    readThumbnail.mockImplementationOnce(() => new Promise((resolve) => { finishOriginal = resolve; }));
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Batch preset" }), "balanced");
+    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
+    await user.click(within(screen.getByRole("group", { name: "Preview version" })).getByRole("button", { name: "Original" }));
+    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
+    await act(async () => { finishOriginal({ dataUrl: "data:image/jpeg;base64,LATE" }); });
+    expect(screen.getByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
+  });
+
+  it("retries failed images with the latest batch preset", async () => {
+    compressImage.mockRejectedValueOnce(new Error("Try a different target format"));
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByText("Try a different target format");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Batch preset" }), "balanced");
+    expect(compressImage).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Retry unfinished" }));
+    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
+    expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "webp", quality: 82 }) }));
+  });
+
+  it("skips duplicate imports and lets a cleared image be imported again", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
+    await user.click(screen.getByTestId("image-drop-zone"));
+    expect(await screen.findByText(/duplicates skipped/)).toBeVisible();
+    expect(inspectImage).toHaveBeenCalledTimes(1);
+    expect(compressImage).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Clear batch" }));
+    expect(screen.queryByRole("button", { name: "Compare real-photo.jpg" })).not.toBeInTheDocument();
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
+    expect(inspectImage).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares a pending cache run across concurrent images", async () => {
+    let finishRun!: (value: { runId: string; outputDir: string }) => void;
+    createOptimizerRun.mockImplementationOnce(() => new Promise((resolve) => { finishRun = resolve; }));
+    mockDialogOpen.mockResolvedValueOnce(["/tmp/a.jpg", "/tmp/b.jpg"]);
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await waitFor(() => expect(createOptimizerRun).toHaveBeenCalledTimes(1));
+    expect(compressImage).not.toHaveBeenCalled();
+    await act(async () => { finishRun({ runId: "shared", outputDir: "/tmp/shared" }); });
+    await waitFor(() => expect(compressImage).toHaveBeenCalledTimes(2));
+    expect(createOptimizerRun).toHaveBeenCalledTimes(1);
+    for (const index of [1, 2]) expect(compressImage).toHaveBeenNthCalledWith(index, expect.objectContaining({ outputDir: "/tmp/shared" }));
+  });
+
+  it("withholds old exports while a resize is being encoded", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Save to local folder" });
+    let finish!: () => void;
+    compressImage.mockImplementationOnce(() => new Promise((resolve) => { finish = () => resolve({ sourcePath: "/tmp/real-photo.jpg", outputPath: "/tmp/resized.jpg", outputFileName: "resized.jpg", originalBytes: 1_200_000, outputBytes: 100_000, targetFormat: "jpg" }); }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Longest edge" }), "1280");
+    await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ maxDimension: 1280 }) })));
+    expect(screen.queryByRole("button", { name: "Save to local folder" })).not.toBeInTheDocument();
+    await act(async () => { finish(); });
+    expect(await screen.findByRole("button", { name: "Save to local folder" })).toBeEnabled();
+  });
+
+  it("shows picker errors in the workbench and allows another attempt", async () => {
+    mockDialogOpen.mockRejectedValueOnce(new Error("The image picker is unavailable"));
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    expect(await screen.findByText("The image picker is unavailable")).toBeVisible();
+    await user.click(screen.getByTestId("image-drop-zone"));
+    expect(await screen.findByRole("button", { name: "Compare real-photo.jpg" })).toBeVisible();
+    expect(screen.queryByText("The image picker is unavailable")).not.toBeInTheDocument();
+  });
+
+  it("retries failed inspection from the batch action", async () => {
+    inspectImage.mockRejectedValueOnce(new Error("Image temporarily unavailable"));
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    const retry = await screen.findByRole("button", { name: "Retry unfinished" });
+    expect(compressImage).not.toHaveBeenCalled();
+    await user.click(retry);
+    expect(await screen.findByRole("button", { name: "Compare real-photo.jpg" })).toBeVisible();
+    expect(inspectImage).toHaveBeenCalledTimes(2);
+    expect(compressImage).toHaveBeenCalledTimes(1);
   });
 
   it("shows informational text about metadata stripping instead of a Remove GPS checkbox", () => {
@@ -201,16 +406,14 @@ describe("OptimizePage", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 
     // Informational text about metadata stripping should be visible
-    expect(screen.getByText(/metadata.*removed during compression/i)).toBeInTheDocument();
+    expect(screen.getByText(/location data removed/i)).toBeInTheDocument();
   });
 
-  it("keeps quality controls in a constrained second column at narrow window widths", () => {
-    const { container } = render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
+  it("keeps quality controls constrained beside the workspace title", () => {
+    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    expect(container.querySelector("header")).toHaveClass(
-      "grid-cols-[minmax(0,1fr)_minmax(12rem,25%)]",
-      "items-end",
-    );
+    expect(screen.getByRole("slider", { name: /quality/i })).toBeVisible();
+    expect(screen.getByText(/location data removed/i)).toBeVisible();
   });
 
   it("imports selected images and starts single-image compression automatically", async () => {
@@ -220,15 +423,16 @@ describe("OptimizePage", () => {
     await user.click(screen.getByRole("button", { name: /choose images/i }));
 
     expect(inspectImage).toHaveBeenCalledWith({
+      taskId: expect.any(String),
       path: "/tmp/real-photo.jpg",
-      settings: expect.objectContaining({ targetFormat: "webp", quality: 85, removeGps: true }),
+      settings: expect.objectContaining({ targetFormat: "jpg", quality: 85, removeGps: true }),
     });
     expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
     expect(compressImage).toHaveBeenCalledWith(
       expect.objectContaining({
         sourcePath: "/tmp/real-photo.jpg",
-        outputFileName: "real-photo.webp",
-        settings: expect.objectContaining({ targetFormat: "webp", quality: 85, removeGps: true }),
+        outputFileName: "real-photo.jpg",
+        settings: expect.objectContaining({ targetFormat: "jpg", quality: 85, removeGps: true }),
       }),
     );
     expect(await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
@@ -243,8 +447,9 @@ describe("OptimizePage", () => {
     await user.click(previewButton);
 
     expect(screen.getByRole("dialog", { name: /compare real-photo\.jpg/i })).toBeInTheDocument();
-    expect(await screen.findByText("Original", { exact: true })).toBeInTheDocument();
-    expect(screen.getByText("Compressed", { exact: true })).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: /compare real-photo\.jpg/i });
+    expect(await within(dialog).findByText("Original", { exact: true })).toBeInTheDocument();
+    expect(within(dialog).getByText("Compressed", { exact: true })).toBeInTheDocument();
   });
 
   it("recompresses existing items after global quality changes", async () => {
@@ -312,13 +517,13 @@ describe("OptimizePage", () => {
     await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
     compressImage.mockClear();
 
-    await user.selectOptions(screen.getByLabelText(/format for real-photo\.jpg/i), "webp");
+    await user.selectOptions(screen.getByLabelText(/format for real-photo\.jpg/i), "png");
 
     expect(compressImage).toHaveBeenCalledTimes(1);
     expect(compressImage).toHaveBeenCalledWith(
       expect.objectContaining({
-        outputFileName: "real-photo.webp",
-        settings: expect.objectContaining({ targetFormat: "webp" }),
+        outputFileName: "real-photo.png",
+        settings: expect.objectContaining({ targetFormat: "png" }),
       }),
     );
   });
@@ -333,12 +538,12 @@ describe("OptimizePage", () => {
     compressImage.mockClear();
 
     // Change format - should use fresh filename claim, not stale -2
-    await user.selectOptions(screen.getByLabelText(/format for real-photo\.jpg/i), "webp");
+    await user.selectOptions(screen.getByLabelText(/format for real-photo\.jpg/i), "png");
 
     expect(compressImage).toHaveBeenCalledTimes(1);
     expect(compressImage).toHaveBeenCalledWith(
       expect.objectContaining({
-        outputFileName: "real-photo.webp",
+        outputFileName: "real-photo.png",
       }),
     );
   });
@@ -370,7 +575,7 @@ describe("OptimizePage", () => {
     await user.click(screen.getByRole("button", { name: /choose images/i }));
     await user.selectOptions(await screen.findByLabelText(/format for real-photo\.png/i), "png");
 
-    expect(await screen.findByText(/quality does not apply to png output/i)).toBeInTheDocument();
+    expect(await screen.findByText(/PNG output is lossless; quality does not apply/i)).toBeInTheDocument();
   });
 
   it("keeps duplicate output filenames unique across sequential scheduler batches", async () => {
@@ -422,8 +627,8 @@ describe("OptimizePage", () => {
     });
     const compressRequests = compressImage.mock.calls as unknown as Array<[{ outputFileName: string }]>;
     expect(compressRequests.map(([request]) => request.outputFileName)).toEqual([
-      "photo.webp",
-      "photo-2.webp",
+      "photo.jpg",
+      "photo-2.jpg",
     ]);
   });
 
@@ -467,13 +672,13 @@ describe("OptimizePage", () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    // First import: photo.jpg -> compresses to photo.webp
+    // First import: photo.jpg -> compresses to photo.jpg
     await user.click(screen.getByRole("button", { name: /choose images/i }));
     await waitFor(() => {
       expect(compressImage).toHaveBeenCalledTimes(1);
     });
     expect(compressImage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ outputFileName: "photo.webp" }),
+      expect.objectContaining({ outputFileName: "photo.jpg" }),
     );
 
     // Second import: another photo.jpg appended
@@ -482,9 +687,9 @@ describe("OptimizePage", () => {
       expect(compressImage).toHaveBeenCalledTimes(2);
     });
 
-    // The second import should use photo-2.webp, not overwrite photo.webp
+    // The second import should use photo-2.jpg, not overwrite photo.jpg
     const calls = compressImage.mock.calls as unknown as Array<[{ outputFileName: string }]>;
-    expect(calls[1][0].outputFileName).toBe("photo-2.webp");
+    expect(calls[1][0].outputFileName).toBe("photo-2.jpg");
   });
 
   it("does not queue an inspecting placeholder when global settings change", async () => {
@@ -549,6 +754,7 @@ describe("OptimizePage", () => {
 
     await user.click(screen.getByRole("button", { name: /choose images/i }));
     await user.click(await screen.findByRole("button", { name: /cancel real-photo\.jpg/i }));
+    expect(cancelImageTask).toHaveBeenCalledWith({ taskId: expect.stringMatching(/:0$/) });
 
     await act(async () => {
       resolveInspect({
@@ -585,6 +791,7 @@ describe("OptimizePage", () => {
     await user.click(screen.getByRole("button", { name: /choose images/i }));
     await screen.findByText(/compressing/i);
     await user.click(screen.getByRole("button", { name: /cancel real-photo\.jpg/i }));
+    expect(cancelImageTask).toHaveBeenCalledWith({ taskId: expect.stringMatching(/:0$/) });
 
     resolveCompression({
       sourcePath: "/tmp/real-photo.jpg",
@@ -663,7 +870,7 @@ describe("OptimizePage", () => {
 
     expect(mockDialogOpen).toHaveBeenCalledWith({ directory: true });
     expect(copyOutputsToDir).toHaveBeenCalledWith({
-      outputPaths: ["/tmp/pic-piper/run-1/real-photo.webp"],
+      outputPaths: ["/tmp/pic-piper/run-1/real-photo.jpg"],
       targetDir: "/tmp/saved",
     });
   });
@@ -695,7 +902,7 @@ describe("OptimizePage", () => {
     await screen.findByText("real-photo.jpg");
 
     const removeBtn = screen.getByRole("button", {
-      name: /Remove real-photo\.jpg from queue/i,
+      name: /^Remove real-photo\.jpg$/i,
     });
     await user.click(removeBtn);
 
@@ -733,9 +940,9 @@ describe("OptimizePage", () => {
 
     expect(generateObjectKey).toHaveBeenCalledWith(
       expect.objectContaining({
-        sourcePath: "/tmp/pic-piper/run-1/real-photo.webp",
-        outputFileName: "real-photo.webp",
-        ext: "webp",
+        sourcePath: "/tmp/pic-piper/run-1/real-photo.jpg",
+        outputFileName: "real-photo.jpg",
+        ext: "jpg",
         prefix: "images/2026/06",
         namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
       }),
@@ -743,15 +950,15 @@ describe("OptimizePage", () => {
     expect(uploadObject).toHaveBeenCalledWith(
       expect.objectContaining({
         profile,
-        sourcePath: "/tmp/pic-piper/run-1/real-photo.webp",
-        objectKey: "images/2026/06/real-photo-abcdef12.webp",
-        contentType: "image/webp",
+        sourcePath: "/tmp/pic-piper/run-1/real-photo.jpg",
+        objectKey: "images/2026/06/real-photo-abcdef12.jpg",
+        contentType: "image/jpeg",
       }),
     );
     expect(onUploadedToS3).toHaveBeenCalledWith({
       profileId: "p1",
       prefix: "images/2026/06",
-      highlightedKeys: ["images/2026/06/real-photo-abcdef12.webp"],
+      highlightedKeys: ["images/2026/06/real-photo-abcdef12.jpg"],
     });
   });
 
@@ -792,17 +999,17 @@ describe("OptimizePage", () => {
     await screen.findByText(/uploading 1 image/i);
 
     expect(screen.getByRole("slider", { name: /quality/i })).toBeDisabled();
-    expect(screen.getByTestId("drop-zone")).toBeDisabled();
+    expect(screen.getByTestId("image-drop-zone")).toBeDisabled();
     expect(screen.getByLabelText(/format for real-photo\.jpg/i)).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: /remove real-photo\.jpg from queue/i }),
+      screen.getByRole("button", { name: /^remove real-photo\.jpg$/i }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: /^remove real-photo\.jpg$/i })).toBeDisabled();
 
     finishUpload({
-      key: "images/2026/06/real-photo-abcdef12.webp",
+      key: "images/2026/06/real-photo-abcdef12.jpg",
       size: 240_000,
-      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.webp",
+      publicUrl: "https://cdn.example.com/images/2026/06/real-photo-abcdef12.jpg",
       isImage: true,
     });
     await waitFor(() => expect(uploadObject).toHaveBeenCalledTimes(1));
@@ -1062,7 +1269,7 @@ describe("OptimizePage", () => {
   it("dropping file with usable path calls inspectImage", async () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    const dropZone = document.querySelector("[data-testid='drop-zone']")!;
+    const dropZone = document.querySelector("[data-testid='image-drop-zone']")!;
     const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });
     Object.defineProperty(file, "path", { value: "/tmp/dropped-photo.jpg" });
     const fileList = Object.assign([file], { item: (i: number) => (fileList as unknown as File[])[i] });
@@ -1076,77 +1283,22 @@ describe("OptimizePage", () => {
     // The mock returns fileName "real-photo.jpg" regardless of input path
     expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
     expect(inspectImage).toHaveBeenCalledWith({
+      taskId: expect.any(String),
       path: "/tmp/dropped-photo.jpg",
-      settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
+      settings: expect.objectContaining({ targetFormat: "jpg", quality: 85 }),
     });
   });
 
-  it("imports Tauri drag/drop paths from the current webview", async () => {
+  it("imports paths from the native file drop subscription", async () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
-
-    expect(mockOnDragDropEvent).toHaveBeenCalled();
-    const calls = mockOnDragDropEvent.mock.calls as unknown as Array<[(event: {
-      payload: { type: "drop"; paths: string[] };
-    }) => Promise<void>]>;
-    const handler = calls[0][0];
-    await handler({
-      payload: {
-        type: "drop",
-        paths: ["/tmp/tauri-dropped-photo.jpg"],
-      },
-    });
-
+    expect(mockOnFileDrop).toHaveBeenCalled();
+    const handler = mockOnFileDrop.mock.calls[0][0];
+    await act(async () => handler(["/tmp/native-dropped.jpg"]));
     expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
     expect(inspectImage).toHaveBeenCalledWith({
-      path: "/tmp/tauri-dropped-photo.jpg",
-      settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
-    });
-  });
-
-  it("does not duplicate imports when both DOM drop and Tauri drop fire", async () => {
-    // The default mock already simulates Tauri registering successfully
-    // (mockOnDragDropEvent resolves with a cleanup function)
-    render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
-
-    // Wait for Tauri registration
-    await waitFor(() => {
-      expect(mockOnDragDropEvent).toHaveBeenCalled();
-    });
-
-    // Wait a tick for the Tauri registration promise to resolve
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // Now simulate a DOM drop - should be skipped since Tauri is active
-    const dropZone = document.querySelector("[data-testid='drop-zone']")!;
-    const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });
-    Object.defineProperty(file, "path", { value: "/tmp/dom-dropped.jpg" });
-    const fileList = Object.assign([file], { item: (i: number) => (fileList as unknown as File[])[i] });
-    const event = new Event("drop", { bubbles: true, cancelable: true });
-    Object.defineProperty(event, "dataTransfer", {
-      value: { files: fileList },
-    });
-    dropZone.dispatchEvent(event);
-
-    // Wait a bit - inspectImage should NOT be called since DOM drop was skipped
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(inspectImage).not.toHaveBeenCalled();
-
-    // Now simulate Tauri drop via the registered handler - this should work
-    const calls = mockOnDragDropEvent.mock.calls as unknown as Array<[(event: {
-      payload: { type: string; paths: string[] };
-    }) => Promise<void>]>;
-    await calls[0][0]({
-      payload: {
-        type: "drop",
-        paths: ["/tmp/tauri-dropped.jpg"],
-      },
-    });
-
-    expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
-    expect(inspectImage).toHaveBeenCalledTimes(1);
-    expect(inspectImage).toHaveBeenCalledWith({
-      path: "/tmp/tauri-dropped.jpg",
-      settings: expect.objectContaining({ targetFormat: "webp", quality: 85 }),
+      taskId: expect.any(String),
+      path: "/tmp/native-dropped.jpg",
+      settings: expect.objectContaining({ targetFormat: "jpg", quality: 85 }),
     });
   });
 
@@ -1166,7 +1318,7 @@ describe("OptimizePage", () => {
   it("dropping file without usable path shows error and does not call inspectImage", async () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
-    const dropZone = document.querySelector("[data-testid='drop-zone']")!;
+    const dropZone = document.querySelector("[data-testid='image-drop-zone']")!;
     const file = new File(["dummy"], "dropped-photo.jpg", { type: "image/jpeg" });
     const fileList = Object.assign([file], { item: (i: number) => (fileList as unknown as File[])[i] });
 

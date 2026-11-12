@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
-import type { AppSettings } from "./api/tauri";
+import type { AppSettings } from "./api/backend";
 import type { S3Profile } from "./types";
 import type { GalleryFocus } from "./state/appState";
 import App from "./App";
@@ -11,7 +11,8 @@ const { settings } = vi.hoisted(() => ({ settings: {
     bucket: id, accessKeyId: "fake", defaultPrefix: "images", pathStyle: true })),
   defaultProfileId: "a", namingTemplate: "{slug}.{ext}",
 } }));
-vi.mock("./api/tauri", () => ({ settingsApi: { loadSettings: vi.fn(async () => settings) } }));
+vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeClipboard: vi.fn(), onFileDrop: vi.fn(() => vi.fn()) }));
+vi.mock("./api/backend", () => ({ settingsApi: { loadSettings: vi.fn(async () => settings) } }));
 vi.mock("./features/optimize/OptimizePage", () => ({ OptimizePage: ({ activeProfile, onUploadedToS3 }: {
   activeProfile?: S3Profile; onUploadedToS3: (focus: GalleryFocus) => void;
 }) => <button onClick={() => onUploadedToS3({ profileId: "a", prefix: "images", highlightedKeys: ["image"] })}>Target {activeProfile?.id}</button> }));

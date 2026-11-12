@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type UIEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { tauriApi, type ReadComparisonImageResponse } from "../../api/tauri";
+import { imageApi, type ReadComparisonImageResponse } from "../../api/backend";
 import { errorMessage } from "../../lib/error";
 import { cn } from "@/lib/utils";
 
@@ -30,8 +30,8 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
     setLoadError(null);
 
     Promise.all([
-      tauriApi.readComparisonImage({ path: originalPath }),
-      tauriApi.readComparisonImage({ path: compressedPath }),
+      imageApi.readComparisonImage({ path: originalPath }),
+      imageApi.readComparisonImage({ path: compressedPath }),
     ]).then(
       ([original, compressed]) => {
         if (active) setImages({ original, compressed });

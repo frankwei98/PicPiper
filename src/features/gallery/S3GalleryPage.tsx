@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { open, openUrl, writeClipboard } from "@/platform/desktop";
 import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 import type { AppView } from "../../types";
-import { galleryApi, namingApi, uploadApi, type ListGalleryObjectsResponse } from "../../api/tauri";
+import { galleryApi, namingApi, uploadApi, type ListGalleryObjectsResponse } from "../../api/backend";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -339,7 +338,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const handleCopyUrl = async (obj: GalleryObject) => {
     if (!obj.publicUrl) return;
     try {
-      await navigator.clipboard.writeText(obj.publicUrl);
+      await writeClipboard(obj.publicUrl);
       setCopyMessage("URL copied");
     } catch {
       setCopyMessage("Failed to copy URL");
@@ -367,10 +366,12 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         setDownloadingKey(null);
         return;
       }
+      const outputDir = Array.isArray(dir) ? dir[0] : dir;
+      if (!outputDir) return;
       const resultPath = await galleryApi.downloadObject({
         profile: selectedProfile,
         key: obj.key,
-        outputDir: dir,
+        outputDir,
       });
       setCopyMessage(`Saved to ${resultPath}`);
     } catch (err) {

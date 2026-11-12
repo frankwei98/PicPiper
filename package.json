@@ -1,21 +1,23 @@
 {
   "name": "pic-piper",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node scripts/go.mjs run github.com/egoist/mygo/cmd/mygo@v0.9.0 dev",
+    "dev:web": "vite",
+    "build": "node scripts/notices.mjs && node scripts/go.mjs run github.com/egoist/mygo/cmd/mygo@v0.9.0 build",
+    "build:web": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "tauri"
+    "test:go": "node scripts/go.mjs test ./...",
+    "generate": "node scripts/go.mjs run github.com/egoist/mygo/cmd/mygo@v0.9.0 generate",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@tauri-apps/plugin-opener": "^2",
+    "mygo-runtime": "0.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.23.0",
@@ -26,7 +28,6 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.1",
-    "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

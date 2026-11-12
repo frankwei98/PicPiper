@@ -4,7 +4,7 @@ import type { OptimizeItem, S3Profile } from "../../types";
 import { useOptimizeUploads } from "./useOptimizeUploads";
 
 const { uploadObject } = vi.hoisted(() => ({ uploadObject: vi.fn() }));
-vi.mock("../../api/tauri", () => ({
+vi.mock("../../api/backend", () => ({
   uploadApi: { uploadObject },
   namingApi: { generateObjectKey: vi.fn(async () => ({ objectKey: "images/photo.webp" })) },
 }));
@@ -15,7 +15,7 @@ it("finishes an in-flight batch at its captured destination then adopts the new 
   const second = { ...first, id: "b", name: "B", bucket: "b" };
   const items: OptimizeItem[] = [{ id: "image", sourcePath: "/photo.jpg", fileName: "photo.jpg",
     sourceFormat: "jpg", originalBytes: 100, outputBytes: 50, outputPath: "/cache/photo.webp",
-    outputFileName: "photo.webp", status: "compressed", settings: { quality: 85, targetFormat: "webp", removeGps: true } }];
+    outputFileName: "photo.webp", status: "compressed", settings: { quality: 85, targetFormat: "jpg", removeGps: true } }];
   let complete!: (value: unknown) => void;
   uploadObject.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
   const onUploadedToS3 = vi.fn();

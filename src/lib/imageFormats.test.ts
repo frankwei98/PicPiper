@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest";
 import { contentTypeForExtension, extensionsFor, writableImageFormats } from "./imageFormats";
 
 describe("image format capabilities", () => {
-  it("keeps compression inputs within the backend decoder while allowing HEIF originals in Gallery", () => {
-    expect(extensionsFor("compressImport")).toEqual(["jpg", "jpeg", "png", "webp", "avif"]);
-    expect(extensionsFor("galleryUpload")).toEqual(["jpg", "jpeg", "png", "webp", "avif", "heif", "heic"]);
+  it("imports modern formats and HEIF while keeping HEIF read-only", () => {
+    const inputs = ["jpg", "jpeg", "png", "webp", "avif", "jxl", "heif", "heic"];
+    expect(extensionsFor("compressImport")).toEqual(inputs);
+    expect(extensionsFor("galleryUpload")).toEqual(inputs);
+    expect(writableImageFormats()).toEqual(["jpg", "png", "webp", "avif", "jxl"]);
   });
 
-  it("exposes only encodable target formats and maps upload extensions to their MIME types", () => {
-    expect(writableImageFormats()).toEqual(["jpg", "png", "webp", "avif"]);
+  it("maps encoded uploads to the actual format MIME type", () => {
     expect(contentTypeForExtension("jpeg")).toBe("image/jpeg");
+    expect(contentTypeForExtension("WEBP")).toBe("image/webp");
+    expect(contentTypeForExtension("avif")).toBe("image/avif");
+    expect(contentTypeForExtension("JXL")).toBe("image/jxl");
     expect(contentTypeForExtension("HEIC")).toBe("image/heic");
     expect(contentTypeForExtension("unknown")).toBe("application/octet-stream");
   });
