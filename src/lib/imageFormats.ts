@@ -33,12 +33,19 @@ export const IMAGE_FORMAT_REGISTRY = [
     write: true,
   },
   {
+    id: "jxl",
+    extensions: [{ extension: "jxl", contentType: "image/jxl" }],
+    compressImport: true,
+    galleryUpload: true,
+    write: true,
+  },
+  {
     id: "heif",
     extensions: [
       { extension: "heif", contentType: "image/heif" },
       { extension: "heic", contentType: "image/heic" },
     ],
-    compressImport: false,
+    compressImport: true,
     galleryUpload: true,
     write: false,
   },

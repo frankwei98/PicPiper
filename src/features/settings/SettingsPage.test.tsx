@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { AppSettings } from "../../api/tauri";
+import type { AppSettings } from "../../api/backend";
 
 const { saveSettings, saveS3Secret, testS3Connection } = vi.hoisted(() => ({
   saveSettings: vi.fn(async (_settings?: AppSettings) => {}),
@@ -11,7 +11,7 @@ const { saveSettings, saveS3Secret, testS3Connection } = vi.hoisted(() => ({
   testS3Connection: vi.fn(async () => {}),
 }));
 
-vi.mock("../../api/tauri", async () => ({
+vi.mock("../../api/backend", async () => ({
   settingsApi: {
     saveSettings,
     saveS3Secret,

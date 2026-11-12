@@ -1,16 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { tauriApi } from "../../api/tauri";
+import { imageApi } from "../../api/backend";
 import { ImageComparison } from "./ImageComparison";
 
-vi.mock("../../api/tauri", () => ({
-  tauriApi: {
+vi.mock("../../api/backend", () => ({
+  imageApi: {
     readComparisonImage: vi.fn(),
   },
 }));
 
-const readComparisonImage = vi.mocked(tauriApi.readComparisonImage);
+const readComparisonImage = vi.mocked(imageApi.readComparisonImage);
 
 describe("ImageComparison", () => {
   beforeEach(() => {

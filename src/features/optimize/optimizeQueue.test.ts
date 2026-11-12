@@ -29,16 +29,16 @@ function item(status: OptimizeItem["status"]): OptimizeItem {
 }
 
 describe("optimizeQueue", () => {
-  it("defaults every source format to WebP", () => {
-    expect(defaultTargetFormat("jpg")).toBe("webp");
-    expect(defaultTargetFormat("png")).toBe("webp");
-    expect(defaultTargetFormat("webp")).toBe("webp");
-    expect(defaultTargetFormat("avif")).toBe("webp");
-    expect(defaultTargetFormat("unknown")).toBe("webp");
+  it("preserves encodable input formats and converts HEIF to AVIF", () => {
+    for (const format of ["jpg", "png", "webp", "avif", "jxl"] as const) {
+      expect(defaultTargetFormat(format)).toBe(format);
+    }
+    expect(defaultTargetFormat("heif")).toBe("avif");
+    expect(defaultTargetFormat("unknown")).toBe("jpg");
   });
 
-  it("does not offer HEIF output", () => {
-    expect(AVAILABLE_OUTPUT_FORMATS).toEqual(["jpg", "png", "webp", "avif"]);
+  it("offers only supported output formats", () => {
+    expect(AVAILABLE_OUTPUT_FORMATS).toEqual(["jpg", "png", "webp", "avif", "jxl"]);
   });
 
   it("caps compression concurrency so large machines do not start unbounded work", () => {
@@ -49,41 +49,41 @@ describe("optimizeQueue", () => {
   });
 
   it("derives output filename from current target format", () => {
-    expect(makeOutputFileName("photo.large.jpg", "webp")).toBe("photo.large.webp");
+    expect(makeOutputFileName("photo.large.jpg", "jpg")).toBe("photo.large.jpg");
     expect(makeOutputFileName("photo", "jpg")).toBe("photo.jpg");
   });
 
   it("disambiguates duplicate output filenames", () => {
     const outputNames = makeUniqueOutputFileNames(
       [
-        { id: "a", fileName: "photo.jpg", targetFormat: "webp" },
-        { id: "b", fileName: "photo.png", targetFormat: "webp" },
+        { id: "a", fileName: "photo.jpg", targetFormat: "jpg" },
+        { id: "b", fileName: "photo.png", targetFormat: "jpg" },
         { id: "c", fileName: "photo.jpg", targetFormat: "jpg" },
       ],
       new Map(),
     );
     expect(outputNames).toEqual({
-      a: "photo.webp",
-      b: "photo-2.webp",
-      c: "photo.jpg",
+      a: "photo.jpg",
+      b: "photo-2.jpg",
+      c: "photo-3.jpg",
     });
   });
 
   it("does not let an explicit numeric stem collide with a generated suffix", () => {
     const outputNames = makeUniqueOutputFileNames(
       [
-        { id: "a", fileName: "photo.jpg", targetFormat: "webp" },
-        { id: "b", fileName: "photo.png", targetFormat: "webp" },
-        { id: "c", fileName: "photo-2.jpg", targetFormat: "webp" },
+        { id: "a", fileName: "photo.jpg", targetFormat: "jpg" },
+        { id: "b", fileName: "photo.png", targetFormat: "jpg" },
+        { id: "c", fileName: "photo-2.jpg", targetFormat: "jpg" },
       ],
       new Map(),
     );
 
     expect(new Set(Object.values(outputNames)).size).toBe(3);
     expect(outputNames).toEqual({
-      a: "photo.webp",
-      b: "photo-2.webp",
-      c: "photo-2-2.webp",
+      a: "photo.jpg",
+      b: "photo-2.jpg",
+      c: "photo-2-2.jpg",
     });
   });
 
@@ -93,41 +93,41 @@ describe("optimizeQueue", () => {
     // Batch 1: dispatch two items with same preferred name
     const batch1Names = makeUniqueOutputFileNames(
       [
-        { id: "p1", fileName: "photo.jpg", targetFormat: "webp" },
-        { id: "p2", fileName: "photo.jpg", targetFormat: "webp" },
+        { id: "p1", fileName: "photo.jpg", targetFormat: "jpg" },
+        { id: "p2", fileName: "photo.jpg", targetFormat: "jpg" },
       ],
       counts,
     );
-    expect(batch1Names).toEqual({ p1: "photo.webp", p2: "photo-2.webp" });
+    expect(batch1Names).toEqual({ p1: "photo.jpg", p2: "photo-2.jpg" });
 
     // Only track the dispatched names (simulating concurrency=1, dispatching p1 only)
     trackDispatchedNames(
-      [{ fileName: "photo.jpg", targetFormat: "webp" }],
+      [{ fileName: "photo.jpg", targetFormat: "jpg" }],
       counts,
     );
-    expect(counts.get("photo.webp")).toBe(1);
+    expect(counts.get("photo.jpg")).toBe(1);
 
     // Batch 2: dispatch p2 with updated counts
     const batch2Names = makeUniqueOutputFileNames(
-      [{ id: "p2", fileName: "photo.jpg", targetFormat: "webp" }],
+      [{ id: "p2", fileName: "photo.jpg", targetFormat: "jpg" }],
       counts,
     );
-    expect(batch2Names.p2).toBe("photo-2.webp");
+    expect(batch2Names.p2).toBe("photo-2.jpg");
 
     // Track p2 dispatched
     trackDispatchedNames(
-      [{ fileName: "photo.jpg", targetFormat: "webp" }],
+      [{ fileName: "photo.jpg", targetFormat: "jpg" }],
       counts,
     );
-    expect(counts.get("photo.webp")).toBe(2);
+    expect(counts.get("photo.jpg")).toBe(2);
 
     // Batch 3: third item with same preferred name
     const batch3Names = makeUniqueOutputFileNames(
-      [{ id: "p3", fileName: "photo.jpg", targetFormat: "webp" }],
+      [{ id: "p3", fileName: "photo.jpg", targetFormat: "jpg" }],
       counts,
     );
-    // Must NOT collide with p1's "photo.webp" or p2's "photo-2.webp"
-    expect(batch3Names.p3).toBe("photo-3.webp");
+    // Must NOT collide with p1's "photo.jpg" or p2's "photo-2.jpg"
+    expect(batch3Names.p3).toBe("photo-3.jpg");
   });
 
   it("requeues only active items for global setting changes", () => {

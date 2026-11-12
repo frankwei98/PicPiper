@@ -1,12 +1,29 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Backend } from "../mygo";
+import { isMyGo } from "mygo-runtime";
 import type { CompressionSettings, GalleryObject, ImageInspection, S3Profile, WritableImageFormat } from "../types";
 
+interface Response<T> {
+  data: T;
+  error?: { code: string; message: string };
+}
+
+async function invoke<T>(operation: string, args?: { request?: unknown }): Promise<T> {
+  if (!isMyGo()) throw new Error("Open Pic Piper as a desktop app to use local files and storage.");
+  const response: Response<T> = JSON.parse(await Backend.call(operation, JSON.stringify(args?.request ?? {})));
+  if (response.error) {
+    throw Object.assign(new Error(response.error.message), { code: response.error.code });
+  }
+  return response.data;
+}
+
 export interface InspectImageRequest {
+  taskId?: string;
   path: string;
   settings: CompressionSettings;
 }
 
 export interface CompressImageRequest {
+  taskId?: string;
   sourcePath: string;
   outputDir: string;
   outputFileName: string;
@@ -20,6 +37,8 @@ export interface CompressImageResult {
   originalBytes: number;
   outputBytes: number;
   targetFormat: CompressionSettings["targetFormat"];
+  width?: number;
+  height?: number;
   warning?: string;
 }
 
@@ -34,6 +53,7 @@ export interface CopyOutputsRequest {
 }
 
 export interface ReadThumbnailRequest {
+  taskId?: string;
   path: string;
   maxSize?: number;
 }
@@ -52,19 +72,14 @@ export interface ReadComparisonImageResponse {
   height: number;
 }
 
-export const tauriApi = {
-  inspectImage: (request: InspectImageRequest) =>
-    invoke<ImageInspection>("inspect_image", { request }),
-  createOptimizerRun: () =>
-    invoke<CreateOptimizerRunResponse>("create_optimizer_run"),
-  compressImage: (request: CompressImageRequest) =>
-    invoke<CompressImageResult>("compress_image", { request }),
-  copyOutputsToDir: (request: CopyOutputsRequest) =>
-    invoke<string[]>("copy_outputs_to_dir", { request }),
-  readThumbnail: (request: ReadThumbnailRequest) =>
-    invoke<ReadThumbnailResponse>("read_thumbnail", { request }),
-  readComparisonImage: (request: ReadComparisonImageRequest) =>
-    invoke<ReadComparisonImageResponse>("read_comparison_image", { request }),
+export const imageApi = {
+  cancelImageTask: (request: { taskId: string }) => invoke<void>("cancel_image_task", { request }),
+  inspectImage: (request: InspectImageRequest) => invoke<ImageInspection>("inspect_image", { request }),
+  createOptimizerRun: () => invoke<CreateOptimizerRunResponse>("create_optimizer_run"),
+  compressImage: (request: CompressImageRequest) => invoke<CompressImageResult>("compress_image", { request }),
+  copyOutputsToDir: (request: CopyOutputsRequest) => invoke<string[]>("copy_outputs_to_dir", { request }),
+  readThumbnail: (request: ReadThumbnailRequest) => invoke<ReadThumbnailResponse>("read_thumbnail", { request }),
+  readComparisonImage: (request: ReadComparisonImageRequest) => invoke<ReadComparisonImageResponse>("read_comparison_image", { request }),
 };
 
 export interface ListGalleryObjectsRequest {
@@ -91,12 +106,9 @@ export interface DownloadObjectRequest {
 }
 
 export const galleryApi = {
-  listObjects: (request: ListGalleryObjectsRequest) =>
-    invoke<ListGalleryObjectsResponse>("list_gallery_objects", { request }),
-  deleteObject: (request: DeleteObjectRequest) =>
-    invoke<void>("delete_gallery_object", { request }),
-  downloadObject: (request: DownloadObjectRequest) =>
-    invoke<string>("download_gallery_object", { request }),
+  listObjects: (request: ListGalleryObjectsRequest) => invoke<ListGalleryObjectsResponse>("list_gallery_objects", { request }),
+  deleteObject: (request: DeleteObjectRequest) => invoke<void>("delete_gallery_object", { request }),
+  downloadObject: (request: DownloadObjectRequest) => invoke<string>("download_gallery_object", { request }),
 };
 
 export interface UploadObjectRequest {
@@ -111,8 +123,7 @@ export interface UploadObjectRequest {
 }
 
 export const uploadApi = {
-  uploadObject: (request: UploadObjectRequest) =>
-    invoke<GalleryObject>("upload_gallery_object", { request }),
+  uploadObject: (request: UploadObjectRequest) => invoke<GalleryObject>("upload_gallery_object", { request }),
 };
 
 export interface GenerateObjectKeyRequest {
@@ -121,7 +132,6 @@ export interface GenerateObjectKeyRequest {
   prefix: string;
   namingTemplate: string;
   ext: string;
-  /** Appended before the extension for an explicit create-only collision retry. */
   collisionSuffix?: string;
 }
 
@@ -130,8 +140,7 @@ export interface GenerateObjectKeyResponse {
 }
 
 export const namingApi = {
-  generateObjectKey: (request: GenerateObjectKeyRequest) =>
-    invoke<GenerateObjectKeyResponse>("generate_object_key", { request }),
+  generateObjectKey: (request: GenerateObjectKeyRequest) => invoke<GenerateObjectKeyResponse>("generate_object_key", { request }),
 };
 
 export interface AppSettings {
@@ -153,10 +162,7 @@ export interface TestS3ConnectionRequest {
 
 export const settingsApi = {
   loadSettings: () => invoke<AppSettings>("load_app_settings"),
-  saveSettings: (settings: AppSettings) =>
-    invoke<void>("save_app_settings", { request: { settings } }),
-  saveS3Secret: (request: SaveS3SecretRequest) =>
-    invoke<{ credentialRef: string }>("save_s3_secret", { request }),
-  testS3Connection: (request: TestS3ConnectionRequest) =>
-    invoke<void>("test_s3_connection", { request }),
+  saveSettings: (settings: AppSettings) => invoke<void>("save_app_settings", { request: { settings } }),
+  saveS3Secret: (request: SaveS3SecretRequest) => invoke<{ credentialRef: string }>("save_s3_secret", { request }),
+  testS3Connection: (request: TestS3ConnectionRequest) => invoke<void>("test_s3_connection", { request }),
 };

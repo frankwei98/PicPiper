@@ -1,0 +1,18 @@
+{
+  "name": "Pic Piper",
+  "slug": "pic-piper",
+  "identifier": "xyz.frankwei.pic-piper.mygo",
+  "version": "0.3.0",
+  "devUrl": "http://localhost:1420",
+  "devCommand": "pnpm dev:web",
+  "buildCommand": "pnpm build:web",
+  "frontendDist": "dist",
+  "bindings": "src/mygo.ts",
+  "out": "build",
+  "fileAssociations": [{ "ext": ["jpg", "jpeg", "png", "webp", "avif", "jxl", "heif", "heic"], "name": "Images", "mimeType": "image/*", "role": "Viewer" }],
+  "icon": "resources/icon.png",
+  "macos": {
+    "signingIdentity": "-",
+    "minimumSystemVersion": "12.0"
+  }
+}

@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { S3GalleryPage } from "./S3GalleryPage";
 import { fileNameFromPath } from "../../lib/path";
 
-const { listObjects, deleteObject, downloadObject, mockDialogOpen, mockOpenUrl, uploadObject, generateObjectKey, loadSettings } = vi.hoisted(() => {
+const { listObjects, deleteObject, downloadObject, mockDialogOpen, mockOpenUrl, mockWriteClipboard, uploadObject, generateObjectKey, loadSettings } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async () => "/tmp/downloads");
   return {
     listObjects: vi.fn(async (_request?: unknown): Promise<unknown> => ({
@@ -22,6 +22,7 @@ const { listObjects, deleteObject, downloadObject, mockDialogOpen, mockOpenUrl, 
     downloadObject: vi.fn(async () => "/tmp/downloads/photo.webp"),
     mockDialogOpen,
     mockOpenUrl: vi.fn(async () => {}),
+    mockWriteClipboard: vi.fn(async () => {}),
     uploadObject: vi.fn(async (req: { objectKey: string }) => ({
       key: req.objectKey,
       size: 100_000,
@@ -38,17 +39,15 @@ const { listObjects, deleteObject, downloadObject, mockDialogOpen, mockOpenUrl, 
   };
 });
 
-vi.mock("@tauri-apps/plugin-dialog", async () => ({
+vi.mock("@/platform/desktop", async () => ({
   open: mockDialogOpen,
-}));
-
-vi.mock("@tauri-apps/plugin-opener", async () => ({
   openUrl: mockOpenUrl,
+  writeClipboard: mockWriteClipboard,
 }));
 
-vi.mock("../../api/tauri", async () => ({
+vi.mock("../../api/backend", async () => ({
   galleryApi: { listObjects, deleteObject, downloadObject },
-  tauriApi: {},
+  imageApi: {},
   uploadApi: { uploadObject },
   namingApi: { generateObjectKey },
   settingsApi: { loadSettings },
@@ -430,8 +429,8 @@ describe("S3GalleryPage", () => {
   });
 
   it("copies public URL to clipboard when Copy URL is clicked", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.spyOn(navigator.clipboard, "writeText").mockImplementation(writeText);
+    const writeText = mockWriteClipboard;
+    writeText.mockClear();
     const user = userEvent.setup();
     render(
       <S3GalleryPage
@@ -922,7 +921,7 @@ describe("S3GalleryPage", () => {
     expect(mockDialogOpen).toHaveBeenCalledWith({
       multiple: true,
       filters: [
-        { name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "avif", "heif", "heic"] },
+        { name: "Images", extensions: ["jpg", "jpeg", "png", "webp", "avif", "jxl", "heif", "heic"] },
       ],
     });
     expect(generateObjectKey).toHaveBeenCalledWith(
@@ -1102,8 +1101,8 @@ describe("S3GalleryPage", () => {
 
   it("auto-clears copyMessage after a few seconds", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.spyOn(navigator.clipboard, "writeText").mockImplementation(writeText);
+    const writeText = mockWriteClipboard;
+    writeText.mockClear();
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(
       <S3GalleryPage

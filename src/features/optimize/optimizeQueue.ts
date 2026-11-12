@@ -6,8 +6,9 @@ export const MAX_COMPRESSION_CONCURRENCY = 3;
 
 export type AvailableOutputFormat = (typeof AVAILABLE_OUTPUT_FORMATS)[number];
 
-export function defaultTargetFormat(_sourceFormat: OptimizeItem["sourceFormat"]): WritableImageFormat {
-  return "webp";
+export function defaultTargetFormat(sourceFormat: OptimizeItem["sourceFormat"]): WritableImageFormat {
+  if (sourceFormat === "heif") return "avif";
+  return sourceFormat !== "unknown" && AVAILABLE_OUTPUT_FORMATS.includes(sourceFormat) ? sourceFormat : "jpg";
 }
 
 export function getCompressionConcurrency(hardwareConcurrency: number | undefined): number {

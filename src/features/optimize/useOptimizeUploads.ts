@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { namingApi, uploadApi } from "../../api/tauri";
+import { namingApi, uploadApi } from "../../api/backend";
 import { errorCode, errorMessage } from "../../lib/error";
 import { contentTypeForExtension } from "../../lib/imageFormats";
 import type { GalleryFocus } from "../../state/appState";
@@ -109,7 +109,7 @@ export function useOptimizeUploads({
 
     try {
       for (const item of uploadItems) {
-        const outputFileName = item.outputFileName ?? "image.webp";
+        const outputFileName = item.outputFileName ?? "image.jpg";
         const extension = item.settings.targetFormat;
         try {
           const collisionSuffix = collisionRetryItemIds.has(item.id)
