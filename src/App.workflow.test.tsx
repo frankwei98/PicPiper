@@ -93,7 +93,7 @@ describe("application workflow", () => {
     expect(screen.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true");
     await user.click(screen.getByRole("tab", { name: "Compress" }));
     expect(screen.getByRole("button", { name: "Save to local folder" })).toBeEnabled();
-    expect(screen.getByText(/Uploaded 1 image\(s\) to Personal · photos/)).toBeVisible();
+    expect(screen.getByText(/Uploaded 1 image\(s\) to Personal \/ photos/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "View uploaded images" }));
     expect(screen.getByRole("tab", { name: "S3 Gallery" })).toHaveAttribute("aria-selected", "true");
     await user.click(screen.getByRole("tab", { name: "Compress" }));

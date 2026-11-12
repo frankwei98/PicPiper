@@ -52,7 +52,7 @@ describe("ImageComparison", () => {
     await user.click(screen.getByRole("button", { name: "100%" }));
     const originalImage = screen.getByAltText("Original full-resolution preview");
     expect(originalImage).toHaveStyle({ width: "2400px", height: "1600px" });
-    expect(screen.getByText("100% scale · scroll either image to compare details")).toBeInTheDocument();
+    expect(screen.getByText("100% scale. Scroll either image to compare details.")).toBeInTheDocument();
 
     const originalPane = screen.getByTestId("original-comparison-pane");
     const compressedPane = screen.getByTestId("compressed-comparison-pane");

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Expand, Trash2 } from "lucide-react";
+import { Expand, Image as ImageIcon, ImageUp, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -37,16 +37,6 @@ interface OptimizeWorkspaceProps {
   onDrop: (event: React.DragEvent) => void;
   onDragOver: (event: React.DragEvent) => void;
   onDragLeave: (event: React.DragEvent) => void;
-}
-
-/** A registration mark: four corner brackets around a focus point. */
-function FocusMark({ className }: { className?: string }) {
-  return (
-    <svg className={className} width="38" height="38" viewBox="0 0 38 38" fill="none" aria-hidden="true">
-      <path d="M3 12V3h9M26 3h9v9M35 26v9h-9M12 35H3v-9" stroke="currentColor" strokeWidth="1.25" />
-      <circle cx="19" cy="19" r="1.75" fill="currentColor" />
-    </svg>
-  );
 }
 
 export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
@@ -96,8 +86,7 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
           {!props.items.length && (
             <div className="rail-empty">
               <strong>No images yet</strong>
-              <p>Files you add appear here as a batch.</p>
-              <p>Originals are never modified.</p>
+              <p>Add images to start a batch.</p>
             </div>
           )}
         </div>
@@ -125,7 +114,7 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
               onClick={props.onChooseImages}
               {...dropHandlers}
             >
-              <FocusMark className="drop-mark" />
+              <ImageUp className="drop-mark size-7" aria-hidden="true" />
               <span className="drop-title">Drop images here</span>
               <span className="drop-cta">Choose images</span>
               <span className="drop-formats">JPEG, PNG, WebP, AVIF, JPEG XL, HEIC</span>
@@ -134,7 +123,7 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             <img src={previewUrl} alt={`${preview === "original" || !selected.compressedPreviewUrl ? "Original" : "Compressed"} preview of ${selected.fileName}`} draggable={false} />
           ) : (
             <div className="stage-empty">
-              <FocusMark className="drop-mark" />
+              <ImageIcon className="drop-mark size-7" aria-hidden="true" />
               <strong>{selected.status === "failed" ? "This image needs attention" : "Preparing your image"}</strong>
               <p>{selected.error ?? "The preview will appear as soon as the image is readable."}</p>
             </div>
@@ -155,14 +144,14 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
       </section>
 
       <aside className="recipe" aria-label="Output settings">
-        <div className="recipe-head">Output <span>Applies to the batch</span></div>
+        <div className="recipe-head">Output</div>
         <Label className="recipe-field">
           <span className="recipe-label">Batch preset</span>
           <NativeSelect aria-label="Batch preset" value={props.preset} onChange={(event) => props.onPreset(event.target.value as Exclude<CompressionPreset, "custom">)} disabled={props.locked}>
             <NativeSelectOption value="original">Original format</NativeSelectOption>
-            <NativeSelectOption value="balanced">Balanced · WebP</NativeSelectOption>
-            <NativeSelectOption value="small">Smaller · AVIF</NativeSelectOption>
-            <NativeSelectOption value="lossless">Lossless · Auto</NativeSelectOption>
+            <NativeSelectOption value="balanced">Balanced (WebP)</NativeSelectOption>
+            <NativeSelectOption value="small">Smaller (AVIF)</NativeSelectOption>
+            <NativeSelectOption value="lossless">Lossless (auto)</NativeSelectOption>
             <NativeSelectOption value="custom" disabled>Custom</NativeSelectOption>
           </NativeSelect>
         </Label>
