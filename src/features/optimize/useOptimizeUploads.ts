@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { namingApi, uploadApi } from "../../api/backend";
 import { errorCode, errorMessage } from "../../lib/error";
@@ -147,7 +148,7 @@ export function useOptimizeUploads({
         } catch (error) {
           failed.set(item.id, {
             code: errorCode(error),
-            message: errorMessage(error, "Upload failed"),
+            message: errorMessage(error, t("Upload failed")),
           });
         }
 
@@ -165,7 +166,7 @@ export function useOptimizeUploads({
   const uploadToS3 = async () => {
     if (!canMutateQueue()) return;
     if (!activeProfile) {
-      setUploadError("Configure and select an S3 profile before uploading.");
+      setUploadError(t("Configure and select an S3 profile before uploading."));
       return;
     }
     setUploadError(null);
@@ -181,7 +182,7 @@ export function useOptimizeUploads({
         !currentFailures.has(item.id),
     );
     if (compressedItems.length === 0) {
-      setUploadError("No compressed outputs to upload.");
+      setUploadError(t("No compressed outputs to upload."));
       return;
     }
 
@@ -212,10 +213,10 @@ export function useOptimizeUploads({
         highlightedKeys: allUploadedKeys,
       });
     } else if (failed.size === 0) {
-      setUploadError(`${remainingFailures.size} failed upload(s) still need retrying.`);
+      setUploadError(t("{{count}} failed upload(s) still need retrying.", { count: remainingFailures.size }));
     } else {
       setUploadError(
-        `${failed.size} of ${compressedItems.length} upload(s) failed. Fix and retry.`,
+        t("{{count}} of {{total}} upload(s) failed. Fix and retry.", { count: failed.size, total: compressedItems.length }),
       );
     }
   };
@@ -223,7 +224,7 @@ export function useOptimizeUploads({
   const retryUploads = async () => {
     if (!canMutateQueue()) return;
     if (!activeProfile) {
-      setUploadError("Configure and select an S3 profile before uploading.");
+      setUploadError(t("Configure and select an S3 profile before uploading."));
       return;
     }
     setUploadError(null);
@@ -234,7 +235,7 @@ export function useOptimizeUploads({
         isCurrentCompressionOutput(item, currentQuality) && currentFailures.has(item.id),
     );
     if (failedItems.length === 0) {
-      setUploadError("No failed uploads to retry.");
+      setUploadError(t("No failed uploads to retry."));
       return;
     }
 
@@ -263,7 +264,7 @@ export function useOptimizeUploads({
       });
     } else {
       setUploadError(
-        `${stillFailed.size} of ${failedItems.length} upload(s) failed. Fix and retry.`,
+        t("{{count}} of {{total}} upload(s) failed. Fix and retry.", { count: stillFailed.size, total: failedItems.length }),
       );
     }
   };

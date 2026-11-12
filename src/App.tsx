@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Layout } from "./components/Layout";
 import { S3GalleryPage } from "./features/gallery/S3GalleryPage";
@@ -12,6 +13,7 @@ import type { AppNavigationState } from "./state/appState";
 import { errorMessage } from "./lib/error";
 
 function App() {
+  useLocale();
   const [navigation, setNavigation] = useState<AppNavigationState>(initialNavigationState);
   const [settings, setSettings] = useState<AppSettings>({
     profiles: [],
@@ -27,7 +29,7 @@ function App() {
         if (!cancelled) setSettings(loaded);
       })
       .catch((error) => {
-        if (!cancelled) setSettingsError(errorMessage(error, "Failed to load settings."));
+        if (!cancelled) setSettingsError(errorMessage(error, t("Failed to load settings.")));
       });
     return () => {
       cancelled = true;
@@ -53,7 +55,7 @@ function App() {
     >
       {settingsError && (
         <Alert variant="destructive" className="app-notice">
-          <AlertTitle>Could not load settings</AlertTitle>
+          <AlertTitle>{t("Could not load settings")}</AlertTitle>
           <AlertDescription>{settingsError}</AlertDescription>
         </Alert>
       )}

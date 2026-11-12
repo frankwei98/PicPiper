@@ -1,8 +1,9 @@
+import { t, useLocale } from "@/i18n";
 import type { AppView } from "../types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS: Array<{ id: AppView; label: string }> = [
+const NAV_ITEMS: Array<{ id: AppView; label: import("@/i18n").MessageKey }> = [
   { id: "optimize", label: "Compress" },
   { id: "gallery", label: "S3 Gallery" },
   { id: "settings", label: "Settings" },
@@ -26,6 +27,7 @@ function handleTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
 }
 
 export function Layout({ activeView, children, onViewChange }: LayoutProps) {
+  useLocale();
   return (
     <main className="app-shell">
       <header className="masthead">
@@ -33,8 +35,8 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
           <span className="brand-mark" aria-hidden="true" />
           <span>Pic Piper</span>
         </div>
-        <nav aria-label="Main navigation">
-          <div role="tablist" aria-label="Views" className="masthead-nav">
+        <nav aria-label={t("Main navigation")}>
+          <div role="tablist" aria-label={t("Views")} className="masthead-nav">
             {NAV_ITEMS.map(({ id, label }) => {
               const selected = activeView === id;
               return (
@@ -51,7 +53,7 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
                   onKeyDown={handleTabKeyDown}
                   className={cn("nav-item", selected && "nav-item-selected")}
                 >
-                  {label}
+                  {t(label)}
                 </Button>
               );
             })}
@@ -59,7 +61,7 @@ export function Layout({ activeView, children, onViewChange }: LayoutProps) {
         </nav>
         <div className="masthead-status">
           <span className="status-dot" aria-hidden="true" />
-          Local processing
+          {t("Local processing")}
         </div>
       </header>
       <section className="app-main">

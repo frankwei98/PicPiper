@@ -267,7 +267,7 @@ describe("SettingsPage", () => {
     );
 
     // Profile selector should be visible
-    const select = screen.getByRole("combobox");
+    const select = screen.getByRole("combobox", { name: /editing profile/i });
     expect(select).toBeInTheDocument();
 
     // Switch to second profile
@@ -334,7 +334,7 @@ describe("SettingsPage", () => {
     ];
 
     render(<SettingsPage settings={{ profiles, namingTemplate: "{slug}.{ext}", defaultProfileId: "default" }} onSettingsChange={() => {}} />);
-    await user.selectOptions(screen.getByRole("combobox"), "other");
+    await user.selectOptions(screen.getByRole("combobox", { name: /editing profile/i }), "other");
     expect(screen.getByLabelText("Use as default profile")).not.toBeChecked();
     await user.click(screen.getByRole("button", { name: /save profile/i }));
 

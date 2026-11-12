@@ -1,3 +1,4 @@
+import { t, useLocale, languages, getLanguagePreference, setLanguage, type LanguagePreference } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "../../api/backend";
 import type { AppSettings } from "../../api/backend";
@@ -31,16 +32,17 @@ type FieldErrors = Partial<Record<ProfileField, string>>;
 function httpUrlError(value: string, label: string): string | undefined {
   try {
     const parsed = new URL(value);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return `${label} must use http: or https: protocol.`;
-    if (!parsed.hostname) return `${label} must include a host.`;
-    if (parsed.username || parsed.password) return `${label} must not include credentials.`;
-    if (parsed.search || parsed.hash) return `${label} must not contain query strings or fragments.`;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return t("{{label}} must use http: or https: protocol.", { label });
+    if (!parsed.hostname) return t("{{label}} must include a host.", { label });
+    if (parsed.username || parsed.password) return t("{{label}} must not include credentials.", { label });
+    if (parsed.search || parsed.hash) return t("{{label}} must not contain query strings or fragments.", { label });
   } catch {
-    return `${label} is not a valid URL.`;
+    return t("{{label}} is not a valid URL.", { label });
   }
 }
 
 export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) {
+  useLocale();
   const [editingProfileId, setEditingProfileId] = useState(
     settings.defaultProfileId ?? settings.profiles[0]?.id ?? "",
   );
@@ -125,18 +127,18 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
 
   const validateProfileFields = (missingSecretMessage: string): FieldErrors => {
     const errors: FieldErrors = {};
-    if (!name.trim()) errors.name = "Profile name is required.";
-    if (!endpoint.trim()) errors.endpoint = "Endpoint is required.";
-    else errors.endpoint = httpUrlError(endpoint, "Endpoint");
-    if (!region.trim()) errors.region = "Region is required.";
-    if (!bucket.trim()) errors.bucket = "Bucket is required.";
-    if (!accessKeyId.trim()) errors.accessKeyId = "Access key ID is required.";
+    if (!name.trim()) errors.name = t("Profile name is required.");
+    if (!endpoint.trim()) errors.endpoint = t("Endpoint is required.");
+    else errors.endpoint = httpUrlError(endpoint, t("Endpoint"));
+    if (!region.trim()) errors.region = t("Region is required.");
+    if (!bucket.trim()) errors.bucket = t("Bucket is required.");
+    if (!accessKeyId.trim()) errors.accessKeyId = t("Access key ID is required.");
     if (!secretAccessKey && !profile?.credentialRef) errors.secretAccessKey = missingSecretMessage;
-    if (publicBaseUrl.trim()) errors.publicBaseUrl = httpUrlError(publicBaseUrl, "Public Base URL");
+    if (publicBaseUrl.trim()) errors.publicBaseUrl = httpUrlError(publicBaseUrl, t("Public Base URL"));
     if (defaultPrefix.split("/").some((segment) => segment === "." || segment === "..")) {
-      errors.defaultPrefix = "Default prefix must not contain path traversal segments.";
+      errors.defaultPrefix = t("Default prefix must not contain path traversal segments.");
     } else if (Array.from(defaultPrefix).some((character) => /[\u0000-\u001f\u007f]/.test(character))) {
-      errors.defaultPrefix = "Default prefix must not contain control characters.";
+      errors.defaultPrefix = t("Default prefix must not contain control characters.");
     }
     return Object.fromEntries(Object.entries(errors).filter(([, value]) => value)) as FieldErrors;
   };
@@ -158,7 +160,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     const generation = ++connectionGenerationRef.current;
     setConnectionMessage(null);
     setConnectionError(null);
-    const validationErrors = validateProfileFields("Enter a secret access key to test this new profile.");
+    const validationErrors = validateProfileFields(t("Enter a secret access key to test this new profile."));
     setFieldErrors(validationErrors);
     const firstInvalid = (Object.keys(validationErrors) as ProfileField[])[0];
     if (firstInvalid) {
@@ -173,10 +175,10 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         ...(secretAccessKey ? { secretAccessKey } : {}),
       });
       if (generation !== connectionGenerationRef.current) return;
-      setConnectionMessage("Connection successful. Bucket listing works.");
+      setConnectionMessage(t("Connection successful. Bucket listing works."));
     } catch (error) {
       if (generation !== connectionGenerationRef.current) return;
-      setConnectionError(errorMessage(error, "Connection test failed."));
+      setConnectionError(errorMessage(error, t("Connection test failed.")));
     } finally {
       setTestingConnection(false);
     }
@@ -186,8 +188,8 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     event.preventDefault();
     setSaveError(null);
     setSaveMessage(null);
-    const errors = validateProfileFields("Secret access key is required for a new profile.");
-    if (!namingTemplate.trim()) errors.namingTemplate = "Naming template is required.";
+    const errors = validateProfileFields(t("Secret access key is required for a new profile."));
+    if (!namingTemplate.trim()) errors.namingTemplate = t("Naming template is required.");
     const validationErrors = errors;
     setFieldErrors(validationErrors);
     const firstInvalid = (Object.keys(validationErrors) as ProfileField[])[0];
@@ -234,7 +236,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         } catch (rollbackError) {
           setSaving(false);
           setSaveError(
-            `${errorMessage(error, "Failed to save profile.")} The previous settings could not be restored: ${errorMessage(rollbackError, "Unknown error.")}`,
+            t("{{error}} The previous settings could not be restored: {{rollback}}", { error: errorMessage(error, t("Failed to save profile.")), rollback: errorMessage(rollbackError, t("Unknown error.")) }),
           );
           return;
         }
@@ -243,12 +245,12 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       onSettingsChange(nextSettings);
       setSecretAccessKey("");
       setSaving(false);
-      setSaveMessage("Profile saved.");
+      setSaveMessage(t("Profile saved."));
       setCreatingNew(false);
       setEditingProfileId(profileId);
     } catch (error) {
       setSaving(false);
-      setSaveError(errorMessage(error, "Failed to save profile."));
+      setSaveError(errorMessage(error, t("Failed to save profile.")));
     }
   };
 
@@ -266,15 +268,27 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     <div className="page settings-page">
       <header className="page-head">
         <div>
-          <h2 className="page-title">Settings</h2>
-          <p className="page-note">Manage S3 profiles, naming, and output defaults.</p>
+          <h2 className="page-title">{t("Settings")}</h2>
+          <p className="page-note">{t("Manage S3 profiles, naming, and output defaults.")}</p>
         </div>
       </header>
+      <section className="settings-sheet">
+        <div className="settings-group">
+          <Label className="field">
+            <span>{t("Language")}</span>
+            <NativeSelect aria-label={t("Language")} value={getLanguagePreference()} onChange={(event) => setLanguage(event.target.value as LanguagePreference)}>
+              <NativeSelectOption value="system">{t("System default")}</NativeSelectOption>
+              {languages.map(({ id, label }) => <NativeSelectOption key={id} value={id}>{label}</NativeSelectOption>)}
+            </NativeSelect>
+          </Label>
+          <p>{t("Language changes apply immediately and are saved on this device.")}</p>
+        </div>
+      </section>
       <form className="settings-sheet" onSubmit={handleSaveProfile}>
         {settings.profiles.length > 1 && (
           <div className="settings-scope">
             <Label>
-              Editing profile
+              {t("Editing profile")}
               <NativeSelect
                 value={editingProfileId}
                 onChange={(e) => setEditingProfileId(e.target.value)}
@@ -289,27 +303,27 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
 
         <section className="settings-group">
           <div className="settings-group-head">
-            <h3>Connection</h3>
-            <p>The endpoint, region, and bucket that Pic Piper signs requests against.</p>
+            <h3>{t("Connection")}</h3>
+            <p>{t("The endpoint, region, and bucket that Pic Piper signs requests against.")}</p>
           </div>
           <div className="field-grid">
             <Label className="field">
-              <span>Profile name</span>
+              <span>{t("Profile name")}</span>
               <Input {...fieldProps("name")} value={name} onChange={(e) => setName(e.target.value)} />
               {renderFieldError("name")}
             </Label>
             <Label className="field">
-              <span>Endpoint</span>
+              <span>{t("Endpoint")}</span>
               <Input {...fieldProps("endpoint")} placeholder="https://s3.example.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
               {renderFieldError("endpoint")}
             </Label>
             <Label className="field">
-              <span>Region</span>
+              <span>{t("Region")}</span>
               <Input {...fieldProps("region")} value={region} onChange={(e) => setRegion(e.target.value)} />
               {renderFieldError("region")}
             </Label>
             <Label className="field">
-              <span>Bucket</span>
+              <span>{t("Bucket")}</span>
               <Input {...fieldProps("bucket")} placeholder="my-image-bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} />
               {renderFieldError("bucket")}
             </Label>
@@ -318,49 +332,49 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
 
         <section className="settings-group">
           <div className="settings-group-head">
-            <h3>Credentials</h3>
-            <p>Credentials are stored locally on this device as private files with restricted permissions. Not synced or encrypted.</p>
+            <h3>{t("Credentials")}</h3>
+            <p>{t("Credentials are stored locally on this device as private files with restricted permissions. Not synced or encrypted.")}</p>
           </div>
           <div className="field-grid">
             <Label className="field">
-              <span>Access key ID</span>
+              <span>{t("Access key ID")}</span>
               <Input {...fieldProps("accessKeyId")} value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
               {renderFieldError("accessKeyId")}
             </Label>
             <Label className="field">
-              <span>Secret access key</span>
+              <span>{t("Secret access key")}</span>
               <Input {...fieldProps("secretAccessKey")} type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
               {renderFieldError("secretAccessKey")}
             </Label>
             <Label className="field-switch">
-              <span>Path style addressing<small>Use bucket-in-path requests when your provider requires them.</small></span>
-              <Switch aria-label="Path style addressing" checked={pathStyle} onCheckedChange={setPathStyle} />
+              <span>{t("Path style addressing")}<small>{t("Use bucket-in-path requests when your provider requires them.")}</small></span>
+              <Switch aria-label={t("Path style addressing")} checked={pathStyle} onCheckedChange={setPathStyle} />
             </Label>
             <Label className="field-switch">
-              <span>Use as default profile<small>New compressions upload here unless you choose another profile.</small></span>
-              <Switch aria-label="Use as default profile" checked={makeDefault} onCheckedChange={setMakeDefault} />
+              <span>{t("Use as default profile")}<small>{t("New compressions upload here unless you choose another profile.")}</small></span>
+              <Switch aria-label={t("Use as default profile")} checked={makeDefault} onCheckedChange={setMakeDefault} />
             </Label>
           </div>
         </section>
 
         <section className="settings-group">
           <div className="settings-group-head">
-            <h3>Publishing</h3>
-            <p>How object keys are built and where public links point.</p>
+            <h3>{t("Publishing")}</h3>
+            <p>{t("How object keys are built and where public links point.")}</p>
           </div>
           <div className="field-grid">
             <Label className="field">
-              <span>Naming template</span>
+              <span>{t("Naming template")}</span>
               <Input {...fieldProps("namingTemplate")} value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
               {renderFieldError("namingTemplate")}
             </Label>
             <Label className="field">
-              <span>Public Base URL</span>
+              <span>{t("Public Base URL")}</span>
               <Input {...fieldProps("publicBaseUrl")} placeholder="https://cdn.example.com" value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} />
               {renderFieldError("publicBaseUrl")}
             </Label>
             <Label className="field">
-              <span>Default prefix</span>
+              <span>{t("Default prefix")}</span>
               <Input {...fieldProps("defaultPrefix")} placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
               {renderFieldError("defaultPrefix")}
             </Label>
@@ -368,22 +382,22 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
         </section>
 
         <footer className="settings-actions">
-          <Button type="submit" disabled={saving}>Save profile</Button>
+          <Button type="submit" disabled={saving}>{t("Save profile")}</Button>
           <Button variant="outline" type="button" onClick={handleTestConnection} disabled={testingConnection || saving}>
-            {testingConnection ? "Testing..." : "Test connection"}
+            {testingConnection ? t("Testing...") : t("Test connection")}
           </Button>
           <Button
             variant="ghost"
             type="button"
             onClick={() => setCreatingNew(true)}
           >
-            Add profile
+            {t("Add profile")}
           </Button>
         </footer>
 
         {(saving || saveMessage || connectionMessage || connectionError || saveError) && (
           <div className="settings-status">
-            {saving && <p>Saving profile...</p>}
+            {saving && <p>{t("Saving profile...")}</p>}
             {saveMessage && <p>{saveMessage}</p>}
             {connectionMessage && <p role="status">{connectionMessage}</p>}
             {connectionError && (
