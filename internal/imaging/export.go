@@ -2,8 +2,13 @@ package imaging
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/frankwei98/PicPiper/internal/apperror"
 )
 
 type contextReader struct {
@@ -23,26 +28,46 @@ func (r contextReader) Read(buffer []byte) (int, error) {
 }
 
 func copyReserved(ctx context.Context, dir, name string, source io.Reader) (string, error) {
-	output, err := reserve(dir, name)
+	if !validFileName(name) {
+		return "", apperror.New("invalidFileName", "Choose a filename without path separators or reserved characters.")
+	}
+	stage, err := os.MkdirTemp(dir, ".pic-piper-export-*")
 	if err != nil {
 		return "", err
 	}
-	complete := false
-	defer func() {
-		output.Close()
-		if !complete {
-			_ = os.Remove(output.Name())
-		}
-	}()
-	if _, err := io.Copy(output, contextReader{ctx: ctx, reader: source}); err != nil {
+	defer os.RemoveAll(stage)
+	output, err := os.OpenFile(filepath.Join(stage, "image"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
 		return "", err
 	}
-	if err := ctx.Err(); err != nil {
+	defer output.Close()
+	if _, err := io.Copy(output, contextReader{ctx: ctx, reader: source}); err != nil {
 		return "", err
 	}
 	if err := output.Close(); err != nil {
 		return "", err
 	}
-	complete = true
-	return output.Name(), nil
+	// Publish only complete images. Cleanup never touches a public output path,
+	// which another application may have replaced since we last inspected it.
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	for sequence := 1; sequence <= 10000; sequence++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		candidate := name
+		if sequence > 1 {
+			candidate = fmt.Sprintf("%s-%d%s", stem, sequence, ext)
+		}
+		path := filepath.Join(dir, candidate)
+		err := publishExport(output.Name(), path)
+		if os.IsExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		return path, nil
+	}
+	return "", apperror.New("tooManyFiles", "Too many files share this name. Choose another output folder.")
 }

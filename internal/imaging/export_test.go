@@ -23,6 +23,63 @@ func (r cancelExportReader) Read(buffer []byte) (int, error) {
 	return copy(buffer, "partial image"), nil
 }
 
+type exportReaderFunc func([]byte) (int, error)
+
+func (read exportReaderFunc) Read(buffer []byte) (int, error) { return read(buffer) }
+
+func TestExportPreservesFilesCreatedDuringCopy(t *testing.T) {
+	for _, outcome := range []string{"failure", "cancellation", "success"} {
+		t.Run(outcome, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "photo.png")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			source := exportReaderFunc(func(buffer []byte) (int, error) {
+				replacement := target + ".replacement"
+				if err := os.WriteFile(replacement, []byte("user replacement"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Rename(replacement, target); err != nil {
+					t.Fatal(err)
+				}
+				switch outcome {
+				case "failure":
+					return 0, io.ErrUnexpectedEOF
+				case "cancellation":
+					cancel()
+					return 0, context.Canceled
+				default:
+					return copy(buffer, "complete image"), io.EOF
+				}
+			})
+			path, err := copyReserved(ctx, dir, "photo.png", source)
+			if outcome == "success" {
+				if err != nil || filepath.Base(path) != "photo-2.png" {
+					t.Fatalf("export did not avoid the concurrent file: %s %v", path, err)
+				}
+				data, err := os.ReadFile(path)
+				if err != nil || string(data) != "complete image" {
+					t.Fatalf("export incomplete: %q %v", data, err)
+				}
+			} else if err == nil {
+				t.Fatal("expected export error")
+			}
+			data, err := os.ReadFile(target)
+			if err != nil || string(data) != "user replacement" {
+				t.Fatalf("concurrent user file was removed or changed: %q %v", data, err)
+			}
+			entries, err := os.ReadDir(dir)
+			want := 1
+			if outcome == "success" {
+				want = 2
+			}
+			if err != nil || len(entries) != want {
+				t.Fatalf("staging output left behind: %v %v", entries, err)
+			}
+		})
+	}
+}
+
 func TestFailedOrCancelledExportRemovesOnlyItsReservedFile(t *testing.T) {
 	for _, cancelled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "read failure", true: "cancellation"}[cancelled], func(t *testing.T) {
