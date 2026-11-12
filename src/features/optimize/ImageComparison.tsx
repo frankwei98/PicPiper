@@ -69,12 +69,12 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
+    <div className="compare-root">
+      <div className="compare-toolbar">
+        <p>
           {mode === "fit" ? "Images fitted to each pane" : "100% scale · scroll either image to compare details"}
         </p>
-        <div className="flex gap-1" role="group" aria-label="Comparison zoom">
+        <div className="compare-zooms" role="group" aria-label="Comparison zoom">
           <Button
             type="button"
             size="sm"
@@ -97,25 +97,25 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
       </div>
 
       {!images && !loadError && (
-        <div className="grid h-64 place-items-center rounded-lg border bg-muted/30" role="status">
+        <div className="compare-state" role="status">
           Loading full-resolution images…
         </div>
       )}
 
       {loadError && (
-        <div className="grid h-64 place-items-center gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-center" role="alert">
+        <div className="compare-state danger" role="alert">
           <div>
-            <p className="font-medium">Could not load the comparison</p>
-            <p className="mt-1 text-sm text-muted-foreground">{loadError}</p>
+            <strong>Could not load the comparison</strong>
+            <p>{loadError}</p>
+            <Button type="button" size="sm" variant="outline" onClick={() => setLoadAttempt((value) => value + 1)}>
+              Try again
+            </Button>
           </div>
-          <Button type="button" size="sm" variant="outline" onClick={() => setLoadAttempt((value) => value + 1)}>
-            Try again
-          </Button>
         </div>
       )}
 
       {images && (
-        <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
+        <div className="compare-grid">
           <ComparisonPane
             ref={originalPaneRef}
             label="Original"
@@ -147,9 +147,9 @@ interface ComparisonPaneProps {
 function ComparisonPane({ ref, label, image, mode, onScroll }: ComparisonPaneProps) {
   return (
     <section className="min-w-0">
-      <div className="mb-2 flex items-center justify-between gap-2 text-sm">
-        <p className="font-medium text-muted-foreground">{label}</p>
-        <p className="text-xs text-muted-foreground">{image.width} × {image.height} px</p>
+      <div className="compare-pane-head">
+        <strong>{label}</strong>
+        <span className="numeric">{image.width} × {image.height} px</span>
       </div>
       <div
         ref={ref}
@@ -157,10 +157,7 @@ function ComparisonPane({ ref, label, image, mode, onScroll }: ComparisonPanePro
         role="region"
         aria-label={`${label} image pane`}
         data-testid={`${label.toLowerCase()}-comparison-pane`}
-        className={cn(
-          "h-[40dvh] min-h-32 rounded-lg border focus-visible:outline-2 focus-visible:outline-ring overscroll-contain bg-[repeating-conic-gradient(var(--muted)_0_25%,transparent_0_50%)_50%/16px_16px]",
-          mode === "actual" ? "overflow-auto" : "grid place-items-center overflow-hidden",
-        )}
+        className={cn("compare-pane", mode === "actual" ? "scrollable" : "grid place-items-center")}
         onScroll={onScroll}
       >
         <img
@@ -169,10 +166,7 @@ function ComparisonPane({ ref, label, image, mode, onScroll }: ComparisonPanePro
           width={image.width}
           height={image.height}
           draggable={false}
-          className={cn(
-            "block select-none",
-            mode === "fit" ? "max-h-full max-w-full object-contain" : "max-w-none",
-          )}
+          className={cn("block select-none", mode === "fit" ? "max-h-full max-w-full object-contain" : "max-w-none")}
           style={mode === "actual" ? { width: image.width, height: image.height } : undefined}
         />
       </div>

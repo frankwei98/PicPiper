@@ -1,12 +1,11 @@
 import type { AppView } from "../types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Images, Settings2, WandSparkles } from "lucide-react";
 
-const NAV_ITEMS: Array<{ id: AppView; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: "optimize", label: "Compress", icon: WandSparkles },
-  { id: "gallery", label: "S3 Gallery", icon: Images },
-  { id: "settings", label: "Settings", icon: Settings2 },
+const NAV_ITEMS: Array<{ id: AppView; label: string }> = [
+  { id: "optimize", label: "Compress" },
+  { id: "gallery", label: "S3 Gallery" },
+  { id: "settings", label: "Settings" },
 ];
 
 interface LayoutProps {
@@ -29,29 +28,47 @@ function handleTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
 export function Layout({ activeView, children, onViewChange }: LayoutProps) {
   return (
     <main className="app-shell">
-      <aside className="app-sidebar" aria-label="Pic Piper">
-        <div className="brand-mark" aria-hidden="true"><span /></div>
-        <div className="brand-copy"><strong>Pic Piper</strong><span>Image workbench</span></div>
-        <div className="sidebar-rule" />
+      <header className="masthead">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true" />
+          <span>Pic Piper</span>
+        </div>
         <nav aria-label="Main navigation">
-          <p className="sidebar-caption">Workspace</p>
-          <div role="tablist" aria-label="Views" className="sidebar-nav">
-            {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+          <div role="tablist" aria-label="Views" className="masthead-nav">
+            {NAV_ITEMS.map(({ id, label }) => {
               const selected = activeView === id;
-              return <Button key={id} id={`app-tab-${id}`} role="tab" aria-controls={`app-panel-${id}`} aria-selected={selected} tabIndex={selected ? 0 : -1} variant="ghost" type="button" onClick={() => onViewChange(id)} onKeyDown={handleTabKeyDown} className={cn("nav-item", selected && "nav-item-selected")}>
-                <Icon aria-hidden="true" className="size-4" /><span>{label}</span>{selected && <span className="nav-indicator" aria-hidden="true" />}
-              </Button>;
+              return (
+                <Button
+                  key={id}
+                  id={`app-tab-${id}`}
+                  role="tab"
+                  aria-controls={`app-panel-${id}`}
+                  aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
+                  variant="ghost"
+                  type="button"
+                  onClick={() => onViewChange(id)}
+                  onKeyDown={handleTabKeyDown}
+                  className={cn("nav-item", selected && "nav-item-selected")}
+                >
+                  {label}
+                </Button>
+              );
             })}
           </div>
         </nav>
-        <div className="sidebar-foot"><span className="status-dot" />Ready for images</div>
-      </aside>
+        <div className="masthead-status">
+          <span className="status-dot" aria-hidden="true" />
+          Local processing
+        </div>
+      </header>
       <section className="app-main">
-        <header className="workspace-bar">
-          <span>{NAV_ITEMS.find((item) => item.id === activeView)?.label}</span>
-          <span className="workspace-bar-note">Local image preparation and S3 sharing</span>
-        </header>
-        <section id={`app-panel-${activeView}`} role="tabpanel" aria-labelledby={`app-tab-${activeView}`} className={cn("workspace-scroll", activeView === "optimize" && "compression-scroll")}>
+        <section
+          id={`app-panel-${activeView}`}
+          role="tabpanel"
+          aria-labelledby={`app-tab-${activeView}`}
+          className={cn("workspace-scroll", activeView === "optimize" && "compression-scroll")}
+        >
           {children}
         </section>
       </section>

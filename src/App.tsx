@@ -52,12 +52,12 @@ function App() {
       onViewChange={(view) => setNavigation((prev) => ({ ...prev, view }))}
     >
       {settingsError && (
-        <Alert variant="destructive" className="mb-4">
+        <Alert variant="destructive" className="app-notice">
           <AlertTitle>Could not load settings</AlertTitle>
           <AlertDescription>{settingsError}</AlertDescription>
         </Alert>
       )}
-      <div hidden={navigation.view !== "optimize"}>
+      <div hidden={navigation.view !== "optimize"} className="app-panel">
         <OptimizePage
           activeProfile={selectedProfile}
           namingTemplate={settings.namingTemplate}
@@ -75,7 +75,7 @@ function App() {
           onNavigate={(view) => setNavigation((prev) => ({ ...prev, view }))}
         />
       )}
-      <div hidden={navigation.view !== "settings"}>
+      <div hidden={navigation.view !== "settings"} className="app-panel">
         <SettingsPage settings={settings} onSettingsChange={setSettings} />
       </div>
     </Layout>

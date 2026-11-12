@@ -41,13 +41,16 @@ function Switch({
           "inline-flex rounded-full border border-transparent bg-input transition-all outline-none",
           "peer-focus-visible:border-ring peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50",
           "peer-checked:bg-primary peer-disabled:cursor-not-allowed peer-disabled:opacity-50 dark:bg-input/80",
-          size === "sm" ? "h-3.5 w-6" : "h-[18px] w-8"
+          "dark:peer-checked:[&>span]:bg-primary-foreground",
+          size === "sm"
+            ? "h-3.5 w-6 peer-checked:[&>span]:translate-x-[10px]"
+            : "h-[18px] w-8 peer-checked:[&>span]:translate-x-3.5"
         )}
       >
         <span
           className={cn(
-            "block rounded-full bg-background transition-transform dark:bg-foreground peer-checked:dark:bg-primary-foreground",
-            size === "sm" ? "size-3 peer-checked:translate-x-[10px]" : "size-4 peer-checked:translate-x-3.5"
+            "block rounded-full bg-background transition-transform dark:bg-foreground",
+            size === "sm" ? "size-3" : "size-4"
           )}
         />
       </span>

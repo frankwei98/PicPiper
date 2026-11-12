@@ -15,10 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -415,76 +412,80 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
 
   if (profiles.length === 0) {
     return (
-      <div className="grid max-w-6xl gap-6">
-        <header className="flex justify-between items-start gap-6">
+      <div className="page gallery-page">
+        <header className="page-head">
           <div>
-            <h2 className="text-3xl font-semibold tracking-tight text-balance">S3 Gallery</h2>
-            <p className="text-muted-foreground mt-2 text-sm text-pretty">Browse a profile and prefix, then copy URLs or manage images.</p>
+            <h2 className="page-title">S3 Gallery</h2>
+            <p className="page-note">Browse a profile and prefix, then copy URLs or manage images.</p>
           </div>
         </header>
-        <Empty className="border">
-          <EmptyHeader>
-            <EmptyTitle>No profile selected.</EmptyTitle>
-            <EmptyDescription>Add an S3 profile before browsing images.</EmptyDescription>
-          </EmptyHeader>
+        <div className="gallery-empty">
+          <strong>No profile selected.</strong>
+          <p>Add an S3 profile before browsing images.</p>
           {onNavigate && (
-            <EmptyContent>
-              <Button type="button" onClick={() => onNavigate("settings")}>
-                Add a profile in Settings
-              </Button>
-            </EmptyContent>
+            <Button type="button" onClick={() => onNavigate("settings")}>
+              Add a profile in Settings
+            </Button>
           )}
-        </Empty>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="grid max-w-6xl gap-6">
-      <header className="flex justify-between items-start gap-6 max-sm:flex-col">
+    <div className="page gallery-page">
+      <header className="page-head">
         <div>
-          <h2 className="text-3xl font-semibold tracking-tight text-balance">S3 Gallery</h2>
-          <p className="text-muted-foreground mt-2 text-sm text-pretty">Browse a profile and prefix, then copy URLs or manage images.</p>
+          <h2 className="page-title">S3 Gallery</h2>
+          <p className="page-note">Browse a profile and prefix, then copy URLs or manage images.</p>
         </div>
         <Button type="button" onClick={handleUploadLocal} disabled={uploading}>{uploading ? "Uploading..." : "Upload local images"}</Button>
       </header>
-      <section className="grid gap-3 grid-cols-3 max-md:grid-cols-1">
-        <NativeSelect
-          aria-label="Profile"
-          className="w-full"
-          value={selectedProfile?.id ?? ""}
-          onChange={(e) => {
-            scopeEditedByUserRef.current = true;
-            const newId = e.target.value;
-            setSelectedProfileId(newId);
-            const newProfile = profiles.find((p) => p.id === newId);
-            const newPrefix = newProfile?.defaultPrefix ?? "";
-            setPrefix(newPrefix);
-            setDebouncedPrefix(newPrefix); // immediate for programmatic changes
-            resetGalleryScope();
-          }}
-        >
-          {profiles.map((p) => (
-            <NativeSelectOption key={p.id} value={p.id}>
-              {p.name}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-        <Input
-          aria-label="Prefix"
-          placeholder="images/2026/06"
-          value={prefix}
-          onChange={(e) => {
-            scopeEditedByUserRef.current = true;
-            setPrefix(e.target.value);
-          }}
-        />
-        <Input
-          aria-label="Search current prefix"
-          placeholder="Search current prefix"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <section className="scope-bar" aria-label="Gallery scope">
+        <label className="scope-field">
+          <span>Profile</span>
+          <NativeSelect
+            aria-label="Profile"
+            value={selectedProfile?.id ?? ""}
+            onChange={(e) => {
+              scopeEditedByUserRef.current = true;
+              const newId = e.target.value;
+              setSelectedProfileId(newId);
+              const newProfile = profiles.find((p) => p.id === newId);
+              const newPrefix = newProfile?.defaultPrefix ?? "";
+              setPrefix(newPrefix);
+              setDebouncedPrefix(newPrefix); // immediate for programmatic changes
+              resetGalleryScope();
+            }}
+          >
+            {profiles.map((p) => (
+              <NativeSelectOption key={p.id} value={p.id}>
+                {p.name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </label>
+        <label className="scope-field">
+          <span>Prefix</span>
+          <Input
+            aria-label="Prefix"
+            placeholder="images/2026/06"
+            value={prefix}
+            onChange={(e) => {
+              scopeEditedByUserRef.current = true;
+              setPrefix(e.target.value);
+            }}
+          />
+        </label>
+        <label className="scope-field">
+          <span>Search</span>
+          <Input
+            aria-label="Search current prefix"
+            placeholder="Search current prefix"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
       </section>
       {selectedProfile && !selectedProfile.publicBaseUrl && (
         <Alert>
@@ -498,32 +499,34 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           </AlertDescription>
         </Alert>
       )}
-      {copyMessage && (
-        <p className="text-sm text-muted-foreground" role="status">{copyMessage}</p>
-      )}
-      {uploadStatus && (
-        uploadStatus.includes("failed") ? (
-          <Alert variant="destructive">
-            <AlertDescription>{uploadStatus}</AlertDescription>
-          </Alert>
-        ) : (
-          <p className="text-sm text-muted-foreground" role="status">{uploadStatus}</p>
-        )
+      {(copyMessage || uploadStatus) && (
+        <div className="gallery-actions">
+          {copyMessage && <p className="gallery-status" role="status">{copyMessage}</p>}
+          {uploadStatus && (uploadStatus.includes("failed") ? (
+            <Alert variant="destructive">
+              <AlertDescription>{uploadStatus}</AlertDescription>
+            </Alert>
+          ) : (
+            <p className="gallery-status" role="status">{uploadStatus}</p>
+          ))}
+        </div>
       )}
       {(!scopeReady || loading) && !error && (
-        <section className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]" aria-label="Loading">
+        <section className="contact-sheet" aria-label="Loading">
           {Array.from({ length: 6 }, (_, i) => (
-            <Card key={i}>
-              <CardContent className="grid gap-3">
-                <Skeleton className="aspect-[4/3] w-full" aria-hidden="true" />
-                <Skeleton className="h-4 w-3/4" aria-hidden="true" />
-              </CardContent>
-            </Card>
+            <div className="proof" key={i}>
+              <Skeleton className="aspect-[4/3] w-full" aria-hidden="true" />
+              <Skeleton className="h-3 w-3/4" aria-hidden="true" />
+            </div>
           ))}
         </section>
       )}
-      {deletingKey && <p className="text-sm text-muted-foreground" role="status">Deleting {deletingKey}...</p>}
-      {downloadingKey && <p className="text-sm text-muted-foreground" role="status">Downloading {downloadingKey}...</p>}
+      {(deletingKey || downloadingKey) && (
+        <div className="gallery-actions">
+          {deletingKey && <p className="gallery-status" role="status">Deleting {deletingKey}...</p>}
+          {downloadingKey && <p className="gallery-status" role="status">Downloading {downloadingKey}...</p>}
+        </div>
+      )}
       {deleteError && (
         <Alert variant="destructive">
           <AlertDescription>{deleteError}</AlertDescription>
@@ -540,85 +543,71 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         </Alert>
       )}
       {scopeReady && !loading && !error && filteredObjects.length === 0 && (
-        <Empty className="border">
-          <EmptyHeader>
-            <EmptyTitle>{searchIsActive ? "No loaded objects match this search." : "No objects found."}</EmptyTitle>
-            <EmptyDescription>
-              {searchIsActive
-                ? nextContinuationToken
-                  ? "Search only covers loaded objects. Load more to continue searching."
-                  : "Search only covers loaded objects in this prefix."
-                : "Upload images or adjust the current prefix."}
-            </EmptyDescription>
-          </EmptyHeader>
+        <div className="gallery-empty">
+          <strong>{searchIsActive ? "No loaded objects match this search." : "No objects found."}</strong>
+          <p>
+            {searchIsActive
+              ? nextContinuationToken
+                ? "Search only covers loaded objects. Load more to continue searching."
+                : "Search only covers loaded objects in this prefix."
+              : "Upload images or adjust the current prefix."}
+          </p>
           {!searchIsActive && (
-            <EmptyContent>
-              <Button type="button" onClick={handleUploadLocal}>
-                Upload local images
-              </Button>
-            </EmptyContent>
+            <Button type="button" onClick={handleUploadLocal}>
+              Upload local images
+            </Button>
           )}
-        </Empty>
+        </div>
       )}
       {scopeReady && !loading && !error && filteredObjects.length > 0 && (
-        <section className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
+        <ul className="contact-sheet">
           {filteredObjects.map((obj, index) => {
             const publicUrlReasonId = `public-url-unavailable-${index}`;
             return (
-            <Card
+            <li
               key={obj.key}
-              className={cn(
-                "transition-[transform,box-shadow] hover:-translate-y-px",
-                highlightedKeys.has(obj.key) && "ring-primary ring-2",
-              )}
+              className={cn("proof", highlightedKeys.has(obj.key) && "new")}
             >
-              <CardContent className="grid gap-3">
-                <div className="aspect-[4/3] bg-muted rounded-lg text-muted-foreground flex justify-center items-center overflow-hidden text-xs">
-                  {obj.isImage && obj.publicUrl && !imgErrors.has(obj.key) ? (
-                    <img
-                      className="w-full h-full object-cover"
-                      src={obj.publicUrl}
-                      alt={obj.key}
-                      loading="lazy"
-                      onError={() => setImgErrors((prev) => new Set(prev).add(obj.key))}
-                    />
-                  ) : (
-                    <span className="opacity-70">
-                      {!obj.isImage ? "File" : "Image"}
-                    </span>
-                  )}
-                </div>
-                <div className="flex min-w-0 items-center gap-2">
-                  <p className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground tabular-nums">{obj.key}</p>
-                  {highlightedKeys.has(obj.key) && <Badge variant="secondary">New</Badge>}
-                </div>
-                <div className="grid gap-1.5 grid-cols-2">
-                  <Button variant="outline" size="sm" type="button" onClick={() => handleCopyUrl(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
-                    Copy URL
-                  </Button>
-                  <Button variant="outline" size="sm" type="button" onClick={() => handleView(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
-                    View
-                  </Button>
-                  <Button variant="outline" size="sm" type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
-                    Download
-                  </Button>
-                  <Button variant="destructive" size="sm" type="button" onClick={() => handleDeleteRequest(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
-                    Delete
-                  </Button>
-                </div>
-                {!obj.publicUrl && (
-                  <p id={publicUrlReasonId} className="text-xs text-muted-foreground">
-                    Public URL unavailable. Configure a Public Base URL in Settings.
-                  </p>
+              <div className="proof-image">
+                {obj.isImage && obj.publicUrl && !imgErrors.has(obj.key) ? (
+                  <img
+                    src={obj.publicUrl}
+                    alt={obj.key}
+                    loading="lazy"
+                    onError={() => setImgErrors((prev) => new Set(prev).add(obj.key))}
+                  />
+                ) : (
+                  <span>{!obj.isImage ? "File" : "Image"}</span>
                 )}
-              </CardContent>
-            </Card>
+                {highlightedKeys.has(obj.key) && <span className="proof-flag">New</span>}
+              </div>
+              <p className="proof-key" title={obj.key}>{obj.key}</p>
+              <div className="proof-actions">
+                <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleCopyUrl(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
+                  Copy URL
+                </Button>
+                <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleView(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
+                  View
+                </Button>
+                <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
+                  Download
+                </Button>
+                <Button variant="link" size="xs" className="proof-action danger" type="button" onClick={() => handleDeleteRequest(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
+                  Delete
+                </Button>
+              </div>
+              {!obj.publicUrl && (
+                <p id={publicUrlReasonId} className="proof-reason">
+                  Public URL unavailable. Configure a Public Base URL in Settings.
+                </p>
+              )}
+            </li>
             );
           })}
-        </section>
+        </ul>
       )}
       {scopeReady && nextContinuationToken && !error && (
-        <div className="flex justify-center">
+        <div className="gallery-more">
           {paginationError && (
             <Alert variant="destructive">
               <AlertDescription>Failed to load more: {paginationError}</AlertDescription>
