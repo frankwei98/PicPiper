@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { isMyGo, onFileDrop as subscribeFileDrop } from "mygo-runtime";
 import { Backend, events } from "../mygo";
 
@@ -8,7 +9,7 @@ interface OpenOptions {
 }
 
 export async function open(options: OpenOptions = {}): Promise<string | string[] | null> {
-  if (!isMyGo()) throw new Error("Open the desktop app to choose local files.");
+  if (!isMyGo()) throw new Error(t("Open the desktop app to choose local files."));
   const paths = await Backend.open(JSON.stringify(options));
   if (!paths?.length) return null;
   return options.multiple ? paths : paths[0];

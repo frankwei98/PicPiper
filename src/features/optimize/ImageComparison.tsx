@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useEffect, useRef, useState, type UIEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { imageApi, type ReadComparisonImageResponse } from "../../api/backend";
@@ -17,6 +18,7 @@ interface LoadedImages {
 }
 
 export function ImageComparison({ originalPath, compressedPath }: ImageComparisonProps) {
+  useLocale();
   const [mode, setMode] = useState<ComparisonMode>("fit");
   const [images, setImages] = useState<LoadedImages | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -47,7 +49,7 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
       },
       (error: unknown) => {
         cancelReads();
-        if (active) setLoadError(errorMessage(error, "The image could not be decoded."));
+        if (active) setLoadError(errorMessage(error, t("The image could not be decoded.")));
       },
     );
 
@@ -72,9 +74,9 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
     <div className="compare-root">
       <div className="compare-toolbar">
         <p>
-          {mode === "fit" ? "Images fitted to each pane" : "100% scale. Scroll either image to compare details."}
+          {mode === "fit" ? t("Images fitted to each pane") : t("100% scale. Scroll either image to compare details.")}
         </p>
-        <div className="compare-zooms" role="group" aria-label="Comparison zoom">
+        <div className="compare-zooms" role="group" aria-label={t("Comparison zoom")}>
           <Button
             type="button"
             size="sm"
@@ -82,7 +84,7 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
             aria-pressed={mode === "fit"}
             onClick={() => setMode("fit")}
           >
-            Fit
+            {t("Fit")}
           </Button>
           <Button
             type="button"
@@ -98,17 +100,17 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
 
       {!images && !loadError && (
         <div className="compare-state" role="status">
-          Loading full-resolution images…
+          {t("Loading full-resolution images…")}
         </div>
       )}
 
       {loadError && (
         <div className="compare-state danger" role="alert">
           <div>
-            <strong>Could not load the comparison</strong>
+            <strong>{t("Could not load the comparison")}</strong>
             <p>{loadError}</p>
             <Button type="button" size="sm" variant="outline" onClick={() => setLoadAttempt((value) => value + 1)}>
-              Try again
+              {t("Try again")}
             </Button>
           </div>
         </div>
@@ -149,7 +151,7 @@ function ComparisonPane({ ref, label, image, mode, onScroll }: ComparisonPanePro
     <section className="min-w-0">
       <div className="compare-pane-head">
         <strong>{label}</strong>
-        <span className="numeric">{image.width} × {image.height} px</span>
+        <span className="numeric">{image.width} × {image.height} {t("px")}</span>
       </div>
       <div
         ref={ref}

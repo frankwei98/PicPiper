@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open, onFileDrop, onImagesOpened } from "@/platform/desktop";
 import type { CompressionSettings, ImageInspection, OptimizeItem, S3Profile, WritableImageFormat } from "../../types";
@@ -59,6 +60,7 @@ interface OptimizePageProps {
 }
 
 export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, isActive = true, onOpenGallery }: OptimizePageProps) {
+  useLocale();
   const [uploadedFocus, setUploadedFocus] = useState<(GalleryFocus & { destination: string }) | null>(null);
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const itemsRef = useRef(items);
@@ -183,7 +185,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
       setItems((current) =>
         current.map((ci) =>
           ci.id === itemId && (ci.taskVersion ?? 0) === capturedVersion
-            ? { ...ci, status: "failed" as const, error: errorMessage(err, "Inspection failed") }
+            ? { ...ci, status: "failed" as const, error: errorMessage(err, t("Inspection failed")) }
             : ci,
         ),
       );
@@ -233,13 +235,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
     try {
       const selected = await open({
         multiple: true,
-        filters: [{ name: "Images", extensions: extensionsFor("compressImport") }],
+        filters: [{ name: t("Images"), extensions: extensionsFor("compressImport") }],
       });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
       await importImages(paths);
     } catch (error) {
-      setDropError(errorMessage(error, "Could not open the image picker. Try dropping files instead."));
+      setDropError(errorMessage(error, t("Could not open the image picker. Try dropping files instead.")));
     }
   };
 
@@ -260,7 +262,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
     }
 
     if (paths.length === 0) {
-      setDropError("Drag/drop file paths are unavailable; use Choose images.");
+      setDropError(t("Drag/drop file paths are unavailable; use Choose images."));
       return;
     }
 
@@ -373,7 +375,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
         return {
           ...ci,
           status: "failed",
-          error: errorMessage(err, "Compression failed"),
+          error: errorMessage(err, t("Compression failed")),
         };
       });
     } finally {
@@ -652,17 +654,17 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
         .map((item) => item.outputPath);
 
       if (outputPaths.length === 0) {
-        setSaveError("No compressed outputs to save.");
+        setSaveError(t("No compressed outputs to save."));
         setSaving(false);
         return;
       }
 
       const copied = await imageApi.copyOutputsToDir({ outputPaths, targetDir: targetDir as string });
       setSaving(false);
-      setSaveSuccess(`Saved ${copied.length} file(s) to ${targetDir}`);
+      setSaveSuccess(t("Saved {{value0}} file(s) to {{value1}}", { value0: copied.length, value1: String(targetDir) }));
     } catch (err) {
       setSaving(false);
-      setSaveError(errorMessage(err, "Failed to save files"));
+      setSaveError(errorMessage(err, t("Failed to save files")));
     }
   };
 
@@ -676,8 +678,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
     <div className="bench">
       <header className="bench-head">
         <div>
-          <h2>Prepare images</h2>
-          <p className="bench-sub">Preview, compare, and export. Originals stay untouched.</p>
+          <h2>{t("Prepare images")}</h2>
+          <p className="bench-sub">{t("Preview, compare, and export. Originals stay untouched.")}</p>
         </div>
       </header>
 
@@ -724,18 +726,18 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
       />
 
       {items.length > 0 && (
-        <section aria-label="Compression actions" className="bench-actions">
+        <section aria-label={t("Compression actions")} className="bench-actions">
           <div className="action-layout">
             <div className="action-summary">
               <p className="action-totals" role="status">
-                <strong>{readyItems.length} of {items.length} ready</strong>
-                {failedItemCount > 0 ? `, ${failedItemCount} failed` : ""}
-                {readyItems.length > 0 && `, ${formatBytes(readyOriginalBytes)} → ${formatBytes(readyOutputBytes)}, ${formatBytes(Math.abs(readyOriginalBytes - readyOutputBytes))} ${readyOutputBytes > readyOriginalBytes ? "larger" : "saved"}`}
+                <strong>{t("{{ready}} of {{total}} ready", { ready: readyItems.length, total: items.length })}</strong>
+                {failedItemCount > 0 ? t(", {{count}} failed", { count: failedItemCount }) : ""}
+                {readyItems.length > 0 && `, ${formatBytes(readyOriginalBytes)} → ${formatBytes(readyOutputBytes)}, ${t(readyOutputBytes > readyOriginalBytes ? "{{size}} larger" : "{{size}} saved", { size: formatBytes(Math.abs(readyOriginalBytes - readyOutputBytes)) })}`}
               </p>
-              <p className="action-destination" aria-label="Upload destination">
+              <p className="action-destination" aria-label={t("Upload destination")}>
                 {uploads.uploadProfile
-                  ? `Upload destination: ${uploads.uploadProfile.name} / ${uploads.uploadProfile.bucket} / ${uploads.uploadProfile.defaultPrefix || "images"}`
-                  : "Set an upload destination in Settings. Your compressed images will stay here."}
+                  ? t("Upload destination: {{value0}} / {{value1}} / {{value2}}", { value0: uploads.uploadProfile.name, value1: uploads.uploadProfile.bucket, value2: uploads.uploadProfile.defaultPrefix || "images" })
+                  : t("Set an upload destination in Settings. Your compressed images will stay here.")}
               </p>
             </div>
             <div className="action-buttons">
@@ -743,22 +745,21 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
                 importGeneration.current += 1;
                 itemsRef.current.filter((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)).forEach(cancelBackendTask);
                 setItems((current) => current.map((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status) ? { ...item, status: "cancelled", cancelling: true, taskVersion: (item.taskVersion ?? 0) + 1 } : item));
-              }}>Stop batch</Button>}
-              {items.some((item) => item.status === "failed" || item.status === "cancelled") && <Button type="button" size="sm" variant="ghost" disabled={saving || uploads.isUploading} onClick={() => items.filter((item) => item.status === "failed" || item.status === "cancelled").forEach((item) => retryItem(item.id))}>Retry unfinished</Button>}
+              }}>{t("Stop batch")}</Button>}
+              {items.some((item) => item.status === "failed" || item.status === "cancelled") && <Button type="button" size="sm" variant="ghost" disabled={saving || uploads.isUploading} onClick={() => items.filter((item) => item.status === "failed" || item.status === "cancelled").forEach((item) => retryItem(item.id))}>{t("Retry unfinished")}</Button>}
               {items.some((item) => isCurrentCompressionOutput(item, quality)) && (
                 <>
-                  <Button type="button" variant="outline" onClick={handleSaveToLocal} disabled={saving || uploads.isUploading}>Save to local folder</Button>
+                  <Button type="button" variant="outline" onClick={handleSaveToLocal} disabled={saving || uploads.isUploading}>{t("Save to local folder")}</Button>
                   {uploads.failedUploadCount > 0 && (
                     <Button type="button" variant="outline" onClick={uploads.retryUploads} disabled={saving || uploads.isUploading}>
-                      Retry {uploads.failedUploadCount} failed upload(s)
-                      {uploads.hasCollisionFailure ? " with new key" : ""}
+                      {uploads.hasCollisionFailure ? t("Retry {{count}} failed upload(s) with new key", { count: uploads.failedUploadCount }) : t("Retry {{count}} failed upload(s)", { count: uploads.failedUploadCount })}
                     </Button>
                   )}
                   {uploads.newUploadItemCount > 0 && (
                     <Button type="button" onClick={uploads.uploadToS3} disabled={saving || uploads.isUploading}>
                       {uploads.failedUploadCount > 0
-                        ? `Upload ${uploads.newUploadItemCount} new image(s) to S3`
-                        : "Upload to S3"}
+                        ? t("Upload {{value0}} new image(s) to S3", { value0: uploads.newUploadItemCount })
+                        : t("Upload to S3")}
                     </Button>
                   )}
                 </>
@@ -768,8 +769,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
 
           {(saving || uploads.uploadingItemCount > 0 || uploads.uploadError || saveError || uploadedFocus || saveSuccess) && (
             <div className="action-extra">
-              {saving && <p role="status">Saving files...</p>}
-              {uploads.uploadingItemCount > 0 && <p role="status">Uploading {uploads.uploadingItemCount} image(s)...</p>}
+              {saving && <p role="status">{t("Saving files...")}</p>}
+              {uploads.uploadingItemCount > 0 && <p role="status">{t("Uploading {{count}} image(s)...", { count: uploads.uploadingItemCount })}</p>}
               {uploads.uploadError && (
                 <Alert variant="destructive">
                   <AlertDescription>{uploads.uploadError}</AlertDescription>
@@ -782,8 +783,8 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
               )}
               {uploadedFocus && (
                 <div className="upload-feedback" role="status">
-                  <p title={`Uploaded to ${uploadedFocus.destination}`}>Uploaded {uploadedFocus.highlightedKeys.length} image(s) to {uploadedFocus.destination}. Local results retained.</p>
-                  {onOpenGallery && <Button variant="outline" size="sm" onClick={onOpenGallery}>View uploaded images</Button>}
+                  <p title={t("Uploaded to {{value0}}", { value0: uploadedFocus.destination })}>{t("Uploaded {{count}} image(s) to {{destination}}. Local results retained.", { count: uploadedFocus.highlightedKeys.length, destination: uploadedFocus.destination })}</p>
+                  {onOpenGallery && <Button variant="outline" size="sm" onClick={onOpenGallery}>{t("View uploaded images")}</Button>}
                 </div>
               )}
               {saveSuccess && <p role="status">{saveSuccess}</p>}
@@ -796,15 +797,15 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
         <Dialog open onOpenChange={(open) => { if (!open) setFirstFrameRequest(null); }}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Export the first frame?</DialogTitle>
-              <DialogDescription>This exports a still image as {firstFrameRequest.format.toUpperCase()}. The remaining frames are excluded from this output. Your original animation stays untouched.</DialogDescription>
+              <DialogTitle>{t("Export the first frame?")}</DialogTitle>
+              <DialogDescription>{t("This exports a still image as {{format}}. The remaining frames are excluded from this output. Your original animation stays untouched.", { format: firstFrameRequest.format.toUpperCase() })}</DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <DialogClose render={<Button variant="outline" />}>Keep animation</DialogClose>
+              <DialogClose render={<Button variant="outline" />}>{t("Keep animation")}</DialogClose>
               <Button onClick={() => {
                 updateFormat(firstFrameRequest.id, firstFrameRequest.format, "firstFrame");
                 setFirstFrameRequest(null);
-              }}>Export first frame</Button>
+              }}>{t("Export first frame")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -817,23 +818,23 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
         >
           <DialogContent className="sm:max-w-5xl max-h-[90dvh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{`Compare ${compareItem.fileName}`}</DialogTitle>
+              <DialogTitle>{t("Compare {{value0}}", { value0: compareItem.fileName })}</DialogTitle>
             </DialogHeader>
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              <p>Quality: {compareItem.settings.quality}</p>
-              <p>Metadata: Removed during compression</p>
-              <p>Output format: {compareItem.settings.targetFormat}</p>
-              {compareItem.originalHDR && <p>HDR original shown with the same SDR tone mapping as the output.</p>}
-              {compareItem.originalAnimated && <p>{compareItem.settings.animationMode === "firstFrame" ? "First frame only exported." : "Animation retained in WebP output; comparison shows the first frame."}</p>}
+              <p>{t("Quality:")} {compareItem.settings.quality}</p>
+              <p>{t("Metadata: Removed during compression")}</p>
+              <p>{t("Output format:")} {compareItem.settings.targetFormat}</p>
+              {compareItem.originalHDR && <p>{t("HDR original shown with the same SDR tone mapping as the output.")}</p>}
+              {compareItem.originalAnimated && <p>{compareItem.settings.animationMode === "firstFrame" ? t("First frame only exported.") : t("Animation retained in WebP output; comparison shows the first frame.")}</p>}
             </div>
             <p className="text-xs text-muted-foreground tabular-nums">
-              Size: {formatBytes(compareItem.originalBytes)} → {formatBytes(compareItem.outputBytes ?? 0)}
+              {t("Size:")} {formatBytes(compareItem.originalBytes)} → {formatBytes(compareItem.outputBytes ?? 0)}
             </p>
             {compareItem.outputPath && (
               <ImageComparison originalPath={compareItem.sourcePath} compressedPath={compareItem.outputPath} />
             )}
             <DialogFooter>
-              <DialogClose render={<Button variant="outline" />}>Close</DialogClose>
+              <DialogClose render={<Button variant="outline" />}>{t("Close")}</DialogClose>
             </DialogFooter>
           </DialogContent>
         </Dialog>

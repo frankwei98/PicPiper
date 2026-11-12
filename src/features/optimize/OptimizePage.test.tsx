@@ -199,7 +199,7 @@ describe("OptimizePage", () => {
 
     expect(screen.getByRole("combobox", { name: "Batch preset" })).toHaveValue("original");
     expect(screen.queryByRole("button", { name: /^compress$/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/location data removed/i)).toBeInTheDocument();
+    expect(screen.getByText(/location data (are )?removed/i)).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: /quality/i })).toBeInTheDocument();
   });
 
@@ -407,14 +407,14 @@ describe("OptimizePage", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 
     // Informational text about metadata stripping should be visible
-    expect(screen.getByText(/location data removed/i)).toBeInTheDocument();
+    expect(screen.getByText(/location data (are )?removed/i)).toBeInTheDocument();
   });
 
   it("keeps quality controls constrained beside the workspace title", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     expect(screen.getByRole("slider", { name: /quality/i })).toBeVisible();
-    expect(screen.getByText(/location data removed/i)).toBeVisible();
+    expect(screen.getByText(/location data (are )?removed/i)).toBeVisible();
   });
 
   it("imports selected images and starts single-image compression automatically", async () => {

@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, openUrl, writeClipboard } from "@/platform/desktop";
 import type { GalleryObject, S3Profile } from "../../types";
@@ -39,6 +40,7 @@ interface ScopedHighlights {
 }
 
 export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, namingTemplate: namingTemplateProp, onNavigate }: S3GalleryPageProps) {
+  useLocale();
   const resolveDefaultId = () =>
     galleryFocus.profileId ?? defaultProfileId ?? profiles[0]?.id ?? "";
   const [selectedProfileId, setSelectedProfileId] = useState(resolveDefaultId);
@@ -78,6 +80,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [search, setSearch] = useState("");
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const namingTemplate = namingTemplateProp ?? "{yyyy}/{mm}/{slug}-{hash}.{ext}";
+  const [uploadHasError, setUploadHasError] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
@@ -190,7 +193,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       if (!append) setImgErrors(new Set());
     } catch (err) {
       if (generation !== loadGenerationRef.current) return;
-      const message = errorMessage(err, "Failed to load objects.");
+      const message = errorMessage(err, t("Failed to load objects."));
       if (append) {
         setPaginationError(message);
       } else {
@@ -228,13 +231,14 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     if (!selectedProfile || uploading) return;
     const uploadScope = { profileId: selectedProfile.id, prefix };
     setUploadStatus(null);
+    setUploadHasError(false);
     setUploading(true);
     try {
       const selected = await open({
         multiple: true,
         filters: [
           {
-            name: "Images",
+            name: t("Images"),
             extensions: extensionsFor("galleryUpload"),
           },
         ],
@@ -271,7 +275,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           newKeys.push(objectKey);
           newObjects.push(result);
         } catch (err) {
-          const message = errorMessage(err, "Upload failed");
+          const message = errorMessage(err, t("Upload failed"));
           failures.push(`${fileName}: ${message}`);
         }
       }
@@ -284,13 +288,15 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           ...current.filter((object) => !newKeySet.has(object.key)),
         ]);
       }
+      setUploadHasError(failures.length > 0);
       setUploadStatus(
         failures.length > 0
-          ? `Uploaded ${newKeys.length} image(s); ${failures.length} failed. ${failures.join("; ")}`
-          : `Uploaded ${newKeys.length} image(s).`,
+          ? t("Uploaded {{value0}} image(s); {{value1}} failed. {{value2}}", { value0: newKeys.length, value1: failures.length, value2: failures.join("; ") })
+          : t("Uploaded {{value0}} image(s).", { value0: newKeys.length }),
       );
     } catch (err) {
-      setUploadStatus(errorMessage(err, "Upload failed"));
+      setUploadHasError(true);
+      setUploadStatus(errorMessage(err, t("Upload failed")));
     } finally {
       setUploading(false);
     }
@@ -336,9 +342,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     if (!obj.publicUrl) return;
     try {
       await writeClipboard(obj.publicUrl);
-      setCopyMessage("URL copied");
+      setCopyMessage(t("URL copied"));
     } catch {
-      setCopyMessage("Failed to copy URL");
+      setCopyMessage(t("Failed to copy URL"));
     }
   };
 
@@ -347,7 +353,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     try {
       await openUrl(obj.publicUrl);
     } catch (err) {
-      setCopyMessage(`View failed: ${errorMessage(err, "Unknown error")}`);
+      setCopyMessage(t("View failed: {{value0}}", { value0: errorMessage(err, t("Unknown error")) }));
     }
   };
 
@@ -370,9 +376,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         key: obj.key,
         outputDir,
       });
-      setCopyMessage(`Saved to ${resultPath}`);
+      setCopyMessage(t("Saved to {{value0}}", { value0: resultPath }));
     } catch (err) {
-      setDownloadError(errorMessage(err, "Download failed"));
+      setDownloadError(errorMessage(err, t("Download failed")));
     } finally {
       setDownloadingKey(null);
     }
@@ -404,7 +410,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         );
       }
     } catch (err) {
-      setDeleteError(`Failed to delete ${targetKey}: ${errorMessage(err, "Delete failed")}`);
+      setDeleteError(t("Failed to delete {{value0}}: {{value1}}", { value0: targetKey, value1: errorMessage(err, t("Delete failed")) }));
     } finally {
       setDeletingKey(null);
     }
@@ -415,16 +421,16 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       <div className="page gallery-page">
         <header className="page-head">
           <div>
-            <h2 className="page-title">S3 Gallery</h2>
-            <p className="page-note">Browse a profile and prefix, then copy URLs or manage images.</p>
+            <h2 className="page-title">{t("S3 Gallery")}</h2>
+            <p className="page-note">{t("Browse a profile and prefix, then copy URLs or manage images.")}</p>
           </div>
         </header>
         <div className="gallery-empty">
-          <strong>No profile selected.</strong>
-          <p>Add an S3 profile before browsing images.</p>
+          <strong>{t("No profile selected.")}</strong>
+          <p>{t("Add an S3 profile before browsing images.")}</p>
           {onNavigate && (
             <Button type="button" onClick={() => onNavigate("settings")}>
-              Add a profile in Settings
+              {t("Add a profile in Settings")}
             </Button>
           )}
         </div>
@@ -436,16 +442,16 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     <div className="page gallery-page">
       <header className="page-head">
         <div>
-          <h2 className="page-title">S3 Gallery</h2>
-          <p className="page-note">Browse a profile and prefix, then copy URLs or manage images.</p>
+          <h2 className="page-title">{t("S3 Gallery")}</h2>
+          <p className="page-note">{t("Browse a profile and prefix, then copy URLs or manage images.")}</p>
         </div>
-        <Button type="button" onClick={handleUploadLocal} disabled={uploading}>{uploading ? "Uploading..." : "Upload local images"}</Button>
+        <Button type="button" onClick={handleUploadLocal} disabled={uploading}>{uploading ? t("Uploading...") : t("Upload local images")}</Button>
       </header>
-      <section className="scope-bar" aria-label="Gallery scope">
+      <section className="scope-bar" aria-label={t("Gallery scope")}>
         <label className="scope-field">
-          <span>Profile</span>
+          <span>{t("Profile")}</span>
           <NativeSelect
-            aria-label="Profile"
+            aria-label={t("Profile")}
             value={selectedProfile?.id ?? ""}
             onChange={(e) => {
               scopeEditedByUserRef.current = true;
@@ -466,9 +472,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           </NativeSelect>
         </label>
         <label className="scope-field">
-          <span>Prefix</span>
+          <span>{t("Prefix")}</span>
           <Input
-            aria-label="Prefix"
+            aria-label={t("Prefix")}
             placeholder="images/2026/06"
             value={prefix}
             onChange={(e) => {
@@ -478,10 +484,10 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           />
         </label>
         <label className="scope-field">
-          <span>Search</span>
+          <span>{t("Search")}</span>
           <Input
-            aria-label="Search current prefix"
-            placeholder="Search current prefix"
+            aria-label={t("Search current prefix")}
+            placeholder={t("Search current prefix")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -490,10 +496,10 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       {selectedProfile && !selectedProfile.publicBaseUrl && (
         <Alert>
           <AlertDescription className="flex items-center justify-between gap-3 max-sm:items-start max-sm:flex-col">
-            <span>Public URLs are unavailable for this profile. Add a Public Base URL in Settings to preview, view, or copy object URLs.</span>
+            <span>{t("Public URLs are unavailable for this profile. Add a Public Base URL in Settings to preview, view, or copy object URLs.")}</span>
             {onNavigate && (
               <Button type="button" variant="outline" size="sm" onClick={() => onNavigate("settings")}>
-                Open Settings
+                {t("Open Settings")}
               </Button>
             )}
           </AlertDescription>
@@ -502,7 +508,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       {(copyMessage || uploadStatus) && (
         <div className="gallery-actions">
           {copyMessage && <p className="gallery-status" role="status">{copyMessage}</p>}
-          {uploadStatus && (uploadStatus.includes("failed") ? (
+          {uploadStatus && (uploadHasError ? (
             <Alert variant="destructive">
               <AlertDescription>{uploadStatus}</AlertDescription>
             </Alert>
@@ -512,7 +518,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         </div>
       )}
       {(!scopeReady || loading) && !error && (
-        <section className="contact-sheet" aria-label="Loading">
+        <section className="contact-sheet" aria-label={t("Loading")}>
           {Array.from({ length: 6 }, (_, i) => (
             <div className="proof" key={i}>
               <Skeleton className="aspect-[4/3] w-full" aria-hidden="true" />
@@ -523,8 +529,8 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       )}
       {(deletingKey || downloadingKey) && (
         <div className="gallery-actions">
-          {deletingKey && <p className="gallery-status" role="status">Deleting {deletingKey}...</p>}
-          {downloadingKey && <p className="gallery-status" role="status">Downloading {downloadingKey}...</p>}
+          {deletingKey && <p className="gallery-status" role="status">{t("Deleting")} {deletingKey}...</p>}
+          {downloadingKey && <p className="gallery-status" role="status">{t("Downloading")} {downloadingKey}...</p>}
         </div>
       )}
       {deleteError && (
@@ -544,17 +550,17 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       )}
       {scopeReady && !loading && !error && filteredObjects.length === 0 && (
         <div className="gallery-empty">
-          <strong>{searchIsActive ? "No loaded objects match this search." : "No objects found."}</strong>
+          <strong>{searchIsActive ? t("No loaded objects match this search.") : t("No objects found.")}</strong>
           <p>
             {searchIsActive
               ? nextContinuationToken
-                ? "Search only covers loaded objects. Load more to continue searching."
-                : "Search only covers loaded objects in this prefix."
-              : "Upload images or adjust the current prefix."}
+                ? t("Search only covers loaded objects. Load more to continue searching.")
+                : t("Search only covers loaded objects in this prefix.")
+              : t("Upload images or adjust the current prefix.")}
           </p>
           {!searchIsActive && (
             <Button type="button" onClick={handleUploadLocal}>
-              Upload local images
+              {t("Upload local images")}
             </Button>
           )}
         </div>
@@ -577,28 +583,28 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
                     onError={() => setImgErrors((prev) => new Set(prev).add(obj.key))}
                   />
                 ) : (
-                  <span>{!obj.isImage ? "File" : "Image"}</span>
+                  <span>{!obj.isImage ? t("File") : t("Image")}</span>
                 )}
-                {highlightedKeys.has(obj.key) && <span className="proof-flag">New</span>}
+                {highlightedKeys.has(obj.key) && <span className="proof-flag">{t("New")}</span>}
               </div>
               <p className="proof-key" title={obj.key}>{obj.key}</p>
               <div className="proof-actions">
                 <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleCopyUrl(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
-                  Copy URL
+                  {t("Copy URL")}
                 </Button>
                 <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleView(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
-                  View
+                  {t("View")}
                 </Button>
                 <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
-                  Download
+                  {t("Download")}
                 </Button>
                 <Button variant="link" size="xs" className="proof-action danger" type="button" onClick={() => handleDeleteRequest(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
-                  Delete
+                  {t("Delete")}
                 </Button>
               </div>
               {!obj.publicUrl && (
                 <p id={publicUrlReasonId} className="proof-reason">
-                  Public URL unavailable. Configure a Public Base URL in Settings.
+                  {t("Public URL unavailable. Configure a Public Base URL in Settings.")}
                 </p>
               )}
             </li>
@@ -610,11 +616,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         <div className="gallery-more">
           {paginationError && (
             <Alert variant="destructive">
-              <AlertDescription>Failed to load more: {paginationError}</AlertDescription>
+              <AlertDescription>{t("Failed to load more:")} {paginationError}</AlertDescription>
             </Alert>
           )}
           <Button type="button" variant="outline" onClick={handleLoadMore} disabled={loadingMore}>
-            {loadingMore ? "Loading more..." : paginationError ? "Retry load more" : "Load more"}
+            {loadingMore ? t("Loading more...") : paginationError ? t("Retry load more") : t("Load more")}
           </Button>
         </div>
       )}
@@ -624,14 +630,14 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{`Delete ${deleteTarget?.key ?? ""}?`}</AlertDialogTitle>
+            <AlertDialogTitle>{t("Delete {{value0}}?", { value0: deleteTarget?.key ?? "" })}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove the object from S3. This action cannot be undone.
+              {t("This will permanently remove the object from S3. This action cannot be undone.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={handleDeleteConfirm}>Delete</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setDeleteTarget(null)}>{t("Cancel")}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={handleDeleteConfirm}>{t("Delete")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

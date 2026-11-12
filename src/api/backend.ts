@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { Backend } from "../mygo";
 import { isMyGo } from "mygo-runtime";
 import type { CompressionSettings, GalleryObject, ImageInspection, S3Profile, WritableImageFormat } from "../types";
@@ -8,7 +9,7 @@ interface Response<T> {
 }
 
 async function invoke<T>(operation: string, args?: { request?: unknown }): Promise<T> {
-  if (!isMyGo()) throw new Error("Open Pic Piper as a desktop app to use local files and storage.");
+  if (!isMyGo()) throw new Error(t("Open Pic Piper as a desktop app to use local files and storage."));
   const response: Response<T> = JSON.parse(await Backend.call(operation, JSON.stringify(args?.request ?? {})));
   if (response.error) {
     throw Object.assign(new Error(response.error.message), { code: response.error.code });

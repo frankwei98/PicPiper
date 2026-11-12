@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { OptimizeItem, WritableImageFormat } from "../../types";
 import { writableImageFormats } from "../../lib/imageFormats";
 
@@ -90,8 +91,8 @@ export function savingsPercent(originalBytes: number, outputBytes: number): numb
 }
 
 export function sizeChangeLabel(originalBytes: number, outputBytes: number): string {
-  if (originalBytes <= 0) return "Size change unavailable";
-  if (originalBytes === outputBytes) return "No size change";
+  if (originalBytes <= 0) return t("Size change unavailable");
+  if (originalBytes === outputBytes) return t("No size change");
   const percent = Math.abs(savingsPercent(originalBytes, outputBytes));
-  return `${percent || "<1"}% ${outputBytes > originalBytes ? "larger" : "saved"}`;
+  return t(outputBytes > originalBytes ? "{{percent}}% larger" : "{{percent}}% saved", { percent: percent || "<1" });
 }
