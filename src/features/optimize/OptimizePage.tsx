@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { open, onFileDrop } from "@/platform/desktop";
+import { open, onFileDrop, onImagesOpened } from "@/platform/desktop";
 import type { CompressionSettings, ImageInspection, OptimizeItem, S3Profile, WritableImageFormat } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 import { imageApi } from "../../api/backend";
@@ -277,6 +277,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
     event.preventDefault();
     setDragging(false);
   }, []);
+
+  const importImagesRef = useRef(importImages);
+  importImagesRef.current = importImages;
+
+  useEffect(() => onImagesOpened((paths) => {
+    void importImagesRef.current(paths);
+  }), []);
 
   useEffect(() => {
     if (!isActive) return;

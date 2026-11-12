@@ -54,6 +54,7 @@ const { cancelImageTask, createOptimizerRun, inspectImage, compressImage, copyOu
 vi.mock("@/platform/desktop", async () => ({
   open: mockDialogOpen,
   onFileDrop: mockOnFileDrop,
+  onImagesOpened: vi.fn(() => vi.fn()),
 }));
 
 vi.mock("../../api/backend", async () => ({

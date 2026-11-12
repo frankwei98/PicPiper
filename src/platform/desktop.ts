@@ -24,11 +24,16 @@ export async function writeClipboard(text: string): Promise<void> {
 
 export function onFileDrop(listener: (paths: string[]) => void): () => void {
   if (!isMyGo()) return () => {};
-  const offDrop = subscribeFileDrop(({ paths }) => listener(paths));
+  return subscribeFileDrop(({ paths }) => listener(paths));
+}
+
+export function onImagesOpened(listener: (paths: string[]) => void): () => void {
+  if (!isMyGo()) return () => {};
   const offOpen = events.imagesOpened.on(listener);
-  // A launch-time Open With can arrive before React has subscribed.
+  // The app keeps this subscription across views. Subscribe before draining
+  // launch-time Open With requests so later native events cannot fall in a gap.
   void Backend.takeOpenedFiles().then((paths) => {
     if (paths.length) listener(paths);
   });
-  return () => { offDrop(); offOpen(); };
+  return offOpen;
 }
