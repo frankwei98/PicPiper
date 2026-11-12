@@ -64,6 +64,10 @@ func runSmoke(win *mygo.Window, dir string) {
 	// Keep screenshots deterministic when macOS throttles an unattended WebView.
 	_, err := smokeEval(win, `const style = document.createElement('style'); style.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }'; document.head.append(style); window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16); window.cancelAnimationFrame = clearTimeout; return true;`)
 	must(err)
+	// The existing workflow uses English action names regardless of host locale.
+	_, err = smokeEval(win, `localStorage.setItem('pic-piper.language', 'en'); window.dispatchEvent(new StorageEvent('storage', {key: 'pic-piper.language'})); return true;`)
+	must(err)
+	must(smokeWait(win, `document.documentElement.lang === 'en'`, 5*time.Second))
 	must(smokeCapture(win, dir, "workspace.png"))
 	report.Steps = append(report.Steps, "Packaged frontend and native runtime loaded")
 
@@ -331,11 +335,28 @@ return saved.length === 1;`)
 	must(smokeWait(win, `innerWidth >= 1420 && getComputedStyle(document.querySelector('.bench-body')).gridTemplateColumns.split(' ').length === 3`, 5*time.Second))
 	must(smokeCapture(win, dir, "wide-workbench.png"))
 	report.Steps = append(report.Steps, "Wide window rendered the three-column image workbench")
+	// Exercise real language selection and layout with populated compression results.
+	win.SetSize(920, 600)
+	for _, locale := range []string{"zh-CN", "en", "fr", "es", "ja", "ko"} {
+		_, err = smokeEval(win, `document.getElementById('app-tab-settings').click(); return true;`)
+		must(err)
+		must(smokeWait(win, `document.getElementById('app-tab-settings').getAttribute('aria-selected') === 'true'`, 5*time.Second))
+		_, err = smokeEval(win, `const select = document.querySelector('.settings-page option[value="system"]').parentElement; select.value = `+smokeJSON(locale)+`; select.dispatchEvent(new Event('change', {bubbles:true})); return true;`)
+		must(err)
+		must(smokeWait(win, `document.documentElement.lang === `+smokeJSON(locale), 5*time.Second))
+		must(smokeCapture(win, dir, "settings-"+locale+".png"))
+		_, err = smokeEval(win, `document.getElementById('app-tab-optimize').click(); return true;`)
+		must(err)
+		must(smokeWorkbenchFits(win))
+		must(smokeCapture(win, dir, "workbench-"+locale+".png"))
+	}
+	report.Steps = append(report.Steps, "All six languages switched through Settings and fit the populated minimum-size workbench")
+
 	report.Passed = true
 }
 
 func smokeWorkbenchFits(win *mygo.Window) error {
-	return smokeWait(win, `(() => { const actions = document.querySelector('[aria-label="Compression actions"]')?.getBoundingClientRect(); const preview = document.querySelector('.stage-canvas')?.getBoundingClientRect(); const caption = document.querySelector('.stage-readout')?.getBoundingClientRect(); const workbench = document.querySelector('.bench-body')?.getBoundingClientRect(); return actions && preview && caption && workbench && actions.bottom <= innerHeight + 1 && preview.height >= 100 && caption.bottom <= actions.top && caption.bottom <= workbench.bottom; })()`, 5*time.Second)
+	return smokeWait(win, `(() => { const actions = document.querySelector('.bench-actions')?.getBoundingClientRect(); const preview = document.querySelector('.stage-canvas')?.getBoundingClientRect(); const caption = document.querySelector('.stage-readout')?.getBoundingClientRect(); const workbench = document.querySelector('.bench-body')?.getBoundingClientRect(); return actions && preview && caption && workbench && actions.bottom <= innerHeight + 1 && preview.height >= 100 && caption.bottom <= actions.top && caption.bottom <= workbench.bottom; })()`, 5*time.Second)
 }
 
 func smokeHDRFixture(path string, transfer byte) error {

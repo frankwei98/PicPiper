@@ -228,5 +228,8 @@
   "This exports a still image as {{format}}. The remaining frames are excluded from this output. Your original animation stays untouched.": "Cela exporte une image fixe au format {{format}}. Les autres images sont exclues de cette sortie. L’animation originale reste intacte.",
   "Images": "Images",
   "Unknown error": "Erreur inconnue",
-  "Delete failed": "Échec de la suppression"
+  "Delete failed": "Échec de la suppression",
+  "{{count}} image(s) already in this batch; duplicates skipped.": "{{count}} image(s) déjà présente(s) dans ce lot ; les doublons ont été ignorés.",
+  "{{label}} image pane": "Volet d’image {{label}}",
+  "{{label}} full-resolution preview": "Aperçu en pleine résolution {{label}}"
 }

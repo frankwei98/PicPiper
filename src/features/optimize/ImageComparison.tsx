@@ -140,7 +140,7 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
 
 interface ComparisonPaneProps {
   ref: React.Ref<HTMLDivElement>;
-  label: string;
+  label: "Original" | "Compressed";
   image: ReadComparisonImageResponse;
   mode: ComparisonMode;
   onScroll: (event: UIEvent<HTMLDivElement>) => void;
@@ -150,21 +150,21 @@ function ComparisonPane({ ref, label, image, mode, onScroll }: ComparisonPanePro
   return (
     <section className="min-w-0">
       <div className="compare-pane-head">
-        <strong>{label}</strong>
+        <strong>{t(label)}</strong>
         <span className="numeric">{image.width} × {image.height} {t("px")}</span>
       </div>
       <div
         ref={ref}
         tabIndex={mode === "actual" ? 0 : undefined}
         role="region"
-        aria-label={`${label} image pane`}
+        aria-label={t("{{label}} image pane", { label: t(label) })}
         data-testid={`${label.toLowerCase()}-comparison-pane`}
         className={cn("compare-pane", mode === "actual" ? "scrollable" : "grid place-items-center")}
         onScroll={onScroll}
       >
         <img
           src={image.dataUrl}
-          alt={`${label} full-resolution preview`}
+          alt={t("{{label}} full-resolution preview", { label: t(label) })}
           width={image.width}
           height={image.height}
           draggable={false}

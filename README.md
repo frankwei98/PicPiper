@@ -14,6 +14,7 @@ Pic Piper is a small desktop image workbench built with Go, [MyGo](https://mygo.
 - Test an S3-compatible connection before saving, then upload, browse, download, copy public URLs, and delete objects.
 - Generate object keys from a naming template and content hash. Uploads use conditional creation to avoid replacing an existing object.
 - Upload originals or processed images directly from the gallery, including JPEG XL.
+- Follow the system language or choose Simplified Chinese, English, French, Spanish, Japanese, or Korean in Settings. Language changes apply immediately and are remembered on this device.
 
 | Format | Import / compare | Encode / export |
 | --- | --- | --- |
@@ -56,6 +57,10 @@ build/darwin-arm64/pic-piper-0.3.0-arm64.dmg
 
 Open the app directly, or open the DMG and copy the app into Applications. macOS 13 or later is required by the Go 1.27 runtime. The current package is ad-hoc signed for local evaluation; it is not notarized for public distribution. Other operating systems and Intel Macs have not been validated for this MVP.
 
+## Language
+
+Use **Settings → Language** to choose a language or follow the system. Unsupported system languages fall back to English; regional Chinese variants currently use Simplified Chinese. The language preference is stored separately from S3 profiles and does not require saving a profile. Backend and operating-system diagnostic details can still appear in their original language. See [localization development](src/i18n/README.md) for message catalogs and adding languages.
+
 ## S3 setup and local data
 
 1. Open Settings and enter a profile name, endpoint, region, bucket, and access key ID.
@@ -81,7 +86,7 @@ pnpm build
 pnpm smoke
 ```
 
-`pnpm smoke` launches the real packaged macOS app and drives its WebView and Go bridge. It uses private temporary app data, synthetic images, fake credentials, and a loopback S3 fixture. Reports and screenshots are saved under `build/smoke-*`. It never contacts a production bucket. It briefly checks the text clipboard and restores its previous text. Native OS file/folder dialogs and a physical Finder drag are still manual checks.
+`pnpm smoke` launches the real packaged macOS app and drives its WebView and Go bridge. It uses private temporary app data, synthetic images, fake credentials, and a loopback S3 fixture. Reports and screenshots are saved under `build/smoke-*`. It never contacts a production bucket. It briefly checks the text clipboard and restores its previous text. The smoke also switches all six languages through Settings and captures each settings page and the populated minimum-size workbench. Native OS file/folder dialogs and a physical Finder drag are still manual checks.
 
 The S3 implementation uses the Go standard library with SigV4 signing. Local tests cover signing, conditional uploads, pagination, safe downloads, settings, and credentials; a live AWS/R2 account is not part of automated validation.
 

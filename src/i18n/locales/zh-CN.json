@@ -228,5 +228,8 @@
   "This exports a still image as {{format}}. The remaining frames are excluded from this output. Your original animation stays untouched.": "此操作会将静态图片导出为 {{format}}。其余帧不会包含在输出中，原始动画保持不变。",
   "Images": "图片",
   "Unknown error": "未知错误",
-  "Delete failed": "删除失败"
+  "Delete failed": "删除失败",
+  "{{count}} image(s) already in this batch; duplicates skipped.": "此批次中已有 {{count}} 张图片；已跳过重复项。",
+  "{{label}} image pane": "{{label}} 图片窗格",
+  "{{label}} full-resolution preview": "{{label}} 完整分辨率预览"
 }

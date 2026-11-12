@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { getLanguagePreference, getLocale, imageCount, resolveLocale, setLanguage, t } from ".";
+import { getLanguagePreference, getLocale, imageCount, resolveLocale, setLanguage, t, languages } from ".";
+import { Layout } from "@/components/Layout";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import userEvent from "@testing-library/user-event";
 
@@ -48,4 +49,31 @@ describe("language preferences", () => {
     expect(getLocale()).toBe("fr");
     expect(screen.getByRole("combobox", { name: t("Language") })).toHaveValue("fr");
   });
+  it("follows system changes only while system mode is selected", () => {
+    vi.spyOn(navigator, "languages", "get").mockReturnValue(["es-MX"]);
+    setLanguage("system");
+    expect(getLocale()).toBe("es");
+    vi.spyOn(navigator, "languages", "get").mockReturnValue(["ko-KR"]);
+    window.dispatchEvent(new Event("languagechange"));
+    expect(getLocale()).toBe("ko");
+    setLanguage("fr");
+    window.dispatchEvent(new Event("languagechange"));
+    expect(getLocale()).toBe("fr");
+    vi.restoreAllMocks();
+  });
+  it("keeps the session choice when storage is unavailable", () => {
+    vi.stubGlobal("localStorage", { setItem: () => { throw new Error("blocked"); } });
+    expect(() => setLanguage("ja")).not.toThrow();
+    expect(getLocale()).toBe("ja");
+  });
+  it.each(languages)("updates navigation and settings in $id", async ({ id }) => {
+    setLanguage("en");
+    render(<Layout activeView="settings" onViewChange={() => {}}><SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} /></Layout>);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Language" }), id);
+    expect(screen.getByRole("tab", { name: t("Settings") })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: t("Settings") })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: t("Language") })).toHaveValue(id);
+    if (id !== "en") expect(t("Settings")).not.toBe("Settings");
+  });
+
 });

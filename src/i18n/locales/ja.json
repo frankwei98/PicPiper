@@ -228,5 +228,8 @@
   "This exports a still image as {{format}}. The remaining frames are excluded from this output. Your original animation stays untouched.": "静止画を {{format}} 形式で書き出します。残りのフレームは出力に含まれません。元のアニメーションは変更されません。",
   "Images": "画像",
   "Unknown error": "不明なエラー",
-  "Delete failed": "削除に失敗しました"
+  "Delete failed": "削除に失敗しました",
+  "{{count}} image(s) already in this batch; duplicates skipped.": "このバッチにはすでに画像が {{count}} 件あります。重複分はスキップしました。",
+  "{{label}} image pane": "{{label}} 画像ペイン",
+  "{{label}} full-resolution preview": "{{label}} の原寸大プレビュー"
 }
