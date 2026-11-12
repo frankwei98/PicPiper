@@ -228,5 +228,8 @@
   "This exports a still image as {{format}}. The remaining frames are excluded from this output. Your original animation stays untouched.": "Esto exporta una imagen fija como {{format}}. Los demás fotogramas se excluyen de esta salida. La animación original no se modifica.",
   "Images": "Imágenes",
   "Unknown error": "Error desconocido",
-  "Delete failed": "Error al eliminar"
+  "Delete failed": "Error al eliminar",
+  "{{count}} image(s) already in this batch; duplicates skipped.": "{{count}} imagen(es) ya están en este lote; se omitieron los duplicados.",
+  "{{label}} image pane": "Panel de imagen {{label}}",
+  "{{label}} full-resolution preview": "Vista previa a resolución completa: {{label}}"
 }

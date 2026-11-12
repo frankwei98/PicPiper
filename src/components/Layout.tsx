@@ -1,9 +1,9 @@
-import { t, useLocale } from "@/i18n";
+import { t, useLocale, type MessageKey } from "@/i18n";
 import type { AppView } from "../types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS: Array<{ id: AppView; label: import("@/i18n").MessageKey }> = [
+const NAV_ITEMS: Array<{ id: AppView; label: MessageKey }> = [
   { id: "optimize", label: "Compress" },
   { id: "gallery", label: "S3 Gallery" },
   { id: "settings", label: "Settings" },

@@ -274,14 +274,19 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
       </header>
       <section className="settings-sheet">
         <div className="settings-group">
-          <Label className="field">
-            <span>{t("Language")}</span>
-            <NativeSelect aria-label={t("Language")} value={getLanguagePreference()} onChange={(event) => setLanguage(event.target.value as LanguagePreference)}>
-              <NativeSelectOption value="system">{t("System default")}</NativeSelectOption>
-              {languages.map(({ id, label }) => <NativeSelectOption key={id} value={id}>{label}</NativeSelectOption>)}
-            </NativeSelect>
-          </Label>
-          <p>{t("Language changes apply immediately and are saved on this device.")}</p>
+          <div className="settings-group-head">
+            <h3>{t("Language")}</h3>
+            <p>{t("Language changes apply immediately and are saved on this device.")}</p>
+          </div>
+          <div className="field-grid">
+            <Label className="field">
+              <span>{t("Language")}</span>
+              <NativeSelect aria-label={t("Language")} value={getLanguagePreference()} onChange={(event) => setLanguage(event.target.value as LanguagePreference)}>
+                <NativeSelectOption value="system">{t("System default")}</NativeSelectOption>
+                {languages.map(({ id, label }) => <NativeSelectOption key={id} value={id}>{label}</NativeSelectOption>)}
+              </NativeSelect>
+            </Label>
+          </div>
         </div>
       </section>
       <form className="settings-sheet" onSubmit={handleSaveProfile}>

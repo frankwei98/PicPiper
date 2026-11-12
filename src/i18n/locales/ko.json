@@ -228,5 +228,8 @@
   "This exports a still image as {{format}}. The remaining frames are excluded from this output. Your original animation stays untouched.": "정지 이미지를 {{format}} 형식으로 내보냅니다. 나머지 프레임은 출력에서 제외되며 원본 애니메이션은 그대로 유지됩니다.",
   "Images": "이미지",
   "Unknown error": "알 수 없는 오류",
-  "Delete failed": "삭제 실패"
+  "Delete failed": "삭제 실패",
+  "{{count}} image(s) already in this batch; duplicates skipped.": "이미지 {{count}}개가 이미 이 일괄 작업에 있어 중복 항목은 건너뛰었습니다.",
+  "{{label}} image pane": "{{label}} 이미지 패널",
+  "{{label}} full-resolution preview": "{{label}} 전체 해상도 미리보기"
 }

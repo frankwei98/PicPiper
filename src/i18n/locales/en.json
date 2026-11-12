@@ -228,5 +228,8 @@
   "This exports a still image as {{format}}. The remaining frames are excluded from this output. Your original animation stays untouched.": "This exports a still image as {{format}}. The remaining frames are excluded from this output. Your original animation stays untouched.",
   "Images": "Images",
   "Unknown error": "Unknown error",
-  "Delete failed": "Delete failed"
+  "Delete failed": "Delete failed",
+  "{{count}} image(s) already in this batch; duplicates skipped.": "{{count}} image(s) already in this batch; duplicates skipped.",
+  "{{label}} image pane": "{{label}} image pane",
+  "{{label}} full-resolution preview": "{{label}} full-resolution preview"
 }

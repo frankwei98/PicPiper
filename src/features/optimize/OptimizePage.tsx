@@ -198,7 +198,7 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
     setDropError(null);
     const newPaths = [...new Set(paths)].filter((path) => !importedPaths.current.has(path));
     const skipped = paths.length - newPaths.length;
-    setImportNotice(skipped ? `${skipped} image(s) already in this batch; duplicates skipped.` : null);
+    setImportNotice(skipped ? t("{{count}} image(s) already in this batch; duplicates skipped.", { count: skipped }) : null);
     if (!newPaths.length) return;
     newPaths.forEach((path) => importedPaths.current.add(path));
     const generation = importGeneration.current;
