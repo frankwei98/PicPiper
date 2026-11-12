@@ -37,7 +37,10 @@ func TestHDRColorMetadataAndUnreadableProfiles(t *testing.T) {
 		color = binary.BigEndian.AppendUint16(color, 9)
 		color = append(color, 0x80)
 		data := box("ftyp", []byte("avif\x00\x00\x00\x00avif"))
-		data = append(data, box("meta", append(make([]byte, 4), box("iprp", box("ipco", box("colr", color)))...))...)
+		pitm := box("pitm", []byte{0, 0, 0, 0, 0, 1})
+		ipma := box("ipma", []byte{0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0x81})
+		iprp := box("iprp", append(box("ipco", box("colr", color)), ipma...))
+		data = append(data, box("meta", append(append(make([]byte, 4), pitm...), iprp...))...)
 		path := filepath.Join(t.TempDir(), "hdr.avif")
 		if err := os.WriteFile(path, data, 0600); err != nil {
 			t.Fatal(err)
