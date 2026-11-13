@@ -3,15 +3,16 @@ import { ImageWithSkeleton } from "@/components/ImageWithSkeleton";
 import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizeItemSkeleton } from "./OptimizeItemSkeleton";
 import { t, useLocale, imageCount } from "@/i18n";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Expand, Image as ImageIcon, ImageUp, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { OptimizeItem, WritableImageFormat } from "../../types";
-import { formatBytes, sizeChangeLabel } from "./optimizeQueue";
+import { AVAILABLE_OUTPUT_FORMATS, formatBytes, sizeChangeLabel } from "./optimizeQueue";
 import { OptimizeItemCard } from "./OptimizeItemCard";
 
 export type CompressionPreset = "original" | "balanced" | "small" | "lossless" | "custom";
@@ -21,6 +22,8 @@ interface OptimizeWorkspaceProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   quality: number;
+  batchFormat: WritableImageFormat | "original";
+  onBatchFormat: (format: WritableImageFormat | "original") => void;
   maxDimension: number;
   onMaxDimension: (value: number) => void;
   preset: CompressionPreset;
@@ -47,6 +50,15 @@ interface OptimizeWorkspaceProps {
 export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
   useLocale();
   const [preview, setPreview] = useState<"original" | "compressed">("compressed");
+  const [qualityDraft, setQualityDraft] = useState(String(props.quality));
+  useEffect(() => setQualityDraft(String(props.quality)), [props.quality]);
+  const qualityNotApplicable = props.items.length > 0 ? props.items.every((item) => item.settings.targetFormat === "png") : props.batchFormat === "png";
+  const commitQuality = () => {
+    const parsed = Number(qualityDraft);
+    const quality = qualityDraft.trim() && Number.isFinite(parsed) ? Math.max(1, Math.min(100, Math.round(parsed))) : props.quality;
+    setQualityDraft(String(quality));
+    if (quality !== props.quality) props.onQuality(quality);
+  };
   const selected = props.items.find((item) => item.id === props.selectedId) ?? props.items[0];
   const previewUrl = selected && (preview === "original" ? selected.originalPreviewUrl : selected.compressedPreviewUrl ?? selected.originalPreviewUrl);
   const busy = selected && ["inspecting", "queued", "compressing", "loadingPreview"].includes(selected.status);
@@ -76,19 +88,20 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
                 variant="ghost"
                 size="xs"
                 className="rail-choose"
+                aria-label={t("Choose images")}
                 data-testid="image-drop-zone"
                 disabled={props.chooseDisabled}
                 onClick={props.onChooseImages}
                 {...dropHandlers}
               >
-                {t("Choose images")}
+                <ImageUp className="size-4" aria-hidden="true" />
               </Button>
             )}
             <Button type="button" variant="ghost" size="icon-xs" aria-label={t("Clear batch")} disabled={!props.items.length || props.locked} onClick={props.onClear}><Trash2 className="size-3.5" /></Button>
           </div>
         </div>
         <div className="batch-list" role="list">
-          {props.items.map((item, index) => <LazyRender key={item.id} label={item.fileName} placeholder={<OptimizeItemSkeleton />} position={index + 1} total={props.items.length}>{() => <OptimizeItemCard item={item} selected={selected?.id === item.id} onSelect={props.onSelect} mutationLocked={props.locked} uploadFailure={props.uploadFailure(item.id)} uploading={props.isUploading(item.id)} onCancel={props.onCancel} onCompare={props.onCompare} onFormatChange={props.onFormat} onRemove={props.onRemove} onRetry={props.onRetry} />}</LazyRender>)}
+          {props.items.map((item, index) => <LazyRender key={item.id} label={item.fileName} placeholder={<OptimizeItemSkeleton />} position={index + 1} total={props.items.length}>{() => <OptimizeItemCard item={item} selected={selected?.id === item.id} onSelect={props.onSelect} mutationLocked={props.locked} uploadFailure={props.uploadFailure(item.id)} uploading={props.isUploading(item.id)} onCancel={props.onCancel} onCompare={props.onCompare} onRemove={props.onRemove} onRetry={props.onRetry} />}</LazyRender>)}
           {!props.items.length && (
             <div className="rail-empty">
               <strong>{t("No images yet")}</strong>
@@ -141,7 +154,7 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
 
         {selected && (
           <div className="stage-readout">
-            <span className="truncate">{t("Preview:")} {selected.fileName}{width && height ? ` (${width} × ${height} px)` : ""}</span>
+            <span className="truncate">{selected.fileName}{width && height ? ` (${width} × ${height} px)` : ""}</span>
             <span className="numeric shrink-0">
               {selected.outputBytes !== undefined && selected.status === "compressed"
                 ? <>{formatBytes(selected.originalBytes)} → {formatBytes(selected.outputBytes)}, <span className={selected.outputBytes > selected.originalBytes ? "larger" : "saved"}>{sizeChangeLabel(selected.originalBytes, selected.outputBytes)}</span></>
@@ -152,9 +165,9 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
       </section>
 
       <aside className="recipe" aria-label={t("Output settings")}>
-        <div className="recipe-head">{t("Output")}</div>
-        <Label className="recipe-field">
-          <span className="recipe-label">{t("Batch preset")}</span>
+        <div className="recipe-head">{t("Output")}<span>{t("Batch")}</span></div>
+        <Label className="recipe-field recipe-preset">
+          <span className="recipe-label">{t("Quick preset")}</span>
           <NativeSelect aria-label={t("Batch preset")} value={props.preset} onChange={(event) => props.onPreset(event.target.value as Exclude<CompressionPreset, "custom">)} disabled={props.locked}>
             <NativeSelectOption value="original">{t("Original format")}</NativeSelectOption>
             <NativeSelectOption value="balanced">{t("Balanced (WebP)")}</NativeSelectOption>
@@ -163,10 +176,18 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             <NativeSelectOption value="custom" disabled>{t("Custom")}</NativeSelectOption>
           </NativeSelect>
         </Label>
-        <Label className="recipe-field">
-          <span className="recipe-label">{t("Quality")} <strong>{props.quality}</strong></span>
-          <Slider aria-label={t("Quality")} value={props.quality} onValueChange={props.onQuality} min={1} max={100} disabled={props.locked} />
+        <Label className="recipe-field recipe-format">
+          <span className="recipe-label">{t("Output format")}</span>
+          <NativeSelect aria-label={t("Batch format")} value={props.batchFormat} onChange={(event) => props.onBatchFormat(event.target.value as WritableImageFormat | "original")} disabled={props.locked}>
+            <NativeSelectOption value="original">{t("Original format")}</NativeSelectOption>
+            {AVAILABLE_OUTPUT_FORMATS.map((format) => <NativeSelectOption key={format} value={format}>{format === "jxl" ? "JPEG XL" : format.toUpperCase()}</NativeSelectOption>)}
+          </NativeSelect>
         </Label>
+        <div className="recipe-field">
+          <div className="recipe-label"><Label htmlFor="output-quality">{t("Quality")}</Label><Input className="quality-input" aria-label={t("Quality:")} type="number" min={1} max={100} value={qualityDraft} disabled={props.locked || qualityNotApplicable} onChange={(event) => setQualityDraft(event.target.value)} onBlur={commitQuality} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitQuality(); } }} /></div>
+          <Slider id="output-quality" aria-label={t("Quality")} value={props.quality} onValueChange={props.onQuality} min={1} max={100} disabled={props.locked || qualityNotApplicable} />
+          {qualityNotApplicable && <p className="recipe-note">{t("PNG output is lossless; quality does not apply.")}</p>}
+        </div>
         <Label className="recipe-field">
           <span className="recipe-label">{t("Longest edge")}</span>
           <NativeSelect aria-label={t("Longest edge")} value={props.maxDimension} onChange={(event) => props.onMaxDimension(Number(event.target.value))} disabled={props.locked}>
@@ -174,6 +195,9 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             {[3840, 2560, 1920, 1280, 960].map((size) => <NativeSelectOption key={size} value={size}>{size} {t("px")}</NativeSelectOption>)}
           </NativeSelect>
         </Label>
+        {selected && <details className="image-format-details"><summary>{t("Current image")}</summary><Label className="recipe-field"><span className="recipe-label truncate">{selected.fileName}</span><NativeSelect aria-label={t("Format for {{value0}}", { value0: selected.fileName })} value={selected.settings.targetFormat} onChange={(event) => props.onFormat(selected.id, event.target.value as WritableImageFormat)} disabled={props.locked || selected.status === "inspecting" || selected.status === "cancelled"}>
+          {AVAILABLE_OUTPUT_FORMATS.map((format) => <NativeSelectOption key={format} value={format}>{format === "jxl" ? "JPEG XL" : format.toUpperCase()}</NativeSelectOption>)}
+        </NativeSelect></Label></details>}
         {selected?.originalAnimated && (
           <Label className="recipe-field">
             <span className="recipe-label">{t("Animation")}</span>
@@ -184,15 +208,14 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
           </Label>
         )}
 
-        <div className="recipe-notes">
+        {(selected?.originalHDR || selected?.originalAnimated || (selected?.settings.targetFormat === "jxl" && props.quality === 100)) && <div className="recipe-notes">
           <p className="recipe-note">{selected?.originalHDR
             ? t("HDR preview and export are tone-mapped to SDR/sRGB. Originals stay HDR.")
             : selected?.originalAnimated
               ? selected.settings.animationMode === "firstFrame" ? t("First frame only selected. Your original animation stays untouched.") : t("WebP retains every frame. Choose a still image to export only the first frame.")
-              : t("Presets and quality apply to the batch. All metadata and location data removed.")}</p>
-          {selected?.settings.targetFormat === "png" && <p className="recipe-note">{t("PNG is lossless; quality does not apply.")}</p>}
+              : null}</p>
           {selected?.settings.targetFormat === "jxl" && props.quality === 100 && <p className="recipe-note">{t("JPEG XL at quality 100 preserves 8-bit pixels without loss. Use PNG for lossless high-bit-depth output.")}</p>}
-        </div>
+        </div>}
       </aside>
     </div>
   );

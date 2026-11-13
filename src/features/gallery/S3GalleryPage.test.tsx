@@ -67,6 +67,25 @@ const profile = {
 };
 
 describe("S3GalleryPage", () => {
+  it("filters only loaded records, clears active filters and switches the presentation without refetching", async () => {
+    const user = userEvent.setup();
+    listObjects.mockResolvedValueOnce({ objects: [
+      { key: "images/photo.webp", size: 240_000, isImage: true, publicUrl: "https://cdn.example.com/photo.webp" },
+      { key: "images/logo.png", size: 800_000, isImage: true, publicUrl: "https://cdn.example.com/logo.png" },
+    ], nextContinuationToken: null });
+    render(<S3GalleryPage profiles={[profile]} galleryFocus={{ prefix: "", highlightedKeys: [] }} />);
+    await screen.findByText("images/logo.png");
+    expect(screen.queryByRole("combobox", { name: "File size" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Format" }), "png");
+    expect(screen.queryByText("images/photo.webp")).not.toBeInTheDocument();
+    expect(screen.getByText("1 of 2 images")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "PNG" }));
+    expect(screen.getByText("images/photo.webp")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "List view" }));
+    expect(screen.getByRole("button", { name: "Grid view" })).toBeVisible();
+    expect(listObjects).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     listObjects.mockResolvedValue({
@@ -538,7 +557,7 @@ describe("S3GalleryPage", () => {
 
     await screen.findByText("images/photo.webp");
     const copyButton = screen.getByRole("button", { name: /copy url/i });
-    const viewButton = screen.getByRole("button", { name: /view/i });
+    const viewButton = screen.getByRole("button", { name: /^view$/i });
     expect(copyButton).toBeDisabled();
     expect(viewButton).toBeDisabled();
     expect(copyButton).toHaveAccessibleDescription(/configure a public base url in settings/i);
@@ -558,7 +577,7 @@ describe("S3GalleryPage", () => {
     );
 
     await screen.findByText("images/photo.webp");
-    await user.click(screen.getByRole("button", { name: /view/i }));
+    await user.click(screen.getByRole("button", { name: /^view$/i }));
 
     expect(mockOpenUrl).toHaveBeenCalledWith("https://cdn.example.com/images/photo.webp");
   });

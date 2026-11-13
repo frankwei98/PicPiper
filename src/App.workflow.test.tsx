@@ -48,11 +48,11 @@ beforeEach(() => {
 });
 
 describe("application workflow", () => {
-  it.each(["Settings", "S3 Gallery"])("keeps Open With subscribed while viewing %s", async (tab) => {
+  it.each(["Settings", "S3 Gallery"])("keeps Open With subscribed while viewing %s", async (viewName) => {
     const user = userEvent.setup();
     const view = render(<App />);
     await screen.findByRole("tablist", { name: "Views" });
-    await user.click(screen.getByRole("tab", { name: tab }));
+    await user.click(viewName === "Settings" ? screen.getByRole("button", { name: "Settings" }) : screen.getByRole("tab", { name: viewName }));
     expect(mocks.openedListeners.size).toBe(1);
     await act(async () => {
       mocks.openedListeners.forEach((listener) => listener(["/opened-elsewhere.jpg"]));
@@ -70,15 +70,17 @@ describe("application workflow", () => {
     await screen.findByRole("tablist", { name: "Views" });
     await user.click(screen.getByTestId("image-drop-zone"));
     await screen.findByRole("button", { name: "Save to local folder" });
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("tab", { name: "S3 profiles" }));
     const name = screen.getByLabelText("Profile name");
     await user.clear(name);
     await user.type(name, "Unsaved draft");
     await user.click(screen.getByRole("tab", { name: "Compress" }));
-    expect(screen.getByText("photo.jpg")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Select photo.jpg" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Save to local folder" }));
     expect(mocks.copy).toHaveBeenCalledWith({ outputPaths: ["/cache/r/photo.jpg"], targetDir: "/saved" });
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("tab", { name: "S3 profiles" }));
     expect(screen.getByLabelText("Profile name")).toHaveValue("Unsaved draft");
   });
 
@@ -91,9 +93,9 @@ describe("application workflow", () => {
     await user.click(screen.getByTestId("image-drop-zone"));
     await user.click(await screen.findByRole("button", { name: "Upload to S3" }));
     await waitFor(() => expect(mocks.upload).toHaveBeenCalled());
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Settings" }));
     await act(async () => complete({ key: "images/photo.jpg", size: 500, isImage: true }));
-    expect(screen.getByRole("tab", { name: "Settings" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("aria-pressed", "true");
     await user.click(screen.getByRole("tab", { name: "Compress" }));
     expect(screen.getByRole("button", { name: "Save to local folder" })).toBeEnabled();
     expect(screen.getByText(/Uploaded 1 image\(s\) to Personal \/ photos/)).toBeVisible();

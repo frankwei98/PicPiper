@@ -107,7 +107,7 @@ function App() {
         />
       )}
       <div hidden={navigation.view !== "settings"} className="app-panel">
-        <SettingsPage settings={settings} onSettingsChange={setSettings} />
+        <SettingsPage settings={settings} onSettingsChange={setSettings} isActive={navigation.view === "settings"} />
       </div>
     </Layout>
   );

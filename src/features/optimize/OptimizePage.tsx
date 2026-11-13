@@ -83,6 +83,7 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
   const importedPaths = useRef(new Set<string>());
   const importGeneration = useRef(0);
   const defaultFormat = useRef<WritableImageFormat | "original">("original");
+  const [batchFormat, setBatchFormat] = useState<WritableImageFormat | "original">("original");
   const [saving, setSaving] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -507,6 +508,7 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
     window.clearTimeout(debounceRef.current);
     pendingQualityRef.current = undefined;
     defaultFormat.current = settings.format;
+    setBatchFormat(settings.format);
     if (next === "lossless") {
       maxDimensionRef.current = 0;
       setMaxDimension(0);
@@ -515,6 +517,16 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
     setQuality(settings.quality);
     setPreset(next);
     applyGlobalRequeue(settings.quality, settings.format);
+  };
+
+  const changeBatchFormat = (format: WritableImageFormat | "original") => {
+    if (!canMutateQueue()) return;
+    window.clearTimeout(debounceRef.current);
+    pendingQualityRef.current = undefined;
+    defaultFormat.current = format;
+    setBatchFormat(format);
+    setPreset("custom");
+    applyGlobalRequeue(qualityRef.current, format);
   };
 
   const changeMaxDimension = (value: number) => {
@@ -684,7 +696,6 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
       <header className="bench-head">
         <div>
           <h2>{t("Prepare images")}</h2>
-          <p className="bench-sub">{t("Preview, compare, and export. Originals stay untouched.")}</p>
         </div>
       </header>
 
@@ -704,6 +715,8 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
         selectedId={selectedItemId}
         onSelect={setSelectedItemId}
         quality={quality}
+        batchFormat={batchFormat}
+        onBatchFormat={changeBatchFormat}
         maxDimension={maxDimension}
         onMaxDimension={changeMaxDimension}
         preset={preset}
@@ -739,20 +752,16 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
                 {failedItemCount > 0 ? t(", {{count}} failed", { count: failedItemCount }) : ""}
                 {readyItems.length > 0 && `, ${formatBytes(readyOriginalBytes)} → ${formatBytes(readyOutputBytes)}, ${t(readyOutputBytes > readyOriginalBytes ? "{{size}} larger" : "{{size}} saved", { size: formatBytes(Math.abs(readyOriginalBytes - readyOutputBytes)) })}`}
               </p>
+            </div>
+            <div className="action-buttons">
               {availableProfiles.length > 0 && <NativeSelect aria-label={t("Upload destination")} value={uploadProfile?.id ?? ""} disabled={saving || uploads.isUploading} onChange={(event) => {
                 if (!canMutateQueue()) return;
                 setUploadProfileId(event.target.value);
                 setUploadedFocus(null);
               }}>
-                {availableProfiles.map((profile) => <NativeSelectOption key={profile.id} value={profile.id}>{profile.name} / {profile.bucket}</NativeSelectOption>)}
+                {availableProfiles.map((profile) => <NativeSelectOption key={profile.id} value={profile.id}>{profile.name}</NativeSelectOption>)}
               </NativeSelect>}
-              <p className="action-destination" aria-label={t("Upload destination")}>
-                {uploads.uploadProfile
-                  ? t("Upload destination: {{value0}} / {{value1}} / {{value2}}", { value0: uploads.uploadProfile.name, value1: uploads.uploadProfile.bucket, value2: uploads.uploadProfile.defaultPrefix || "images" })
-                  : t("Set an upload destination in Settings. Your compressed images will stay here.")}
-              </p>
-            </div>
-            <div className="action-buttons">
+              {!uploads.uploadProfile && <p className="action-destination">{t("Set an upload destination in Settings. Your compressed images will stay here.")}</p>}
               {items.some((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)) && <Button type="button" size="sm" variant="ghost" disabled={saving || uploads.isUploading} onClick={() => {
                 importGeneration.current += 1;
                 itemsRef.current.filter((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)).forEach(cancelBackendTask);

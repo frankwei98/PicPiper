@@ -95,6 +95,9 @@ func runSmoke(win *mygo.Window, dir string) {
 	must(smokeWait(win, `Boolean([...document.querySelectorAll('label')].find(x => x.textContent.trim().startsWith('Profile name')))`, 5*time.Second))
 	fields := [][2]string{{"Profile name", "MVP local bucket"}, {"Endpoint", server.URL}, {"Region", "us-east-1"}, {"Bucket", "mvp-images"}, {"Access key ID", "MVP-TEST-ACCESS"}, {"Secret access key", "local-test-secret"}, {"Public Base URL", server.URL + "/public"}, {"Default prefix", "images"}}
 	for _, field := range fields {
+		if field[0] == "Public Base URL" || field[0] == "Default prefix" {
+			must(smokeClick(win, "Upload and naming"))
+		}
 		label, value := smokeJSON(field[0]), smokeJSON(field[1])
 		_, err := smokeEval(win, `const label = [...document.querySelectorAll('label')].find(x => x.textContent.trim().startsWith(`+label+`));
 const input = label?.querySelector('input'); if (!input) throw Error('Missing field ' + `+label+`);
@@ -103,11 +106,17 @@ input.dispatchEvent(new Event('input', {bubbles:true})); input.dispatchEvent(new
 await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 		must(err)
 	}
+	must(smokeClick(win, "S3 profiles"))
 	must(smokeClick(win, "Test connection"))
 	must(smokeWait(win, `document.body.innerText.includes('Connection successful')`, 10*time.Second))
 	must(smokeClick(win, "Save profile"))
 	must(smokeWait(win, `document.body.innerText.includes('Profile saved.')`, 10*time.Second))
+	must(smokeClick(win, "S3 profiles"))
 	must(smokeCapture(win, dir, "settings.png"))
+	must(smokeClick(win, "Add with an account"))
+	must(smokeWait(win, `document.getElementById('settings-tab-oauth')?.getAttribute('aria-selected') === 'true'`, 5*time.Second))
+	must(smokeCapture(win, dir, "account-authorization.png"))
+	must(smokeClick(win, "S3 profiles"))
 	report.Steps = append(report.Steps, "Settings form tested a draft S3 connection and saved the profile")
 
 	fixture := filepath.Join(dir, "Sample photo.jpg")
@@ -135,8 +144,11 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	must(smokeWait(win, `!document.querySelector('[role="dialog"]')`, 5*time.Second))
 	report.Steps = append(report.Steps, "Comparison dialog rendered both full-resolution images")
 	for _, format := range []string{"webp", "avif", "jxl", "jpg"} {
-		_, err = smokeEval(win, `const select = document.querySelector('select[aria-label="Format for Sample photo.jpg"]'); if (!select) throw Error('Missing output format selector'); select.value = `+smokeJSON(format)+`; select.dispatchEvent(new Event('change', {bubbles:true})); await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
-		must(err)
+		if format == "webp" {
+			must(smokeSelect(win, "Batch format", format))
+		} else {
+			must(smokeSelect(win, "Format for Sample photo.jpg", format))
+		}
 		must(smokeWait(win, `Boolean(document.querySelector('button[aria-label="Compare Sample photo.jpg"]')) && !document.body.innerText.includes('Compressing...')`, 60*time.Second))
 		must(smokeClick(win, "Compare Sample photo.jpg"))
 		must(smokeWait(win, `[...document.querySelectorAll('[role="dialog"] img')].filter(x => x.complete && x.naturalWidth === 1200 && x.naturalHeight === 800).length >= 2 && document.querySelector('[role="dialog"]').innerText.includes(`+smokeJSON("Output format: "+format)+`)`, 60*time.Second))
@@ -163,7 +175,7 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	must(smokeWait(win, `document.querySelectorAll('.batch-item button[aria-label^="Compare "]').length === 3 && document.body.innerText.includes('duplicates skipped')`, 60*time.Second))
 	report.Steps = append(report.Steps, "Mixed JPEG, transparent PNG and HEIC batch imported; duplicate source was skipped")
 	must(smokeSelect(win, "Batch preset", "balanced"))
-	must(smokeWait(win, `document.querySelectorAll('.batch-item button[aria-label^="Compare "]').length === 3 && [...document.querySelectorAll('.batch-item select')].every(x => x.value === 'webp')`, 60*time.Second))
+	must(smokeWait(win, `document.querySelectorAll('.batch-item button[aria-label^="Compare "]').length === 3 && [...document.querySelectorAll('article.batch-item')].every(x => x.dataset.outputFormat === 'webp')`, 60*time.Second))
 	must(smokeClick(win, "Select Transparent logo.png"))
 	must(smokeCapture(win, dir, "batch-workbench.png"))
 	must(smokeSelect(win, "Longest edge", "960"))
@@ -174,7 +186,7 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	must(smokeClick(win, "Close"))
 	must(smokeWait(win, `!document.querySelector('[role="dialog"]')`, 5*time.Second))
 	must(smokeSelect(win, "Batch preset", "lossless"))
-	must(smokeWait(win, `document.querySelectorAll('.batch-item button[aria-label^="Compare "]').length === 3 && document.querySelector('select[aria-label="Longest edge"]')?.value === '0' && [...document.querySelectorAll('.batch-item select')].every(x => x.value === 'jxl')`, 60*time.Second))
+	must(smokeWait(win, `document.querySelectorAll('.batch-item button[aria-label^="Compare "]').length === 3 && document.querySelector('select[aria-label="Longest edge"]')?.value === '0' && [...document.querySelectorAll('article.batch-item')].every(x => x.dataset.outputFormat === 'jxl')`, 60*time.Second))
 	must(smokeClick(win, "Compare Sample photo.jpg"))
 	must(smokeWait(win, `[...document.querySelectorAll('[role="dialog"] img')].filter(x => x.complete && x.naturalWidth === 1200 && x.naturalHeight === 800).length === 2 && document.querySelector('[role="dialog"]').innerText.includes('Quality: 100')`, 30*time.Second))
 	must(smokeClick(win, "Close"))
@@ -183,6 +195,7 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	must(smokeClick(win, "Remove Transparent logo.png"))
 	must(smokeClick(win, "Remove Imported HEIC.heic"))
 	must(smokeSelect(win, "Batch preset", "original"))
+	must(smokeClick(win, "Select Sample photo.jpg"))
 	must(smokeWait(win, `Boolean(document.querySelector('button[aria-label="Compare Sample photo.jpg"]')) && document.querySelector('select[aria-label="Format for Sample photo.jpg"]')?.value === 'jpg'`, 60*time.Second))
 
 	precisionPath := filepath.Join(dir, "Precision.png")
@@ -205,7 +218,7 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	must(ImagesOpened.Emit(win, []string{precisionPath, animationPath}))
 	must(smokeWait(win, `document.querySelectorAll('.batch-item button[aria-label^="Compare "]').length === 3`, 60*time.Second))
 	must(smokeSelect(win, "Batch preset", "lossless"))
-	must(smokeWait(win, `document.querySelectorAll('.batch-item button[aria-label^="Compare "]').length === 3 && document.querySelector('select[aria-label="Format for Precision.png"]')?.value === 'png' && document.querySelector('select[aria-label="Format for Animation.webp"]')?.value === 'webp'`, 60*time.Second))
+	must(smokeWait(win, `document.querySelectorAll('.batch-item button[aria-label^="Compare "]').length === 3 && document.querySelector('article.batch-item[aria-label="Precision.png"]')?.dataset.outputFormat === 'png' && document.querySelector('article.batch-item[aria-label="Animation.webp"]')?.dataset.outputFormat === 'webp'`, 60*time.Second))
 	must(smokeClick(win, "Select Precision.png"))
 	must(smokeCapture(win, dir, "lossless-precision.png"))
 	must(smokeClick(win, "Select Animation.webp"))
@@ -254,6 +267,7 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	must(smokeClick(win, "Remove HDR-16.png"))
 	must(smokeClick(win, "Remove HDR-18.png"))
 	must(smokeSelect(win, "Batch preset", "original"))
+	must(smokeClick(win, "Select Sample photo.jpg"))
 	must(smokeWait(win, `Boolean(document.querySelector('button[aria-label="Compare Sample photo.jpg"]')) && document.querySelector('select[aria-label="Format for Sample photo.jpg"]')?.value === 'jpg'`, 60*time.Second))
 
 	cancelledValue, err := smokeEval(win, `const call = async (op, request = {}) => JSON.parse(await mygo.call('Backend.Call', op, JSON.stringify(request)));
@@ -374,10 +388,13 @@ return saved.length === 1;`)
 	for _, locale := range []string{"zh-CN", "en", "fr", "es", "ja", "ko"} {
 		_, err = smokeEval(win, `document.getElementById('app-tab-settings').click(); return true;`)
 		must(err)
-		must(smokeWait(win, `document.getElementById('app-tab-settings').getAttribute('aria-selected') === 'true'`, 5*time.Second))
+		must(smokeWait(win, `document.getElementById('app-tab-settings').getAttribute('aria-pressed') === 'true'`, 5*time.Second))
+		_, err = smokeEval(win, `document.getElementById('settings-tab-general').click(); return true;`)
+		must(err)
 		_, err = smokeEval(win, `const select = document.querySelector('.settings-page option[value="system"]').parentElement; select.value = `+smokeJSON(locale)+`; select.dispatchEvent(new Event('change', {bubbles:true})); return true;`)
 		must(err)
 		must(smokeWait(win, `document.documentElement.lang === `+smokeJSON(locale), 5*time.Second))
+		must(smokeWait(win, `[...document.querySelectorAll('.settings-sidebar [role="tab"]')].every(x => x.getBoundingClientRect().right <= document.querySelector('.settings-sidebar').getBoundingClientRect().right + 1)`, 5*time.Second))
 		must(smokeCapture(win, dir, "settings-"+locale+".png"))
 		_, err = smokeEval(win, `document.getElementById('app-tab-optimize').click(); return true;`)
 		must(err)
@@ -431,6 +448,18 @@ return saved.length === 1;`)
 	must(err)
 	must(smokeWait(win, `document.querySelector('.contact-sheet > li:first-child')?.dataset.lazyRender === 'mounted' && document.querySelector('.proof-name') !== null`, 5*time.Second))
 	must(smokeCapture(win, dir, "gallery-sorted.png"))
+	must(smokeClick(win, "Filters"))
+	must(smokeSelect(win, "Format", "png"))
+	must(smokeWait(win, `document.body.innerText.includes('No loaded images match these filters.') && document.querySelectorAll('.contact-sheet > li').length === 0`, 5*time.Second))
+	must(smokeCapture(win, dir, "gallery-filter-empty.png"))
+	must(smokeClick(win, "Reset filters"))
+	must(smokeWait(win, `document.querySelectorAll('.contact-sheet > li').length === 80`, 5*time.Second))
+	must(smokeCapture(win, dir, "gallery-filters.png"))
+	must(smokeClick(win, "List view"))
+	must(smokeWait(win, `document.querySelector('.contact-sheet.gallery-list') !== null`, 5*time.Second))
+	must(smokeCapture(win, dir, "gallery-list.png"))
+	must(smokeClick(win, "Grid view"))
+	report.Steps = append(report.Steps, "Gallery filters narrowed loaded records, reset restored them, and grid/list presentations rendered")
 	report.Steps = append(report.Steps, "Gallery excluded an unrelated bucket object and sorted all local uploads by name and upload time in both directions")
 	report.Steps = append(report.Steps, "80 gallery cards lazy-mounted near the viewport, unloaded on scroll, and showed skeletons during held thumbnail reads")
 
@@ -537,6 +566,14 @@ if (!button) throw Error('Missing enabled action: ' + name); button.click(); ret
 }
 
 func smokeSelect(win *mygo.Window, label, value string) error {
+	if name, ok := strings.CutPrefix(label, "Format for "); ok {
+		if err := smokeClick(win, "Select "+name); err != nil {
+			return err
+		}
+		if _, err := smokeEval(win, `const details = document.querySelector('details.image-format-details'); if (!details) throw Error('Missing current image format details'); details.open = true; return true;`); err != nil {
+			return err
+		}
+	}
 	_, err := smokeEval(win, `const select = [...document.querySelectorAll('select')].find(x => x.getAttribute('aria-label') === `+smokeJSON(label)+`); if (!select) throw Error('Missing selector'); select.value = `+smokeJSON(value)+`; select.dispatchEvent(new Event('change', {bubbles:true})); await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	return err
 }

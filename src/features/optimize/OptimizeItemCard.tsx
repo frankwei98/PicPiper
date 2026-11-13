@@ -3,10 +3,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { t, useLocale } from "@/i18n";
 import { Check, LoaderCircle, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { cn } from "@/lib/utils";
-import type { OptimizeItem, WritableImageFormat } from "../../types";
-import { AVAILABLE_OUTPUT_FORMATS, formatBytes, sizeChangeLabel } from "./optimizeQueue";
+import type { OptimizeItem } from "../../types";
+import { formatBytes, sizeChangeLabel } from "./optimizeQueue";
 
 interface OptimizeItemCardProps {
   item: OptimizeItem;
@@ -17,17 +16,16 @@ interface OptimizeItemCardProps {
   uploading: boolean;
   onCancel: (itemId: string) => void;
   onCompare: (itemId: string) => void;
-  onFormatChange: (itemId: string, format: WritableImageFormat) => void;
   onRemove: (itemId: string) => void;
   onRetry: (itemId: string) => void;
 }
 
-export function OptimizeItemCard({ item, selected, onSelect, mutationLocked, uploadFailure, uploading, onCancel, onCompare, onFormatChange, onRemove, onRetry }: OptimizeItemCardProps) {
+export function OptimizeItemCard({ item, selected, onSelect, mutationLocked, uploadFailure, uploading, onCancel, onCompare, onRemove, onRetry }: OptimizeItemCardProps) {
   useLocale();
   const busy = ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status);
   const preview = item.compressedPreviewUrl ?? item.originalPreviewUrl;
   return (
-    <article className={cn("batch-item", selected && "selected")} aria-label={item.fileName}>
+    <article className={cn("batch-item", selected && "selected")} aria-label={item.fileName} data-output-format={item.settings.targetFormat}>
       <div className="item-main">
         <Button
           type="button"
@@ -47,9 +45,7 @@ export function OptimizeItemCard({ item, selected, onSelect, mutationLocked, upl
         <Button type="button" variant="ghost" size="icon-xs" className="item-remove" aria-label={t("Remove {{value0}}", { value0: item.fileName })} onClick={() => onRemove(item.id)} disabled={mutationLocked}><XIcon className="size-3" /></Button>
       </div>
       <div className="item-controls">
-        <NativeSelect aria-label={t("Format for {{value0}}", { value0: item.fileName })} value={item.settings.targetFormat} onChange={(event) => onFormatChange(item.id, event.target.value as WritableImageFormat)} disabled={mutationLocked || item.status === "inspecting" || item.status === "cancelled"}>
-          {AVAILABLE_OUTPUT_FORMATS.map((format) => <NativeSelectOption key={format} value={format}>{format === "jxl" ? "JPEG XL" : format.toUpperCase()}</NativeSelectOption>)}
-        </NativeSelect>
+        <span className="item-output-format">{item.settings.targetFormat === "jxl" ? "JPEG XL" : item.settings.targetFormat.toUpperCase()}</span>
         {item.status === "compressed" && <span className={cn("item-delta", item.outputBytes! > item.originalBytes ? "larger" : "saved")}>{sizeChangeLabel(item.originalBytes, item.outputBytes ?? 0)}</span>}
         {busy && <Button type="button" variant="ghost" size="xs" className="item-action" aria-label={t("Cancel {{value0}}", { value0: item.fileName })} onClick={() => onCancel(item.id)} disabled={mutationLocked}>{t("Cancel")}</Button>}
         {(item.status === "failed" || item.status === "cancelled") && <Button type="button" variant="ghost" size="xs" className="item-action" aria-label={t("Retry {{value0}}", { value0: item.fileName })} onClick={() => onRetry(item.id)} disabled={mutationLocked}>{t("Retry")}</Button>}
@@ -58,9 +54,8 @@ export function OptimizeItemCard({ item, selected, onSelect, mutationLocked, upl
       {selected && item.sourceWarning && <p className="item-message">{item.sourceWarning}</p>}
       {selected && item.warning?.includes("High-bit-depth pixels") && <p className="item-message">{t("Output uses 8-bit pixels. Choose PNG to retain the source precision.")}</p>}
       {item.error && <p className="item-message danger" role="alert">{item.error}</p>}
-      {item.status === "compressed" && (item.outputBytes ?? 0) > item.originalBytes && <p className="item-message danger">{t("This output is larger. Try lower quality or a different target format before saving.")}</p>}
+      {selected && item.status === "compressed" && (item.outputBytes ?? 0) > item.originalBytes && <p className="item-message danger">{t("This output is larger. Try lower quality or a different target format before saving.")}</p>}
       {selected && item.warning?.includes("Transparency") && <p className="item-message">{t("Transparency was replaced with white for JPEG.")}</p>}
-      {selected && item.settings.targetFormat === "png" && <p className="item-message">{t("PNG output is lossless; quality does not apply.")}</p>}
       {uploadFailure && <p className="item-message danger">{uploadFailure}</p>}
       {uploading && <p className="item-message">{t("Uploading...")}</p>}
     </article>

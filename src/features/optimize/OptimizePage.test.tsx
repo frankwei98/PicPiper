@@ -121,6 +121,12 @@ function installDefaultMocks() {
   }));
 }
 
+async function setItemFormat(user: ReturnType<typeof userEvent.setup>, filename: string, format: string) {
+  const summary = screen.getByText("Current image");
+  if (!summary.closest("details")?.hasAttribute("open")) await user.click(summary);
+  await user.selectOptions(screen.getByLabelText(`Format for ${filename}`), format);
+}
+
 describe("OptimizePage", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -186,7 +192,7 @@ describe("OptimizePage", () => {
     render(<OptimizePage namingTemplate="{slug}.{ext}" />);
     await user.click(screen.getByTestId("image-drop-zone"));
     await screen.findByRole("button", { name: "Compare real-photo.jpg" });
-    await user.selectOptions(screen.getByLabelText("Format for real-photo.jpg"), format);
+    await setItemFormat(user, "real-photo.jpg", format);
     await waitFor(() => {
       expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({
         outputFileName: `real-photo.${format}`,
@@ -212,7 +218,7 @@ describe("OptimizePage", () => {
 
     expect(screen.getByRole("combobox", { name: "Batch preset" })).toHaveValue("original");
     expect(screen.queryByRole("button", { name: /^compress$/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/location data (are )?removed/i)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Batch format" })).toHaveValue("original");
     expect(screen.getByRole("slider", { name: /quality/i })).toBeInTheDocument();
   });
 
@@ -228,6 +234,25 @@ describe("OptimizePage", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: "Batch preset" }), "lossless");
     await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "jxl", quality: 100, maxDimension: undefined }) })));
     expect(screen.getByRole("combobox", { name: "Longest edge" })).toHaveValue("0");
+  });
+
+  it("changes the batch format independently, preserves quality and applies it to later imports", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Batch format" }), "avif");
+    expect(screen.getByRole("slider", { name: "Quality" })).toHaveValue("85");
+    expect(screen.getByRole("combobox", { name: "Batch preset" })).toHaveValue("custom");
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
+    expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ outputFileName: "real-photo.avif", settings: expect.objectContaining({ targetFormat: "avif", quality: 85 }) }));
+    let finish!: (result: Awaited<ReturnType<typeof compressImage>>) => void;
+    compressImage.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Batch format" }), "png");
+    expect(screen.getByRole("slider", { name: "Quality" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save to local folder" })).not.toBeInTheDocument();
+    await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "png", quality: 85 }) })));
+    await act(async () => finish({ sourcePath: "/tmp/real-photo.jpg", outputPath: "/tmp/pic-piper/new.png", outputFileName: "real-photo.png", originalBytes: 1_200_000, outputBytes: 300_000, targetFormat: "png" }));
+    expect(await screen.findByRole("button", { name: "Save to local folder" })).toBeEnabled();
   });
 
   it("uses PNG for lossless high-bit-depth images and WebP for animations", async () => {
@@ -269,13 +294,13 @@ describe("OptimizePage", () => {
     await user.click(screen.getByTestId("image-drop-zone"));
     await screen.findByRole("button", { name: "Compare animation.webp" });
     const calls = compressImage.mock.calls.length;
-    await user.selectOptions(screen.getByLabelText("Format for animation.webp"), "png");
+    await setItemFormat(user, "animation.webp", "png");
     expect(screen.getByRole("dialog", { name: "Export the first frame?" })).toBeVisible();
     expect(compressImage).toHaveBeenCalledTimes(calls);
     await user.click(screen.getByRole("button", { name: "Keep animation" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByLabelText("Format for animation.webp")).toHaveValue("webp");
-    await user.selectOptions(screen.getByLabelText("Format for animation.webp"), "png");
+    await setItemFormat(user, "animation.webp", "png");
     await user.click(screen.getByRole("button", { name: "Export first frame" }));
     await waitFor(() => expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ targetFormat: "png", animationMode: "firstFrame" }) })));
     await screen.findByRole("button", { name: "Compare animation.webp" });
@@ -420,14 +445,14 @@ describe("OptimizePage", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 
     // Informational text about metadata stripping should be visible
-    expect(screen.getByText(/location data (are )?removed/i)).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Batch format" })).toHaveValue("original");
   });
 
   it("keeps quality controls constrained beside the workspace title", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     expect(screen.getByRole("slider", { name: /quality/i })).toBeVisible();
-    expect(screen.getByText(/location data (are )?removed/i)).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Batch format" })).toBeVisible();
   });
 
   it("imports selected images and starts single-image compression automatically", async () => {
@@ -441,7 +466,7 @@ describe("OptimizePage", () => {
       path: "/tmp/real-photo.jpg",
       settings: expect.objectContaining({ targetFormat: "jpg", quality: 85, removeGps: true }),
     });
-    expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Select real-photo.jpg" })).toBeInTheDocument();
     expect(compressImage).toHaveBeenCalledWith(
       expect.objectContaining({
         sourcePath: "/tmp/real-photo.jpg",
@@ -719,7 +744,7 @@ describe("OptimizePage", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Select real-photo.jpg" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
     await act(async () => {
@@ -913,7 +938,7 @@ describe("OptimizePage", () => {
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     await user.click(screen.getByRole("button", { name: /choose images/i }));
-    await screen.findByText("real-photo.jpg");
+    await screen.findByRole("button", { name: "Select real-photo.jpg" });
 
     const removeBtn = screen.getByRole("button", {
       name: /^Remove real-photo\.jpg$/i,
@@ -1311,7 +1336,7 @@ describe("OptimizePage", () => {
     dropZone.dispatchEvent(event);
 
     // The mock returns fileName "real-photo.jpg" regardless of input path
-    expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Select real-photo.jpg" })).toBeInTheDocument();
     expect(inspectImage).toHaveBeenCalledWith({
       taskId: expect.any(String),
       path: "/tmp/dropped-photo.jpg",
@@ -1324,7 +1349,7 @@ describe("OptimizePage", () => {
     expect(mockOnFileDrop).toHaveBeenCalled();
     const handler = mockOnFileDrop.mock.calls[0][0];
     await act(async () => handler(["/tmp/native-dropped.jpg"]));
-    expect(await screen.findByText("real-photo.jpg")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Select real-photo.jpg" })).toBeInTheDocument();
     expect(inspectImage).toHaveBeenCalledWith({
       taskId: expect.any(String),
       path: "/tmp/native-dropped.jpg",

@@ -25,7 +25,7 @@ it("keeps failures as a placeholder without falling back to the public image", a
   render(<GalleryThumbnail profile={profile} object={object} onView={vi.fn()} />);
   await waitFor(() => expect(galleryApi.readThumbnail).toHaveBeenCalled());
   expect(screen.queryByRole("img")).not.toBeInTheDocument();
-  expect(screen.getByText("Image")).toBeInTheDocument();
+  expect(await screen.findByText("Image")).toBeInTheDocument();
 });
 
 it("waits for a tile to approach the viewport before loading its thumbnail", async () => {

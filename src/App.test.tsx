@@ -15,9 +15,11 @@ describe("App", () => {
 
     expect(screen.getByText("Pic Piper")).toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: "Views" })).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Compress", "S3 Gallery"]);
     expect(screen.getByRole("tab", { name: /Compress/ })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: /S3 Gallery/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Settings/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByText("Local processing")).not.toBeInTheDocument();
     expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "app-tab-optimize");
   });
 

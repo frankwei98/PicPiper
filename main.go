@@ -189,7 +189,7 @@ func appWindowOptions(smoke bool) mygo.WindowOptions {
 		Page:  page,
 		Title: "Pic Piper", URL: "/", Width: 1120, Height: 760,
 		MinWidth: 920, MinHeight: 600, TitleBarStyle: mygo.TitleBarHidden,
-		TrafficLightPosition: &mygo.Point{X: 16, Y: 18}, BackgroundColor: "#eef2f6",
+		TrafficLightPosition: &mygo.Point{X: 16, Y: 18}, BackgroundColor: "#f2f2f5",
 	}
 }
 
