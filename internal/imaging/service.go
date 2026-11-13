@@ -584,3 +584,26 @@ func (s *Service) copyOutputs(ctx context.Context, req request) ([]string, error
 	}
 	return copied, nil
 }
+
+// ThumbnailDataURL uses the same bounded, isolated decoder as local previews.
+func (s *Service) ThumbnailDataURL(ctx context.Context, path string, maxSize int) (string, error) {
+	payload, err := json.Marshal(map[string]any{"path": path, "maxSize": maxSize})
+	if err != nil {
+		return "", err
+	}
+	value, err := s.Call(ctx, "read_thumbnail", payload)
+	if err != nil {
+		return "", err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		DataURL string `json:"dataUrl"`
+	}
+	if err = json.Unmarshal(data, &result); err != nil {
+		return "", err
+	}
+	return result.DataURL, nil
+}

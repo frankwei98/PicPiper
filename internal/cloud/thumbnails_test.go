@@ -1,0 +1,157 @@
+package cloud
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+func TestGalleryThumbnailPersistsAcrossRestartAndTracksObjectVersion(t *testing.T) {
+	dir := t.TempDir()
+	var downloads, renders atomic.Int32
+	renderer := func(ctx context.Context, path string) (string, error) {
+		renders.Add(1)
+		data, err := os.ReadFile(path)
+		if err != nil || string(data) != "synthetic-image" {
+			return "", fmt.Errorf("missing downloaded input")
+		}
+		return "data:image/png;base64,c3ludGhldGlj", nil
+	}
+	service := func() *Service {
+		s := NewWithThumbnails(dir, renderer)
+		s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) {
+			downloads.Add(1)
+			if r.URL.Host != "s3.example.test" || r.URL.Path != "/images/a/photo.png" || !strings.Contains(r.Header.Get("Authorization"), "Credential=access/") {
+				t.Errorf("thumbnail did not use signed S3 object request")
+			}
+			return r2Response(200, "synthetic-image"), nil
+		})
+		return s
+	}
+	s := service()
+	p := testProfile("https://s3.example.test")
+	if _, err := s.saveSecret(p.ID, "fake-secret"); err != nil {
+		t.Fatal(err)
+	}
+	request := map[string]any{"profile": p, "key": "a/photo.png", "size": 15, "etag": "version1"}
+	for range 2 {
+		result, err := call(t, s, "read_gallery_thumbnail", request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.(map[string]string)["dataUrl"] != "data:image/png;base64,c3ludGhldGlj" {
+			t.Fatal("thumbnail missing")
+		}
+		s = service() // A new service must reuse the persisted thumbnail without S3.
+	}
+	if downloads.Load() != 1 || renders.Load() != 1 {
+		t.Fatal("thumbnail was downloaded or rendered again")
+	}
+	request["etag"] = "version2"
+	if _, err := call(t, s, "read_gallery_thumbnail", request); err != nil {
+		t.Fatal(err)
+	}
+	if downloads.Load() != 2 {
+		t.Fatal("changed ETag reused stale thumbnail")
+	}
+	matches, _ := filepath.Glob(filepath.Join(dir, "gallery-thumbnails", "source-*"))
+	if len(matches) != 0 {
+		t.Fatal("full downloaded image left on disk")
+	}
+}
+
+func TestGalleryThumbnailBoundsDownloadsAndRejectsUnsafeKeys(t *testing.T) {
+	s := NewWithThumbnails(t.TempDir(), func(context.Context, string) (string, error) {
+		t.Fatal("oversize image reached decoder")
+		return "", nil
+	})
+	p := testProfile("https://s3.example.test")
+	if _, err := s.saveSecret(p.ID, "fake-secret"); err != nil {
+		t.Fatal(err)
+	}
+	var downloads atomic.Int32
+	s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) {
+		downloads.Add(1)
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader("too large")), ContentLength: maxThumbnailSourceBytes + 1}, nil
+	})
+	for _, key := range []string{"../escape.png", "a/../../escape.png"} {
+		if _, err := call(t, s, "read_gallery_thumbnail", map[string]any{"profile": p, "key": key}); err == nil {
+			t.Fatal("unsafe key accepted")
+		}
+	}
+	if downloads.Load() != 0 {
+		t.Fatal("unsafe key reached S3")
+	}
+	if _, err := call(t, s, "read_gallery_thumbnail", map[string]any{"profile": p, "key": "image.png"}); err == nil {
+		t.Fatal("oversize response accepted")
+	}
+	files, _ := filepath.Glob(filepath.Join(s.dataDir, "gallery-thumbnails", "*"))
+	if len(files) != 0 {
+		t.Fatal("failed thumbnail left cache files")
+	}
+}
+
+func TestGalleryThumbnailConcurrentMissesDownloadOnce(t *testing.T) {
+	s := NewWithThumbnails(t.TempDir(), func(context.Context, string) (string, error) { return "data:image/png;base64,c3ludGhldGlj", nil })
+	p := testProfile("https://s3.example.test")
+	if _, err := s.saveSecret(p.ID, "fake-secret"); err != nil {
+		t.Fatal(err)
+	}
+	var downloads atomic.Int32
+	s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) { downloads.Add(1); return r2Response(200, "image"), nil })
+	var group sync.WaitGroup
+	for range 6 {
+		group.Go(func() {
+			if _, err := call(t, s, "read_gallery_thumbnail", map[string]any{"profile": p, "key": "a.png", "etag": "v1"}); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	group.Wait()
+	if downloads.Load() != 1 {
+		t.Fatalf("duplicate downloads: %d", downloads.Load())
+	}
+}
+
+func TestThumbnailCacheEvictsOldestAndDeletionClearsVersions(t *testing.T) {
+	s := New(t.TempDir())
+	dir := filepath.Join(s.dataDir, "gallery-thumbnails")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	p := testProfile("https://s3.example.test")
+	prefix := thumbnailIdentity(p, "image.png")
+	for i := range 3 {
+		path := filepath.Join(dir, fmt.Sprintf("%s-%d.thumb", prefix, i))
+		if err := os.WriteFile(path, []byte("12345678"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		modified := time.Unix(int64(i), 0)
+		if err := os.Chtimes(path, modified, modified); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.pruneThumbnails(dir, 16)
+	if _, err := os.Stat(filepath.Join(dir, prefix+"-0.thumb")); !os.IsNotExist(err) {
+		t.Fatal("oldest thumbnail retained")
+	}
+	if _, err := s.saveSecret(p.ID, "fake-secret"); err != nil {
+		t.Fatal(err)
+	}
+	s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) { return r2Response(204, ""), nil })
+	if _, err := call(t, s, "delete_gallery_object", map[string]any{"profile": p, "key": "image.png"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Fatal("deleted object left cached thumbnails")
+	}
+}

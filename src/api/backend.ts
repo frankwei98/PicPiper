@@ -85,6 +85,7 @@ export const imageApi = {
 };
 
 export interface ListGalleryObjectsRequest {
+  sort?: "time-desc" | "time-asc" | "name-asc" | "name-desc";
   profile: S3Profile;
   prefix: string;
   continuationToken?: string;
@@ -108,6 +109,7 @@ export interface DownloadObjectRequest {
 }
 
 export const galleryApi = {
+  readThumbnail: (request: { profile: S3Profile; key: string; etag?: string; size: number; lastModified?: string }) => invoke<{ dataUrl: string }>("read_gallery_thumbnail", { request }),
   listObjects: (request: ListGalleryObjectsRequest) => invoke<ListGalleryObjectsResponse>("list_gallery_objects", { request }),
   deleteObject: (request: DeleteObjectRequest) => invoke<void>("delete_gallery_object", { request }),
   downloadObject: (request: DownloadObjectRequest) => invoke<string>("download_gallery_object", { request }),
@@ -146,6 +148,8 @@ export const namingApi = {
 };
 
 export interface AppSettings {
+  onboardingCompleted?: boolean;
+  features?: { compression: boolean; s3: boolean };
   profiles: S3Profile[];
   namingTemplate: string;
   defaultOutputDir?: string;
@@ -167,4 +171,16 @@ export const settingsApi = {
   saveSettings: (settings: AppSettings) => invoke<void>("save_app_settings", { request: { settings } }),
   saveS3Secret: (request: SaveS3SecretRequest) => invoke<{ credentialRef: string }>("save_s3_secret", { request }),
   testS3Connection: (request: TestS3ConnectionRequest) => invoke<void>("test_s3_connection", { request }),
+};
+
+export interface R2Account { id: string; name: string }
+export interface R2Bucket { name: string; jurisdiction: string }
+export interface R2Selection { sessionId: string; accountId: string; jurisdiction: string }
+export const r2Api = {
+  start: () => invoke<{ sessionId: string; authorizationUrl: string }>("start_r2_oauth"),
+  poll: (sessionId: string) => invoke<{ status: "pending" | "exchanging" | "authorized" | "failed" | "expired" | "closed"; message: string }>("poll_r2_oauth", { request: { sessionId } }),
+  cancel: (sessionId: string) => invoke<void>("cancel_r2_oauth", { request: { sessionId } }),
+  accounts: (sessionId: string) => invoke<R2Account[]>("list_r2_accounts", { request: { sessionId } }),
+  buckets: (request: R2Selection) => invoke<R2Bucket[]>("list_r2_buckets", { request }),
+  connect: (request: R2Selection & { buckets: string[]; publicBaseUrls?: Record<string, string> }) => invoke<AppSettings>("connect_r2_buckets", { request }),
 };

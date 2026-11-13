@@ -40,7 +40,10 @@ func (b *Backend) TakeOpenedFiles() []string {
 }
 
 func newBackend(dataDir string) *Backend {
-	return &Backend{images: imaging.NewIsolated(dataDir), cloud: cloud.New(dataDir)}
+	images := imaging.NewIsolated(dataDir)
+	return &Backend{images: images, cloud: cloud.NewWithThumbnails(dataDir, func(ctx context.Context, path string) (string, error) {
+		return images.ThumbnailDataURL(ctx, path, 384)
+	})}
 }
 
 type reply struct {
@@ -141,6 +144,15 @@ func main() {
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { backend.images.Close() })
 	mygo.Bind(backend)
 	var window *mygo.Window
+	mygo.App.OnOpenURL(func(raw string) {
+		if !isCloudflareReturnURL(raw) || window == nil {
+			return
+		}
+		window.Restore()
+		window.Show()
+		window.Focus()
+		mygo.App.Focus()
+	})
 	mygo.App.OnOpenFile(func(path string) {
 		if smokeDir != "" {
 			return
@@ -158,7 +170,8 @@ func main() {
 		win := mygo.NewWindow(appWindowOptions(smokeDir != ""))
 		window = win
 		if smokeDir != "" {
-			win.Page().OnDOMReady(func() { go runSmoke(win, smokeDir) })
+			var start sync.Once
+			win.Page().OnDOMReady(func() { start.Do(func() { go runSmoke(win, smokeDir) }) })
 		}
 	})
 	if err := mygo.App.Run(); err != nil {
@@ -178,4 +191,11 @@ func appWindowOptions(smoke bool) mygo.WindowOptions {
 		MinWidth: 920, MinHeight: 600, TitleBarStyle: mygo.TitleBarHidden,
 		TrafficLightPosition: &mygo.Point{X: 16, Y: 18}, BackgroundColor: "#eef2f6",
 	}
+}
+
+// The scheme restores the existing window only. OAuth still finishes through
+// the state- and PKCE-validated loopback callback; deep links grant no access.
+func isCloudflareReturnURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "picpiper" && u.Host == "oauth" && u.Path == "/cloudflare/connected" && u.RawQuery == "" && u.Fragment == "" && u.User == nil
 }

@@ -1,3 +1,7 @@
+import { LazyRender } from "@/components/LazyRender";
+import { ImageWithSkeleton } from "@/components/ImageWithSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
+import { OptimizeItemSkeleton } from "./OptimizeItemSkeleton";
 import { t, useLocale, imageCount } from "@/i18n";
 import { useState } from "react";
 import { Expand, Image as ImageIcon, ImageUp, Trash2 } from "lucide-react";
@@ -83,8 +87,8 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             <Button type="button" variant="ghost" size="icon-xs" aria-label={t("Clear batch")} disabled={!props.items.length || props.locked} onClick={props.onClear}><Trash2 className="size-3.5" /></Button>
           </div>
         </div>
-        <div className="batch-list">
-          {props.items.map((item) => <OptimizeItemCard key={item.id} item={item} selected={selected?.id === item.id} onSelect={props.onSelect} mutationLocked={props.locked} uploadFailure={props.uploadFailure(item.id)} uploading={props.isUploading(item.id)} onCancel={props.onCancel} onCompare={props.onCompare} onFormatChange={props.onFormat} onRemove={props.onRemove} onRetry={props.onRetry} />)}
+        <div className="batch-list" role="list">
+          {props.items.map((item, index) => <LazyRender key={item.id} label={item.fileName} placeholder={<OptimizeItemSkeleton />} position={index + 1} total={props.items.length}>{() => <OptimizeItemCard item={item} selected={selected?.id === item.id} onSelect={props.onSelect} mutationLocked={props.locked} uploadFailure={props.uploadFailure(item.id)} uploading={props.isUploading(item.id)} onCancel={props.onCancel} onCompare={props.onCompare} onFormatChange={props.onFormat} onRemove={props.onRemove} onRetry={props.onRetry} />}</LazyRender>)}
           {!props.items.length && (
             <div className="rail-empty">
               <strong>{t("No images yet")}</strong>
@@ -122,7 +126,9 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
               <span className="drop-formats">JPEG, PNG, WebP, AVIF, JPEG XL, HEIC</span>
             </Button>
           ) : previewUrl ? (
-            <img src={previewUrl} alt={preview === "original" || !selected.compressedPreviewUrl ? t("Original preview of {{filename}}", { filename: selected.fileName }) : t("Compressed preview of {{filename}}", { filename: selected.fileName })} draggable={false} />
+            <ImageWithSkeleton src={previewUrl} alt={preview === "original" || !selected.compressedPreviewUrl ? t("Original preview of {{filename}}", { filename: selected.fileName }) : t("Compressed preview of {{filename}}", { filename: selected.fileName })} draggable={false} />
+          ) : busy ? (
+            <Skeleton className="image-skeleton" role="status" aria-label={t("Preparing your image")} />
           ) : (
             <div className="stage-empty">
               <ImageIcon className="drop-mark size-7" aria-hidden="true" />

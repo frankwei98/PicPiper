@@ -4,9 +4,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { S3GalleryPage } from "./S3GalleryPage";
 import { fileNameFromPath } from "../../lib/path";
 
-const { listObjects, deleteObject, downloadObject, mockDialogOpen, mockOpenUrl, mockWriteClipboard, uploadObject, generateObjectKey, loadSettings } = vi.hoisted(() => {
+const { readThumbnail, listObjects, deleteObject, downloadObject, mockDialogOpen, mockOpenUrl, mockWriteClipboard, uploadObject, generateObjectKey, loadSettings } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async () => "/tmp/downloads");
   return {
+    readThumbnail: vi.fn(async () => ({ dataUrl: "data:image/png;base64,LOCAL" })),
     listObjects: vi.fn(async (_request?: unknown): Promise<unknown> => ({
       objects: [
         {
@@ -46,7 +47,7 @@ vi.mock("@/platform/desktop", async () => ({
 }));
 
 vi.mock("../../api/backend", async () => ({
-  galleryApi: { listObjects, deleteObject, downloadObject },
+  galleryApi: { readThumbnail, listObjects, deleteObject, downloadObject },
   imageApi: {},
   uploadApi: { uploadObject },
   namingApi: { generateObjectKey },
@@ -108,6 +109,56 @@ describe("S3GalleryPage", () => {
     expect(listObjects).toHaveBeenCalledWith({ profile, prefix: "images" });
   });
 
+  it("reloads the full scope with the selected order and carries it into pagination", async () => {
+    listObjects.mockResolvedValueOnce({ objects: [{ key: "old.png", size: 1, isImage: true }], nextContinuationToken: "old-cursor" });
+    listObjects.mockResolvedValueOnce({ objects: [{ key: "alpha.png", size: 1, isImage: true }], nextContinuationToken: "name-cursor" });
+    listObjects.mockResolvedValueOnce({ objects: [{ key: "zulu.png", size: 1, isImage: true }], nextContinuationToken: null });
+    render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+    await screen.findByText("old.png");
+    const user = userEvent.setup();
+    expect(screen.getByRole("combobox", { name: "Sort by" })).toHaveValue("time-desc");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sort by" }), "name-asc");
+    await screen.findByText("alpha.png");
+    expect(screen.queryByText("old.png")).not.toBeInTheDocument();
+    expect(listObjects).toHaveBeenNthCalledWith(2, { profile, prefix: "images", sort: "name-asc" });
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await screen.findByText("zulu.png");
+    expect(listObjects).toHaveBeenNthCalledWith(3, { profile, prefix: "images", sort: "name-asc", continuationToken: "name-cursor" });
+    expect(Array.from(document.querySelectorAll(".proof-key"), (node) => node.textContent)).toEqual(["alpha.png", "zulu.png"]);
+  });
+
+  it("keeps the selected ordering when a new upload precedes loading another page", async () => {
+    const alpha = { key: "images/alpha.png", fileName: "Alpha.png", size: 1, isImage: true };
+    const middle = { key: "images/middle.png", fileName: "Middle.png", size: 1, isImage: true };
+    listObjects.mockResolvedValueOnce({ objects: [alpha], nextContinuationToken: "time-cursor" });
+    listObjects.mockResolvedValueOnce({ objects: [alpha], nextContinuationToken: "name-cursor" });
+    listObjects.mockResolvedValueOnce({ objects: [middle], nextContinuationToken: null });
+    const zulu = { key: "images/zulu.png", fileName: "Zulu.png", size: 1, isImage: true, publicUrl: "https://cdn.example.com/images/zulu.png" };
+    uploadObject.mockResolvedValueOnce(zulu);
+    mockDialogOpen.mockResolvedValueOnce("/tmp/Zulu.png");
+    render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+    const user = userEvent.setup();
+    await screen.findByText(alpha.key);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sort by" }), "name-asc");
+    await waitFor(() => expect(listObjects).toHaveBeenCalledTimes(2));
+    await user.click(screen.getByRole("button", { name: "Upload local images" }));
+    await screen.findByText(zulu.key);
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await screen.findByText(middle.key);
+    expect(Array.from(document.querySelectorAll(".proof-key"), (node) => node.textContent)).toEqual([alpha.key, middle.key, zulu.key]);
+  });
+
+  it("keeps a successful upload successful while showing a local history persistence warning", async () => {
+    mockDialogOpen.mockResolvedValueOnce("/tmp/photo.png");
+    const uploaded = { key: "images/photo.png", size: 100, isImage: true, publicUrl: "https://cdn.example.com/images/photo.png", uploadRecordWarning: true };
+    uploadObject.mockResolvedValueOnce(uploaded);
+    render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+    await screen.findByText("images/photo.webp");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Upload local images" }));
+    expect(await screen.findByText(/Could not save the local upload record/)).toHaveTextContent("Uploaded 1 image(s).");
+    expect(uploadObject).toHaveBeenCalledTimes(1);
+  });
+
   it("loads another bounded page when the continuation token is requested", async () => {
     const user = userEvent.setup();
     listObjects
@@ -151,6 +202,20 @@ describe("S3GalleryPage", () => {
     });
     expect(screen.getByText("images/page-one.webp")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("shows skeleton cards during pagination while keeping the loaded page", async () => {
+    let finish!: (value: unknown) => void;
+    listObjects.mockResolvedValueOnce({ objects: [{ key: "first.png", size: 100, isImage: true }], nextContinuationToken: "next" });
+    listObjects.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const { container } = render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+    await screen.findByText("first.png");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Load more" }));
+    expect(screen.getByRole("status", { name: "Loading more..." }).querySelectorAll('[data-slot="skeleton"]')).toHaveLength(21);
+    expect(screen.getByText("first.png")).toBeInTheDocument();
+    await act(async () => { finish({ objects: [], nextContinuationToken: null }); });
+    expect(screen.queryByRole("status", { name: "Loading more..." })).not.toBeInTheDocument();
+    expect(container.querySelector(".contact-sheet")).toBeInTheDocument();
   });
 
   it("keeps loaded objects visible and offers a retry when loading another page fails", async () => {
@@ -292,7 +357,7 @@ describe("S3GalleryPage", () => {
     expect(requests[1]!.continuationToken).toBe("page-2");
   });
 
-  it("renders img thumbnail for image objects with publicUrl", async () => {
+  it("renders a cached thumbnail and opens the public URL only when clicked", async () => {
     render(
       <S3GalleryPage
         galleryFocus={{ prefix: "images", highlightedKeys: [] }}
@@ -301,12 +366,16 @@ describe("S3GalleryPage", () => {
     );
 
     await screen.findByText("images/photo.webp");
-    const img = screen.getByRole("img", { name: "images/photo.webp" });
-    expect(img).toHaveAttribute("src", "https://cdn.example.com/images/photo.webp");
+    const img = await screen.findByRole("img", { name: "images/photo.webp" });
+    expect(img).toHaveAttribute("src", "data:image/png;base64,LOCAL");
+    expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ profile, key: "images/photo.webp" }));
+    expect(mockOpenUrl).not.toHaveBeenCalled();
+    await userEvent.setup().click(img);
+    expect(mockOpenUrl).toHaveBeenCalledWith("https://cdn.example.com/images/photo.webp");
     expect(img).toHaveAttribute("alt", "images/photo.webp");
   });
 
-  it("falls back to placeholder text when publicUrl is missing", async () => {
+  it("renders local thumbnails even without a public URL", async () => {
     listObjects.mockResolvedValue({
       objects: [
         {
@@ -326,8 +395,7 @@ describe("S3GalleryPage", () => {
     );
 
     await screen.findByText("images/no-url.webp");
-    expect(screen.queryByRole("img", { name: "images/no-url.webp" })).not.toBeInTheDocument();
-    expect(screen.getByText("Image")).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "images/no-url.webp" })).toHaveAttribute("src", "data:image/png;base64,LOCAL");
   });
 
   it("renders loading state while fetching objects", async () => {

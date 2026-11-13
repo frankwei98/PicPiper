@@ -4,13 +4,14 @@ import App from "./App";
 
 vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeClipboard: vi.fn(), onFileDrop: vi.fn(() => vi.fn()), onImagesOpened: vi.fn(() => vi.fn()) }));
 vi.mock("./api/backend", () => ({
-  settingsApi: { loadSettings: vi.fn(async () => ({ profiles: [], namingTemplate: "{slug}.{ext}" })) },
+  settingsApi: { loadSettings: vi.fn(async () => ({ profiles: [], onboardingCompleted: true, namingTemplate: "{slug}.{ext}" })) },
   imageApi: {}, galleryApi: {}, uploadApi: {}, namingApi: {},
 }));
 
 describe("App", () => {
-  it("renders the image workbench identity and app views", () => {
+  it("renders the image workbench identity and app views", async () => {
     render(<App />);
+    await screen.findByRole("tablist", { name: "Views" });
 
     expect(screen.getByText("Pic Piper")).toBeInTheDocument();
     expect(screen.getByRole("tablist", { name: "Views" })).toBeInTheDocument();
@@ -20,8 +21,9 @@ describe("App", () => {
     expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "app-tab-optimize");
   });
 
-  it("switches views with tab keyboard navigation", () => {
+  it("switches views with tab keyboard navigation", async () => {
     render(<App />);
+    await screen.findByRole("tablist", { name: "Views" });
 
     const compressTab = screen.getByRole("tab", { name: /Compress/ });
     fireEvent.keyDown(compressTab, { key: "ArrowRight" });

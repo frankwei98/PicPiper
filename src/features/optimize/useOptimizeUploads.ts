@@ -21,6 +21,7 @@ interface UseOptimizeUploadsOptions {
 }
 
 interface UploadBatchResult {
+  recordWarning: boolean;
   newlyUploaded: string[];
   newlyUploadedItemIds: string[];
   failed: Map<string, UploadFailure>;
@@ -107,6 +108,7 @@ export function useOptimizeUploads({
     const newlyUploaded: string[] = [];
     const newlyUploadedItemIds: string[] = [];
     const failed = new Map<string, UploadFailure>();
+    let recordWarning = false;
 
     try {
       for (const item of uploadItems) {
@@ -142,6 +144,7 @@ export function useOptimizeUploads({
             targetFormat: extension,
           });
 
+          recordWarning ||= Boolean(result.uploadRecordWarning);
           newlyUploaded.push(result.key);
           newlyUploadedItemIds.push(item.id);
           collisionRetryAttempts.current.delete(item.id);
@@ -160,7 +163,7 @@ export function useOptimizeUploads({
       uploadInProgressRef.current = false;
     }
 
-    return { newlyUploaded, newlyUploadedItemIds, failed };
+    return { newlyUploaded, newlyUploadedItemIds, failed, recordWarning };
   };
 
   const uploadToS3 = async () => {
@@ -186,7 +189,7 @@ export function useOptimizeUploads({
       return;
     }
 
-    const { newlyUploaded, newlyUploadedItemIds, failed } = await executeUploads(
+    const { newlyUploaded, newlyUploadedItemIds, failed, recordWarning } = await executeUploads(
       compressedItems,
       activeProfile,
       prefix,
@@ -219,6 +222,7 @@ export function useOptimizeUploads({
         t("{{count}} of {{total}} upload(s) failed. Fix and retry.", { count: failed.size, total: compressedItems.length }),
       );
     }
+    if (recordWarning) setUploadError((current) => [current, t("Could not save the local upload record. The image was uploaded, but may not appear in the gallery.")].filter(Boolean).join(" "));
   };
 
   const retryUploads = async () => {
@@ -244,7 +248,7 @@ export function useOptimizeUploads({
         .filter((item) => currentFailures.get(item.id)?.code === "objectAlreadyExists")
         .map((item) => item.id),
     );
-    const { newlyUploaded, newlyUploadedItemIds, failed: stillFailed } = await executeUploads(
+    const { newlyUploaded, newlyUploadedItemIds, failed: stillFailed, recordWarning } = await executeUploads(
       failedItems,
       activeProfile,
       prefix,
@@ -267,6 +271,7 @@ export function useOptimizeUploads({
         t("{{count}} of {{total}} upload(s) failed. Fix and retry.", { count: stillFailed.size, total: failedItems.length }),
       );
     }
+    if (recordWarning) setUploadError((current) => [current, t("Could not save the local upload record. The image was uploaded, but may not appear in the gallery.")].filter(Boolean).join(" "));
   };
 
   const newUploadItemCount = items.filter(

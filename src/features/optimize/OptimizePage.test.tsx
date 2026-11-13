@@ -138,6 +138,19 @@ describe("OptimizePage", () => {
     });
   });
 
+  it("covers pending inspection with thumbnail and stage skeletons, then clears them on failure", async () => {
+    let fail!: (error: Error) => void;
+    inspectImage.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await userEvent.setup().click(screen.getByRole("button", { name: /choose images/i }));
+    expect(within(screen.getByLabelText("Image preview")).getByRole("status", { name: "Preparing your image" })).toHaveAttribute("data-slot", "skeleton");
+    expect(document.querySelector('.item-thumb [data-slot="skeleton"]')).toBeInTheDocument();
+    await act(async () => { fail(new Error("Unreadable image")); });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unreadable image");
+    expect(document.querySelector('.stage-canvas [data-slot="skeleton"]')).not.toBeInTheDocument();
+    expect(document.querySelector('.item-thumb [data-slot="skeleton"]')).not.toBeInTheDocument();
+  });
+
   it("reports larger outputs with a useful next step", async () => {
     compressImage.mockResolvedValueOnce({ sourcePath: "/tmp/real-photo.jpg", outputPath: "/tmp/cache/photo.jpg",
       outputFileName: "photo.jpg", originalBytes: 1_200_000, outputBytes: 1_800_000, targetFormat: "jpg" });
@@ -910,6 +923,21 @@ describe("OptimizePage", () => {
     expect(screen.queryByText("real-photo.jpg")).not.toBeInTheDocument();
   });
 
+  it("uploads to the bucket selected in compression actions", async () => {
+    const first = { id: "p1", name: "First", bucket: "first", endpoint: "https://s3.example.com", region: "auto", accessKeyId: "fake", pathStyle: true, defaultPrefix: "images" };
+    const second = { ...first, id: "p2", name: "Second", bucket: "second" };
+    const user = userEvent.setup();
+    render(<OptimizePage activeProfile={first} profiles={[first, second]} namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
+    await user.click(screen.getByRole("button", { name: "Upload to S3" }));
+    await waitFor(() => expect(uploadObject).toHaveBeenCalledWith(expect.objectContaining({ profile: first })));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Upload destination" }), "p2");
+    await user.click(screen.getByRole("button", { name: "Upload to S3" }));
+    await waitFor(() => expect(uploadObject).toHaveBeenCalledWith(expect.objectContaining({ profile: second })));
+    expect(screen.getByRole("combobox", { name: "Upload destination" })).toHaveValue("p2");
+  });
+
   it("Upload to S3 calls generateObjectKey and uploadObject with correct params", async () => {
     const profile = {
       id: "p1",
@@ -999,6 +1027,7 @@ describe("OptimizePage", () => {
     await user.click(screen.getByRole("button", { name: "Upload to S3" }));
     await screen.findByText(/uploading 1 image/i);
 
+    expect(screen.getByRole("combobox", { name: "Upload destination" })).toBeDisabled();
     expect(screen.getByRole("slider", { name: /quality/i })).toBeDisabled();
     expect(screen.getByTestId("image-drop-zone")).toBeDisabled();
     expect(screen.getByLabelText(/format for real-photo\.jpg/i)).toBeDisabled();

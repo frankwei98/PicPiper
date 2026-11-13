@@ -1213,3 +1213,52 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* First-run setup shares the workbench's palette and native title-bar inset. */
+.onboarding-shell { height: 100dvh; overflow: auto; padding: 52px 40px 32px; background: var(--stage-2); }
+.onboarding-brand { display: flex; align-items: center; gap: 10px; font-weight: 650; margin-bottom: 30px; }
+.onboarding-sheet { max-width: 720px; margin: 0 auto; padding: 32px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+.onboarding-eyebrow { color: var(--primary); font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+.onboarding-steps { display: flex; gap: 24px; list-style: none; padding: 0; color: var(--muted-foreground); font-size: 12px; margin-bottom: 20px; }
+.onboarding-steps [aria-current] { color: var(--foreground); font-weight: 600; }
+.onboarding-sheet h1 { font-size: 28px; line-height: 1.2; font-weight: 650; letter-spacing: -.6px; }
+.onboarding-note { color: var(--muted-foreground); margin-top: 12px; line-height: 1.6; }
+.onboarding-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 28px 0; }
+.onboarding-card { position: relative; display: flex; flex-direction: column; gap: 16px; padding: 24px; border: 1px solid var(--line-strong); border-radius: 12px; cursor: pointer; }
+.onboarding-card[data-selected="true"] { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 4%, var(--surface)); }
+.onboarding-card:focus-within { outline: 2px solid var(--ring); outline-offset: 3px; }
+.onboarding-card input { position: absolute; top: 20px; right: 20px; width: 18px; height: 18px; accent-color: var(--primary); }
+.onboarding-card svg { color: var(--primary); }
+.onboarding-card strong { font-size: 17px; }
+.onboarding-card span { font-size: 13px; color: var(--muted-foreground); line-height: 1.6; }
+.onboarding-provider-note { border-radius: 8px; background: var(--surface-2); padding: 16px; font-size: 13px; line-height: 1.6; }
+.onboarding-provider-note h2 { font-weight: 600; margin-bottom: 4px; }
+.onboarding-provider-note p { color: var(--muted-foreground); }
+.onboarding-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+@media (max-width: 600px) { .onboarding-shell { padding: 40px 16px 24px; } .onboarding-sheet { padding: 24px; } .onboarding-cards { grid-template-columns: 1fr; } }
+.r2-connect { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; width: 100%; }
+.r2-connect h3 { font-weight: 600; }
+.r2-connect p { color: var(--muted-foreground); font-size: 13px; line-height: 1.6; }
+.r2-connect .field-grid { width: 100%; }
+.r2-buckets { display: grid; gap: 10px; width: 100%; max-height: 220px; overflow: auto; border: 1px solid var(--line); padding: 16px; border-radius: 8px; }
+.r2-buckets label { display: flex; align-items: center; gap: 10px; font-size: 13px; overflow-wrap: anywhere; }
+.r2-buckets input { accent-color: var(--primary); }
+
+.r2-bucket { display: grid; gap: 10px; }
+.r2-bucket .field { padding-left: 24px; }
+
+.proof-thumbnail { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; }
+.proof-thumbnail:disabled { cursor: default; }
+.proof-thumbnail:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* Image slots keep their geometry through bridge reads and browser decoding. */
+.image-skeleton { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
+.image-load-error { display: grid; position: absolute; inset: 0; place-items: center; padding: 12px; color: var(--muted-foreground); text-align: center; font-size: 11px; }
+.item-thumb, .proof-thumbnail, .compare-pane { position: relative; }
+[data-lazy-render="placeholder"]:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.scope-bar { grid-template-columns: minmax(140px, 1fr) minmax(160px, 1.2fr) minmax(160px, 1.2fr) minmax(190px, 1fr); }
+@media (max-width: 1100px) { .scope-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .scope-bar { grid-template-columns: minmax(0, 1fr); } }
+
+.proof-name { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; }

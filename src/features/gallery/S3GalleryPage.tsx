@@ -1,3 +1,7 @@
+import { sortGalleryObjects, type GallerySort } from "./gallerySort";
+import { LazyRender } from "@/components/LazyRender";
+import { GalleryCardSkeleton } from "./GalleryCardSkeleton";
+import { GalleryThumbnail } from "./GalleryThumbnail";
 import { t, useLocale } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, openUrl, writeClipboard } from "@/platform/desktop";
@@ -19,7 +23,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { fileNameFromPath } from "../../lib/path";
 import { errorMessage } from "../../lib/error";
@@ -77,6 +80,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const loadGenerationRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [paginationError, setPaginationError] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<GallerySort>("time-desc");
   const [search, setSearch] = useState("");
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const namingTemplate = namingTemplateProp ?? "{yyyy}/{mm}/{slug}-{hash}.{ext}";
@@ -86,7 +90,6 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [localHighlights, setLocalHighlights] = useState<ScopedHighlights | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
-  const [imgErrors, setImgErrors] = useState<Set<string>>(new Set());
   const [uploading, setUploading] = useState(false);
   const statusTimersRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentScopeRef = useRef<{ profileId: string; prefix: string } | null>(null);
@@ -181,16 +184,16 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       const request = {
         profile: selectedProfile,
         prefix: requestedPrefix,
+        ...(sortOrder === "time-desc" ? {} : { sort: sortOrder }),
         ...(continuationToken ? { continuationToken } : {}),
       };
       const page: ListGalleryObjectsResponse = await galleryApi.listObjects(request);
       if (generation !== loadGenerationRef.current) return;
-      setObjects((current) => (append ? [...current, ...page.objects] : page.objects));
+      setObjects((current) => append ? sortGalleryObjects([...new Map([...current, ...page.objects].map((object) => [object.key, object])).values()], sortOrder) : page.objects);
       setNextContinuationToken(page.nextContinuationToken ?? null);
       if (!append) {
         setLoadedScope({ profileId: selectedProfile.id, prefix: requestedPrefix });
       }
-      if (!append) setImgErrors(new Set());
     } catch (err) {
       if (generation !== loadGenerationRef.current) return;
       const message = errorMessage(err, t("Failed to load objects."));
@@ -205,7 +208,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         setLoadingMore(false);
       }
     }
-  }, [resetGalleryScope, selectedProfile, debouncedPrefix]);
+  }, [resetGalleryScope, selectedProfile, debouncedPrefix, sortOrder]);
 
   useEffect(() => {
     void loadObjects();
@@ -250,6 +253,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       const newKeys: string[] = [];
       const newObjects: GalleryObject[] = [];
       const failures: string[] = [];
+      let recordWarning = false;
 
       for (const filePath of paths) {
         const fileName = fileNameFromPath(filePath);
@@ -270,8 +274,10 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
             sourcePath: filePath,
             objectKey,
             contentType: contentTypeForExtension(ext),
+            outputFilename: fileName,
           });
 
+          recordWarning ||= Boolean(result.uploadRecordWarning);
           newKeys.push(objectKey);
           newObjects.push(result);
         } catch (err) {
@@ -283,17 +289,18 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       if (newKeys.length > 0 && isCurrentScope(uploadScope)) {
         setLocalHighlights({ ...uploadScope, keys: newKeys });
         const newKeySet = new Set(newKeys);
-        setObjects((current) => [
+        setObjects((current) => sortGalleryObjects([
           ...newObjects,
           ...current.filter((object) => !newKeySet.has(object.key)),
-        ]);
+        ], sortOrder));
       }
-      setUploadHasError(failures.length > 0);
+      setUploadHasError(failures.length > 0 || recordWarning);
       setUploadStatus(
         failures.length > 0
           ? t("Uploaded {{value0}} image(s); {{value1}} failed. {{value2}}", { value0: newKeys.length, value1: failures.length, value2: failures.join("; ") })
           : t("Uploaded {{value0}} image(s).", { value0: newKeys.length }),
       );
+      if (recordWarning) setUploadStatus((current) => `${current ?? ""} ${t("Could not save the local upload record. The image was uploaded, but may not appear in the gallery.")}`);
     } catch (err) {
       setUploadHasError(true);
       setUploadStatus(errorMessage(err, t("Upload failed")));
@@ -492,11 +499,24 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
+        <label className="scope-field">
+          <span>{t("Sort by")}</span>
+          <NativeSelect aria-label={t("Sort by")} disabled={uploading} value={sortOrder} onChange={(event) => {
+            setSortOrder(event.target.value as GallerySort);
+            resetGalleryScope();
+          }}>
+            <NativeSelectOption value="time-desc">{t("Upload time: newest first")}</NativeSelectOption>
+            <NativeSelectOption value="time-asc">{t("Upload time: oldest first")}</NativeSelectOption>
+            <NativeSelectOption value="name-asc">{t("File name: A–Z")}</NativeSelectOption>
+            <NativeSelectOption value="name-desc">{t("File name: Z–A")}</NativeSelectOption>
+          </NativeSelect>
+        </label>
       </section>
+      <p className="gallery-status">{t("Only images uploaded by Pic Piper on this device are shown.")}</p>
       {selectedProfile && !selectedProfile.publicBaseUrl && (
         <Alert>
           <AlertDescription className="flex items-center justify-between gap-3 max-sm:items-start max-sm:flex-col">
-            <span>{t("Public URLs are unavailable for this profile. Add a Public Base URL in Settings to preview, view, or copy object URLs.")}</span>
+            <span>{t("Public URLs are unavailable for this profile. Add a Public Base URL in Settings to view or copy object URLs.")}</span>
             {onNavigate && (
               <Button type="button" variant="outline" size="sm" onClick={() => onNavigate("settings")}>
                 {t("Open Settings")}
@@ -518,11 +538,10 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         </div>
       )}
       {(!scopeReady || loading) && !error && (
-        <section className="contact-sheet" aria-label={t("Loading")}>
+        <section className="contact-sheet" role="status" aria-label={t("Loading")} aria-busy="true">
           {Array.from({ length: 6 }, (_, i) => (
             <div className="proof" key={i}>
-              <Skeleton className="aspect-[4/3] w-full" aria-hidden="true" />
-              <Skeleton className="h-3 w-3/4" aria-hidden="true" />
+              <GalleryCardSkeleton />
             </div>
           ))}
         </section>
@@ -570,23 +589,17 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           {filteredObjects.map((obj, index) => {
             const publicUrlReasonId = `public-url-unavailable-${index}`;
             return (
-            <li
-              key={obj.key}
+            <LazyRender as="li" key={obj.key} label={obj.key} position={index + 1} total={filteredObjects.length}
               className={cn("proof", highlightedKeys.has(obj.key) && "new")}
-            >
+              placeholder={<GalleryCardSkeleton privateObject={!obj.publicUrl} />}
+            >{() => <>
               <div className="proof-image">
-                {obj.isImage && obj.publicUrl && !imgErrors.has(obj.key) ? (
-                  <img
-                    src={obj.publicUrl}
-                    alt={obj.key}
-                    loading="lazy"
-                    onError={() => setImgErrors((prev) => new Set(prev).add(obj.key))}
-                  />
-                ) : (
-                  <span>{!obj.isImage ? t("File") : t("Image")}</span>
-                )}
+                {obj.isImage && selectedProfile ? (
+                  <GalleryThumbnail profile={selectedProfile} object={obj} onView={() => void handleView(obj)} />
+                ) : <span>{t("File")}</span>}
                 {highlightedKeys.has(obj.key) && <span className="proof-flag">{t("New")}</span>}
               </div>
+              {obj.fileName && obj.fileName !== obj.key && <p className="proof-name" title={obj.fileName}>{obj.fileName}</p>}
               <p className="proof-key" title={obj.key}>{obj.key}</p>
               <div className="proof-actions">
                 <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleCopyUrl(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
@@ -607,11 +620,14 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
                   {t("Public URL unavailable. Configure a Public Base URL in Settings.")}
                 </p>
               )}
-            </li>
+            </>}</LazyRender>
             );
           })}
         </ul>
       )}
+      {loadingMore && <section className="contact-sheet" role="status" aria-label={t("Loading more...")} aria-busy="true">
+        {Array.from({ length: 3 }, (_, index) => <div className="proof" key={index}><GalleryCardSkeleton /></div>)}
+      </section>}
       {scopeReady && nextContinuationToken && !error && (
         <div className="gallery-more">
           {paginationError && (

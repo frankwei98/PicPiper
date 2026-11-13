@@ -1,3 +1,5 @@
+import { ImageWithSkeleton } from "@/components/ImageWithSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 import { t, useLocale } from "@/i18n";
 import { Check, LoaderCircle, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,7 +36,7 @@ export function OptimizeItemCard({ item, selected, onSelect, mutationLocked, upl
           aria-label={item.status === "compressed" ? t("Compare {{value0}}", { value0: item.fileName }) : t("Preview {{value0}}", { value0: item.fileName })}
           onClick={() => item.status === "compressed" ? onCompare(item.id) : onSelect?.(item.id)}
         >
-          {preview ? <img src={preview} alt="" loading="lazy" /> : <span>{item.sourceFormat === "unknown" ? "…" : item.sourceFormat.toUpperCase()}</span>}
+          {preview ? <ImageWithSkeleton src={preview} alt="" loading="lazy" /> : busy ? <Skeleton className="image-skeleton" role="status" aria-label={t("Updating preview…")} /> : <span>{item.sourceFormat === "unknown" ? "…" : item.sourceFormat.toUpperCase()}</span>}
         </Button>
         <Button type="button" variant="ghost" className="item-name" aria-label={t("Select {{value0}}", { value0: item.fileName })} aria-pressed={Boolean(selected)} onClick={() => onSelect?.(item.id)}>
           <strong title={item.fileName}>{item.fileName}</strong>

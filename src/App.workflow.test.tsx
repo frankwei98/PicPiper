@@ -51,6 +51,7 @@ describe("application workflow", () => {
   it.each(["Settings", "S3 Gallery"])("keeps Open With subscribed while viewing %s", async (tab) => {
     const user = userEvent.setup();
     const view = render(<App />);
+    await screen.findByRole("tablist", { name: "Views" });
     await user.click(screen.getByRole("tab", { name: tab }));
     expect(mocks.openedListeners.size).toBe(1);
     await act(async () => {
@@ -66,6 +67,7 @@ describe("application workflow", () => {
   it("retains compression results and settings drafts when switching tabs", async () => {
     const user = userEvent.setup();
     render(<App />);
+    await screen.findByRole("tablist", { name: "Views" });
     await user.click(screen.getByTestId("image-drop-zone"));
     await screen.findByRole("button", { name: "Save to local folder" });
     await user.click(screen.getByRole("tab", { name: "Settings" }));
@@ -85,6 +87,7 @@ describe("application workflow", () => {
     let complete!: (value: unknown) => void;
     mocks.upload.mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
     render(<App />);
+    await screen.findByRole("tablist", { name: "Views" });
     await user.click(screen.getByTestId("image-drop-zone"));
     await user.click(await screen.findByRole("button", { name: "Upload to S3" }));
     await waitFor(() => expect(mocks.upload).toHaveBeenCalled());
