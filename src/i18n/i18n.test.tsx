@@ -45,6 +45,7 @@ describe("language preferences", () => {
   it("switches the settings UI immediately without saving a storage profile", async () => {
     setLanguage("en");
     render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => { throw new Error("Language must not save profiles"); }} />);
+    await userEvent.click(screen.getByRole("tab", { name: "General" }));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Language" }), "fr");
     expect(getLocale()).toBe("fr");
     expect(screen.getByRole("combobox", { name: t("Language") })).toHaveValue("fr");
@@ -69,8 +70,9 @@ describe("language preferences", () => {
   it.each(languages)("updates navigation and settings in $id", async ({ id }) => {
     setLanguage("en");
     render(<Layout activeView="settings" onViewChange={() => {}}><SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} /></Layout>);
+    await userEvent.click(screen.getByRole("tab", { name: "General" }));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Language" }), id);
-    expect(screen.getByRole("tab", { name: t("Settings") })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: t("Settings") })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("heading", { name: t("Settings") })).toBeVisible();
     expect(screen.getByRole("combobox", { name: t("Language") })).toHaveValue(id);
     if (id !== "en") expect(t("Settings")).not.toBe("Settings");

@@ -24,7 +24,7 @@ it("does not let a previous upload's gallery focus override a newly selected def
   const user = userEvent.setup();
   render(<App />);
   await user.click(await screen.findByRole("button", { name: "Target a" }));
-  await user.click(screen.getByRole("tab", { name: "Settings" }));
+  await user.click(screen.getByRole("button", { name: "Settings" }));
   await user.click(screen.getByRole("button", { name: "Use B as default" }));
   await user.click(screen.getByRole("tab", { name: "Compress" }));
   expect(screen.getByRole("button", { name: "Target b" })).toBeVisible();

@@ -41,7 +41,6 @@ export function OnboardingWizard({ settings, onComplete }: Props) {
     <main className="onboarding-shell">
       <div className="onboarding-brand"><span className="brand-mark" aria-hidden="true" />Pic Piper</div>
       <section className="onboarding-sheet" aria-labelledby="onboarding-title" aria-busy={saving}>
-        <p className="onboarding-eyebrow">{t("Welcome to Pic Piper")}</p>
         <ol className="onboarding-steps" aria-label={t("Welcome to Pic Piper")}>
           <li aria-current={step === "features" ? "step" : undefined}>1 · {t("Features")}</li>
           {features.s3 && <li aria-current={step === "provider" ? "step" : undefined}>2 · {t("Storage provider")}</li>}

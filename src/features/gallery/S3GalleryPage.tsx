@@ -1,4 +1,6 @@
 import { sortGalleryObjects, type GallerySort } from "./gallerySort";
+import { EMPTY_GALLERY_FILTERS, filterGalleryObjects, type GalleryFilters } from "./galleryFilters";
+import { Folder, LayoutGrid, List, Pencil, Search, SlidersHorizontal, X } from "lucide-react";
 import { LazyRender } from "@/components/LazyRender";
 import { GalleryCardSkeleton } from "./GalleryCardSkeleton";
 import { GalleryThumbnail } from "./GalleryThumbnail";
@@ -82,6 +84,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [paginationError, setPaginationError] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<GallerySort>("time-desc");
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<GalleryFilters>(EMPTY_GALLERY_FILTERS);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const prefixInputRef = useRef<HTMLInputElement>(null);
+  const activeFilterCount = Object.values(filters).filter((value) => value !== "all").length;
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const namingTemplate = namingTemplateProp ?? "{yyyy}/{mm}/{slug}-{hash}.{ext}";
   const [uploadHasError, setUploadHasError] = useState(false);
@@ -339,11 +346,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   ]);
 
   const filteredObjects = useMemo(() => {
-    if (!search.trim()) return objects;
-    const q = search.toLowerCase();
-    return objects.filter((obj) => obj.key.toLowerCase().includes(q));
-  }, [objects, search]);
-  const searchIsActive = Boolean(search.trim());
+    return filterGalleryObjects(objects, search, filters);
+  }, [objects, search, filters]);
+  const searchIsActive = Boolean(search.trim()) || activeFilterCount > 0;
 
   const handleCopyUrl = async (obj: GalleryObject) => {
     if (!obj.publicUrl) return;
@@ -429,7 +434,6 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         <header className="page-head">
           <div>
             <h2 className="page-title">{t("S3 Gallery")}</h2>
-            <p className="page-note">{t("Browse a profile and prefix, then copy URLs or manage images.")}</p>
           </div>
         </header>
         <div className="gallery-empty">
@@ -450,13 +454,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       <header className="page-head">
         <div>
           <h2 className="page-title">{t("S3 Gallery")}</h2>
-          <p className="page-note">{t("Browse a profile and prefix, then copy URLs or manage images.")}</p>
         </div>
         <Button type="button" onClick={handleUploadLocal} disabled={uploading}>{uploading ? t("Uploading...") : t("Upload local images")}</Button>
       </header>
-      <section className="scope-bar" aria-label={t("Gallery scope")}>
-        <label className="scope-field">
-          <span>{t("Profile")}</span>
+      <section className="gallery-scope" aria-label={t("Gallery scope")}>
+        <div className="gallery-profile">
           <NativeSelect
             aria-label={t("Profile")}
             value={selectedProfile?.id ?? ""}
@@ -477,10 +479,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
               </NativeSelectOption>
             ))}
           </NativeSelect>
-        </label>
-        <label className="scope-field">
-          <span>{t("Prefix")}</span>
+        </div>
+        <div className="gallery-prefix">
+          <Folder className="size-4" aria-hidden="true" />
           <Input
+            ref={prefixInputRef}
             aria-label={t("Prefix")}
             placeholder="images/2026/06"
             value={prefix}
@@ -489,18 +492,22 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
               setPrefix(e.target.value);
             }}
           />
-        </label>
-        <label className="scope-field">
-          <span>{t("Search")}</span>
+          <Button type="button" variant="ghost" size="icon-sm" aria-label={t("Edit prefix")} onClick={() => prefixInputRef.current?.focus()}><Pencil className="size-3.5" aria-hidden="true" /></Button>
+        </div>
+        <p className="gallery-scope-note">{t("Only uploads from this device")}</p>
+      </section>
+      <section className="gallery-toolbar" aria-label={t("Search")}>
+        <label className="gallery-search">
+          <Search className="size-4" aria-hidden="true" />
           <Input
             aria-label={t("Search current prefix")}
-            placeholder={t("Search current prefix")}
+            placeholder={t("Search loaded images")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        <label className="scope-field">
-          <span>{t("Sort by")}</span>
+        <Button type="button" variant="outline" aria-expanded={filtersOpen} aria-controls="gallery-filters" onClick={() => setFiltersOpen((open) => !open)}><SlidersHorizontal className="size-4" aria-hidden="true" />{t("Filters")}{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ""}</Button>
+        <div className="gallery-sort">
           <NativeSelect aria-label={t("Sort by")} disabled={uploading} value={sortOrder} onChange={(event) => {
             setSortOrder(event.target.value as GallerySort);
             resetGalleryScope();
@@ -510,9 +517,30 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
             <NativeSelectOption value="name-asc">{t("File name: A–Z")}</NativeSelectOption>
             <NativeSelectOption value="name-desc">{t("File name: Z–A")}</NativeSelectOption>
           </NativeSelect>
-        </label>
+        </div>
+        <Button type="button" variant="outline" size="icon" aria-label={t(view === "grid" ? "List view" : "Grid view")} onClick={() => setView((current) => current === "grid" ? "list" : "grid")}>
+          {view === "grid" ? <List className="size-4" aria-hidden="true" /> : <LayoutGrid className="size-4" aria-hidden="true" />}
+        </Button>
       </section>
-      <p className="gallery-status">{t("Only images uploaded by Pic Piper on this device are shown.")}</p>
+      <section id="gallery-filters" className="gallery-filters" aria-label={t("Filters")} hidden={!filtersOpen}>
+        <label className="field"><span>{t("Format")}</span><NativeSelect aria-label={t("Format")} value={filters.format} onChange={(event) => setFilters((current) => ({ ...current, format: event.target.value }))}>
+          <NativeSelectOption value="all">{t("Any format")}</NativeSelectOption>
+          {["jpg", "png", "webp", "avif", "jxl", "heif"].map((format) => <NativeSelectOption key={format} value={format}>{format === "jxl" ? "JPEG XL" : format.toUpperCase()}</NativeSelectOption>)}
+        </NativeSelect></label>
+        <label className="field"><span>{t("Upload date")}</span><NativeSelect aria-label={t("Upload date")} value={filters.time} onChange={(event) => setFilters((current) => ({ ...current, time: event.target.value as GalleryFilters["time"] }))}>
+          <NativeSelectOption value="all">{t("Any time")}</NativeSelectOption><NativeSelectOption value="today">{t("Today")}</NativeSelectOption><NativeSelectOption value="week">{t("Last 7 days")}</NativeSelectOption>
+        </NativeSelect></label>
+        <label className="field"><span>{t("File size")}</span><NativeSelect aria-label={t("File size")} value={filters.size} onChange={(event) => setFilters((current) => ({ ...current, size: event.target.value as GalleryFilters["size"] }))}>
+          <NativeSelectOption value="all">{t("Any size")}</NativeSelectOption><NativeSelectOption value="small">{t("Under 500 KB")}</NativeSelectOption><NativeSelectOption value="large">{t("500 KB and above")}</NativeSelectOption>
+        </NativeSelect></label>
+        <Button type="button" variant="ghost" onClick={() => setFilters(EMPTY_GALLERY_FILTERS)}>{t("Reset filters")}</Button>
+      </section>
+      {activeFilterCount > 0 && <div className="gallery-filter-chips">
+        {(Object.keys(filters) as Array<keyof GalleryFilters>).filter((key) => filters[key] !== "all").map((key) => <Button key={key} type="button" variant="secondary" size="xs" onClick={() => setFilters((current) => ({ ...current, [key]: "all" }))}>
+          {key === "format" ? filters.format.toUpperCase() : key === "time" ? t(filters.time === "today" ? "Today" : "Last 7 days") : t(filters.size === "small" ? "Under 500 KB" : "500 KB and above")}<X className="size-3" aria-hidden="true" />
+        </Button>)}
+      </div>}
+      {scopeReady && !loading && <p className="gallery-status" role="status">{t("{{shown}} of {{total}} images", { shown: filteredObjects.length, total: objects.length })}</p>}
       {selectedProfile && !selectedProfile.publicBaseUrl && (
         <Alert>
           <AlertDescription className="flex items-center justify-between gap-3 max-sm:items-start max-sm:flex-col">
@@ -569,7 +597,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       )}
       {scopeReady && !loading && !error && filteredObjects.length === 0 && (
         <div className="gallery-empty">
-          <strong>{searchIsActive ? t("No loaded objects match this search.") : t("No objects found.")}</strong>
+          <strong>{searchIsActive ? activeFilterCount > 0 ? t("No loaded images match these filters.") : t("No loaded objects match this search.") : t("No objects found.")}</strong>
           <p>
             {searchIsActive
               ? nextContinuationToken
@@ -577,6 +605,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
                 : t("Search only covers loaded objects in this prefix.")
               : t("Upload images or adjust the current prefix.")}
           </p>
+          {activeFilterCount > 0 && <Button type="button" variant="outline" onClick={() => { setFilters(EMPTY_GALLERY_FILTERS); setSearch(""); }}>{t("Clear filters")}</Button>}
           {!searchIsActive && (
             <Button type="button" onClick={handleUploadLocal}>
               {t("Upload local images")}
@@ -585,7 +614,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         </div>
       )}
       {scopeReady && !loading && !error && filteredObjects.length > 0 && (
-        <ul className="contact-sheet">
+        <ul className={cn("contact-sheet", view === "list" && "gallery-list")}>
           {filteredObjects.map((obj, index) => {
             const publicUrlReasonId = `public-url-unavailable-${index}`;
             return (

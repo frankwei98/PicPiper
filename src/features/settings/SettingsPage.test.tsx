@@ -21,6 +21,10 @@ vi.mock("../../api/backend", async () => ({
 
 import { SettingsPage } from "./SettingsPage";
 
+async function goToSection(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(screen.getByRole("tab", { name }));
+}
+
 describe("SettingsPage", () => {
   beforeEach(() => {
     saveSettings.mockReset();
@@ -43,6 +47,34 @@ describe("SettingsPage", () => {
     );
 
     expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
+  });
+
+  it("keeps drafts while moving between settings categories", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+
+    await user.clear(screen.getByLabelText("Profile name"));
+    await user.type(screen.getByLabelText("Profile name"), "Draft profile");
+    await goToSection(user, "General");
+    await goToSection(user, "Upload and naming");
+    await user.type(screen.getByLabelText("Default prefix"), "draft/images");
+    await goToSection(user, "S3 profiles");
+
+    expect(screen.getByLabelText("Profile name")).toHaveValue("Draft profile");
+    await goToSection(user, "Upload and naming");
+    expect(screen.getByLabelText("Default prefix")).toHaveValue("draft/images");
+  });
+
+  it("opens account authorization from the S3 hero and hides S3 fields", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+
+    await user.click(screen.getByRole("button", { name: "Add with an account" }));
+
+    expect(screen.getByRole("tab", { name: "Account authorization" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: "Account authorization" })).toBeVisible();
+    expect(screen.queryByRole("textbox", { name: "Profile name" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Endpoint" })).not.toBeInTheDocument();
   });
 
   it("does not render preset management", () => {
@@ -74,6 +106,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.clear(screen.getByLabelText("Profile name"));
     await user.type(screen.getByLabelText("Profile name"), "Personal R2");
     await user.type(screen.getByLabelText("Endpoint"), "https://example.r2.cloudflarestorage.com");
@@ -107,6 +140,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.clear(screen.getByLabelText("Profile name"));
     await user.type(screen.getByLabelText("Profile name"), "Personal R2");
     await user.type(screen.getByLabelText("Endpoint"), "https://example.r2.cloudflarestorage.com");
@@ -115,6 +149,7 @@ describe("SettingsPage", () => {
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "access-key");
     await user.type(screen.getByLabelText("Secret access key"), "secret-key");
+    await goToSection(user, "Upload and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "https://cdn.example.com");
     await user.type(screen.getByLabelText("Default prefix"), "images/2026/06");
 
@@ -182,9 +217,11 @@ describe("SettingsPage", () => {
 
     render(<SettingsPage settings={settings} onSettingsChange={onSettingsChange} />);
 
+    await goToSection(user, "S3 profiles");
+    await user.type(screen.getByLabelText("Secret access key"), "replacement-secret");
+    await goToSection(user, "Upload and naming");
     await user.clear(screen.getByLabelText("Default prefix"));
     await user.type(screen.getByLabelText("Default prefix"), "images/2026/06");
-    await user.type(screen.getByLabelText("Secret access key"), "replacement-secret");
 
     await user.click(screen.getByRole("button", { name: /save profile/i }));
 
@@ -216,11 +253,13 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.type(screen.getByLabelText("Profile name"), "Local MinIO");
     await user.type(screen.getByLabelText("Endpoint"), "http://localhost:9000");
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "local-key");
     await user.type(screen.getByLabelText("Secret access key"), "local-secret");
+    await goToSection(user, "Upload and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "http://localhost:9000/images");
 
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -348,7 +387,7 @@ describe("SettingsPage", () => {
     await user.clear(screen.getByLabelText("Profile name"));
     await user.click(screen.getByRole("button", { name: /save profile/i }));
 
-    expect(screen.getByRole("textbox", { name: /profile name/i })).toHaveFocus();
+    await waitFor(() => expect(screen.getByRole("textbox", { name: /profile name/i })).toHaveFocus());
     expect(screen.getByText("Profile name is required.")).toBeInTheDocument();
     expect(screen.getByText("Endpoint is required.")).toBeInTheDocument();
     expect(saveSettings).not.toHaveBeenCalled();
@@ -486,6 +525,7 @@ describe("SettingsPage", () => {
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "key");
     await user.type(screen.getByLabelText("Secret access key"), "secret");
+    await goToSection(user, "Upload and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "https://cdn.example.com?v=1");
 
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -513,6 +553,7 @@ describe("SettingsPage", () => {
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "key");
     await user.type(screen.getByLabelText("Secret access key"), "secret");
+    await goToSection(user, "Upload and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "https://cdn.example.com#section");
 
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -540,6 +581,7 @@ describe("SettingsPage", () => {
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "key");
     await user.type(screen.getByLabelText("Secret access key"), "secret");
+    await goToSection(user, "Upload and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "javascript:alert(1)");
 
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -548,7 +590,7 @@ describe("SettingsPage", () => {
     expect(saveSettings).not.toHaveBeenCalled();
   });
 
-  it("updates the naming template input when settings.namingTemplate arrives asynchronously", () => {
+  it("updates the naming template input when settings.namingTemplate arrives asynchronously", async () => {
     // App.tsx loads settings after mount. First render receives default naming
     // template; real settings arrive on rerender.
     const { rerender } = render(
@@ -575,6 +617,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(userEvent.setup(), "Upload and naming");
     expect(screen.getByLabelText("Naming template")).toHaveValue("{slug}-{hash}.{ext}");
   });
 
@@ -618,6 +661,7 @@ describe("SettingsPage", () => {
       "https://example.r2.cloudflarestorage.com",
     );
 
+    await goToSection(user, "Upload and naming");
     await user.clear(screen.getByLabelText("Default prefix"));
     await user.type(screen.getByLabelText("Default prefix"), "images/2026/07");
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -653,7 +697,9 @@ describe("SettingsPage", () => {
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "draft-key");
     await user.type(screen.getByLabelText("Secret access key"), "unsaved-secret");
+    await goToSection(user, "Upload and naming");
     await user.type(screen.getByLabelText("Default prefix"), "draft/images");
+    await goToSection(user, "S3 profiles");
     await user.click(screen.getByRole("button", { name: /test connection/i }));
 
     expect(testS3Connection).toHaveBeenCalledWith({

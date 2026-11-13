@@ -1,5 +1,6 @@
 import { R2Connect } from "@/features/storage/R2Connect";
-import { t, useLocale, languages, getLanguagePreference, setLanguage, type LanguagePreference } from "@/i18n";
+import { t, useLocale, languages, getLanguagePreference, setLanguage, type LanguagePreference, type MessageKey } from "@/i18n";
+import { ArrowUpRight, Cloud, Database, FileOutput, KeyRound, Settings2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "../../api/backend";
 import type { AppSettings } from "../../api/backend";
@@ -15,7 +16,16 @@ import { errorMessage } from "../../lib/error";
 interface SettingsPageProps {
   settings: AppSettings;
   onSettingsChange: (settings: AppSettings) => void;
+  isActive?: boolean;
 }
+
+type SettingsSection = "general" | "storage" | "oauth" | "publishing";
+const SECTIONS: Array<{ id: SettingsSection; label: MessageKey; icon: typeof Cloud }> = [
+  { id: "general", label: "General", icon: Settings2 },
+  { id: "storage", label: "S3 profiles", icon: Database },
+  { id: "oauth", label: "Account authorization", icon: KeyRound },
+  { id: "publishing", label: "Upload and naming", icon: FileOutput },
+];
 
 function upsertProfile(profiles: S3Profile[], profile: S3Profile): S3Profile[] {
   const index = profiles.findIndex((p) => p.id === profile.id);
@@ -42,8 +52,9 @@ function httpUrlError(value: string, label: string): string | undefined {
   }
 }
 
-export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) {
+export function SettingsPage({ settings, onSettingsChange, isActive = true }: SettingsPageProps) {
   useLocale();
+  const [section, setSection] = useState<SettingsSection>("storage");
   const [editingProfileId, setEditingProfileId] = useState(
     settings.defaultProfileId ?? settings.profiles[0]?.id ?? "",
   );
@@ -121,6 +132,18 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const connectionGenerationRef = useRef(0);
 
+  useEffect(() => { if (!isActive) setConnectingR2(false); }, [isActive]);
+
+  const changeSection = (next: SettingsSection) => {
+    setConnectingR2(false);
+    setSection(next);
+  };
+
+  const revealInvalidField = (field: ProfileField) => {
+    setSection(["publicBaseUrl", "defaultPrefix", "namingTemplate"].includes(field) ? "publishing" : "storage");
+    window.requestAnimationFrame(() => fieldRefs.current[field]?.focus());
+  };
+
   useEffect(() => {
     connectionGenerationRef.current += 1;
     setConnectionMessage(null);
@@ -166,7 +189,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     setFieldErrors(validationErrors);
     const firstInvalid = (Object.keys(validationErrors) as ProfileField[])[0];
     if (firstInvalid) {
-      fieldRefs.current[firstInvalid]?.focus();
+      revealInvalidField(firstInvalid);
       return;
     }
 
@@ -196,7 +219,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     setFieldErrors(validationErrors);
     const firstInvalid = (Object.keys(validationErrors) as ProfileField[])[0];
     if (firstInvalid) {
-      fieldRefs.current[firstInvalid]?.focus();
+      revealInvalidField(firstInvalid);
       return;
     }
     setSaving(true);
@@ -266,159 +289,118 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
     ? <span id={`${field}-error`} className="field-error">{fieldErrors[field]}</span>
     : null;
 
+  const handleSectionKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+    const tabs = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []);
+    const index = tabs.indexOf(event.currentTarget);
+    event.preventDefault();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + tabs.length) % tabs.length;
+    tabs[next]?.focus();
+    tabs[next]?.click();
+  };
+
+  const inputField = (field: ProfileField, label: MessageKey, value: string, update: (value: string) => void, extra: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <Label className="field">
+      <span>{t(label)}</span>
+      <Input {...fieldProps(field)} {...extra} value={value} onChange={(event) => update(event.target.value)} />
+      {renderFieldError(field)}
+    </Label>
+  );
+
   return (
     <div className="page settings-page">
-      <header className="page-head">
-        <div>
-          <h2 className="page-title">{t("Settings")}</h2>
-          <p className="page-note">{t("Manage S3 profiles, naming, and output defaults.")}</p>
-        </div>
-      </header>
-      <section className="settings-sheet">
-        <div className="settings-group">
-          <div className="settings-group-head">
-            <h3>{t("Language")}</h3>
-            <p>{t("Language changes apply immediately and are saved on this device.")}</p>
-          </div>
-          <div className="field-grid">
-            <Label className="field">
-              <span>{t("Language")}</span>
-              <NativeSelect aria-label={t("Language")} value={getLanguagePreference()} onChange={(event) => setLanguage(event.target.value as LanguagePreference)}>
-                <NativeSelectOption value="system">{t("System default")}</NativeSelectOption>
-                {languages.map(({ id, label }) => <NativeSelectOption key={id} value={id}>{label}</NativeSelectOption>)}
-              </NativeSelect>
-            </Label>
-          </div>
-        </div>
-      </section>
-      <section className="settings-sheet"><div className="settings-group"><R2Connect onConnected={onSettingsChange} onBusyChange={setConnectingR2} disabled={saving || testingConnection} /></div></section>
-      <form className="settings-sheet" onSubmit={handleSaveProfile}><fieldset className="contents" disabled={connectingR2}>
-        {settings.profiles.length > 1 && (
-          <div className="settings-scope">
-            <Label>
-              {t("Editing profile")}
-              <NativeSelect
-                value={editingProfileId}
-                onChange={(e) => setEditingProfileId(e.target.value)}
-              >
-                {settings.profiles.map((p) => (
-                  <NativeSelectOption key={p.id} value={p.id}>{p.name}</NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </Label>
-          </div>
-        )}
-
-        <section className="settings-group">
-          <div className="settings-group-head">
-            <h3>{t("Connection")}</h3>
-            <p>{t("The endpoint, region, and bucket that Pic Piper signs requests against.")}</p>
-          </div>
-          <div className="field-grid">
-            <Label className="field">
-              <span>{t("Profile name")}</span>
-              <Input {...fieldProps("name")} value={name} onChange={(e) => setName(e.target.value)} />
-              {renderFieldError("name")}
-            </Label>
-            <Label className="field">
-              <span>{t("Endpoint")}</span>
-              <Input {...fieldProps("endpoint")} placeholder="https://s3.example.com" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
-              {renderFieldError("endpoint")}
-            </Label>
-            <Label className="field">
-              <span>{t("Region")}</span>
-              <Input {...fieldProps("region")} value={region} onChange={(e) => setRegion(e.target.value)} />
-              {renderFieldError("region")}
-            </Label>
-            <Label className="field">
-              <span>{t("Bucket")}</span>
-              <Input {...fieldProps("bucket")} placeholder="my-image-bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} />
-              {renderFieldError("bucket")}
-            </Label>
-          </div>
+      <aside className="settings-sidebar">
+        <h2>{t("Settings")}</h2>
+        <nav role="tablist" aria-label={t("Settings categories")} aria-orientation="vertical">
+          {SECTIONS.map(({ id, label, icon: Icon }) => <Button key={id} id={`settings-tab-${id}`} type="button" variant="ghost" role="tab" aria-selected={section === id} aria-controls={id === "storage" || id === "publishing" ? "settings-section-profile" : `settings-section-${id}`} tabIndex={section === id ? 0 : -1} disabled={saving || testingConnection} onClick={() => changeSection(id)} onKeyDown={handleSectionKeyDown}>
+            <Icon className="size-4" aria-hidden="true" />{t(label)}
+          </Button>)}
+        </nav>
+      </aside>
+      <div className="settings-content">
+        <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section !== "general"}>
+          <h2 className="settings-title">{t("General")}</h2>
+          <Label className="settings-language field">
+            <span>{t("Language")}</span>
+            <NativeSelect aria-label={t("Language")} value={getLanguagePreference()} onChange={(event) => setLanguage(event.target.value as LanguagePreference)}>
+              <NativeSelectOption value="system">{t("System default")}</NativeSelectOption>
+              {languages.map(({ id, label }) => <NativeSelectOption key={id} value={id}>{label}</NativeSelectOption>)}
+            </NativeSelect>
+          </Label>
+          <p className="field-hint">{t("Language changes apply immediately and are saved on this device.")}</p>
         </section>
-
-        <section className="settings-group">
-          <div className="settings-group-head">
-            <h3>{t("Credentials")}</h3>
-            <p>{t("Credentials are stored locally on this device as private files with restricted permissions. Not synced or encrypted.")}</p>
-          </div>
-          <div className="field-grid">
-            <Label className="field">
-              <span>{t("Access key ID")}</span>
-              <Input {...fieldProps("accessKeyId")} value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
-              {renderFieldError("accessKeyId")}
-            </Label>
-            <Label className="field">
-              <span>{t("Secret access key")}</span>
-              <Input {...fieldProps("secretAccessKey")} type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
-              {renderFieldError("secretAccessKey")}
-            </Label>
-            <Label className="field-switch">
-              <span>{t("Path style addressing")}<small>{t("Use bucket-in-path requests when your provider requires them.")}</small></span>
-              <Switch aria-label={t("Path style addressing")} checked={pathStyle} onCheckedChange={setPathStyle} />
-            </Label>
-            <Label className="field-switch">
-              <span>{t("Use as default profile")}<small>{t("New compressions upload here unless you choose another profile.")}</small></span>
-              <Switch aria-label={t("Use as default profile")} checked={makeDefault} onCheckedChange={setMakeDefault} />
-            </Label>
-          </div>
+        <section id="settings-section-oauth" role="tabpanel" aria-labelledby="settings-tab-oauth" hidden={section !== "oauth"}>
+          <h2 className="settings-title">{t("Account authorization")}</h2>
+          {section === "oauth" && isActive && <R2Connect onConnected={onSettingsChange} onBusyChange={setConnectingR2} disabled={saving || testingConnection} />}
         </section>
-
-        <section className="settings-group">
-          <div className="settings-group-head">
-            <h3>{t("Publishing")}</h3>
-            <p>{t("How object keys are built and where public links point.")}</p>
-          </div>
-          <div className="field-grid">
-            <Label className="field">
-              <span>{t("Naming template")}</span>
-              <Input {...fieldProps("namingTemplate")} value={namingTemplate} onChange={(e) => setNamingTemplate(e.target.value)} />
-              {renderFieldError("namingTemplate")}
-            </Label>
-            <Label className="field">
-              <span>{t("Public Base URL")}</span>
-              <Input {...fieldProps("publicBaseUrl")} placeholder="https://cdn.example.com" value={publicBaseUrl} onChange={(e) => setPublicBaseUrl(e.target.value)} />
-              {renderFieldError("publicBaseUrl")}
-            </Label>
-            <Label className="field">
-              <span>{t("Default prefix")}</span>
-              <Input {...fieldProps("defaultPrefix")} placeholder="images/2026/06" value={defaultPrefix} onChange={(e) => setDefaultPrefix(e.target.value)} />
-              {renderFieldError("defaultPrefix")}
-            </Label>
-          </div>
-        </section>
-
-        <footer className="settings-actions">
-          <Button type="submit" disabled={saving}>{t("Save profile")}</Button>
-          <Button variant="outline" type="button" onClick={handleTestConnection} disabled={testingConnection || saving}>
-            {testingConnection ? t("Testing...") : t("Test connection")}
-          </Button>
-          <Button
-            variant="ghost"
-            type="button"
-            onClick={() => setCreatingNew(true)}
-          >
-            {t("Add profile")}
-          </Button>
-        </footer>
-
-        {(saving || saveMessage || connectionMessage || connectionError || saveError) && (
-          <div className="settings-status">
-            {saving && <p>{t("Saving profile...")}</p>}
-            {saveMessage && <p>{saveMessage}</p>}
-            {connectionMessage && <p role="status">{connectionMessage}</p>}
-            {connectionError && (
-              <Alert variant="destructive"><AlertDescription>{connectionError}</AlertDescription></Alert>
-            )}
-            {saveError && (
-              <Alert variant="destructive">
-                <AlertDescription>{saveError}</AlertDescription>
-              </Alert>
-            )}
-          </div>
-        )}
-      </fieldset></form>
+        <form id="settings-section-profile" role="tabpanel" aria-labelledby={`settings-tab-${section === "publishing" ? "publishing" : "storage"}`} className="settings-sheet" hidden={section !== "storage" && section !== "publishing"} onSubmit={handleSaveProfile}>
+          <fieldset className="settings-fields" disabled={saving || connectingR2}>
+            <section hidden={section !== "storage"}>
+              <h2 className="settings-title">{t("S3 profiles")}</h2>
+              <div className="storage-hero">
+                <div><h3>{t("Add R2 with your Cloudflare account")}</h3><p>{t("Authorize in your browser, then choose buckets to create profiles.")}</p></div>
+                <Button type="button" onClick={() => changeSection("oauth")}>{t("Add with an account")}<ArrowUpRight className="size-4" aria-hidden="true" /></Button>
+              </div>
+            </section>
+            <section hidden={section !== "publishing"}>
+              <h2 className="settings-title">{t("Upload and naming")}</h2>
+            </section>
+            <div className="settings-scope">
+              {settings.profiles.length > 1 && <Label className="field"><span>{t("Editing profile")}</span><NativeSelect value={creatingNew ? "new" : editingProfileId} onChange={(event) => { setCreatingNew(false); setEditingProfileId(event.target.value); }}>
+                {creatingNew && <NativeSelectOption value="new">{t("Add profile")}</NativeSelectOption>}
+                {settings.profiles.map((entry) => <NativeSelectOption key={entry.id} value={entry.id}>{entry.name}</NativeSelectOption>)}
+              </NativeSelect></Label>}
+              <Button variant="ghost" type="button" aria-label={t("Add profile")} onClick={() => { setCreatingNew(true); changeSection("storage"); }}>{t("Add manually")}</Button>
+            </div>
+            <div hidden={section !== "storage"}>
+              <section className="settings-group">
+                <h3>{t("Connection")}</h3>
+                <div className="field-grid">
+                  {inputField("name", "Profile name", name, setName)}
+                  {inputField("bucket", "Bucket", bucket, setBucket, { placeholder: "my-image-bucket" })}
+                  <div className="field-full">{inputField("endpoint", "Endpoint", endpoint, setEndpoint, { placeholder: "https://s3.example.com" })}</div>
+                  {inputField("region", "Region", region, setRegion)}
+                  <Label className="field-switch"><span>{t("Path style addressing")}<small>{t("Use bucket-in-path requests when your provider requires them.")}</small></span><Switch aria-label={t("Path style addressing")} checked={pathStyle} onCheckedChange={setPathStyle} /></Label>
+                </div>
+              </section>
+              <section className="settings-group">
+                <h3>{t("Credentials")}</h3>
+                <div className="field-grid">
+                  {inputField("accessKeyId", "Access key ID", accessKeyId, setAccessKeyId, { autoComplete: "off" })}
+                  {inputField("secretAccessKey", "Secret access key", secretAccessKey, setSecretAccessKey, { type: "password", autoComplete: "off" })}
+                </div>
+                <p className="field-hint">{t("Credentials are stored locally on this device as private files with restricted permissions. Not synced or encrypted.")}</p>
+              </section>
+            </div>
+            <div hidden={section !== "publishing"}>
+              <section className="settings-group">
+                <div className="field-grid">
+                  <div className="field-full">{inputField("publicBaseUrl", "Public Base URL", publicBaseUrl, setPublicBaseUrl, { placeholder: "https://cdn.example.com" })}</div>
+                  <div className="field-full">{inputField("defaultPrefix", "Default prefix", defaultPrefix, setDefaultPrefix, { placeholder: "images/2026/06" })}</div>
+                </div>
+              </section>
+              <section className="settings-group">
+                <p className="settings-scope-note">{t("Applies to all profiles")}</p>
+                {inputField("namingTemplate", "Naming template", namingTemplate, setNamingTemplate)}
+              </section>
+              <section className="settings-group">
+                <Label className="field-switch"><span>{t("Use as default profile")}<small>{t("New compressions upload here unless you choose another profile.")}</small></span><Switch aria-label={t("Use as default profile")} checked={makeDefault} onCheckedChange={setMakeDefault} /></Label>
+              </section>
+            </div>
+            <footer className="settings-actions">
+              {section === "storage" && <Button variant="outline" type="button" onClick={handleTestConnection} disabled={testingConnection || saving}>{testingConnection ? t("Testing...") : t("Test connection")}</Button>}
+              <Button type="submit" disabled={saving || testingConnection}>{t("Save profile")}</Button>
+            </footer>
+            {(saving || saveMessage || connectionMessage || connectionError || saveError) && <div className="settings-status">
+              {saving && <p role="status">{t("Saving profile...")}</p>}
+              {saveMessage && <p role="status">{saveMessage}</p>}
+              {connectionMessage && <p role="status">{connectionMessage}</p>}
+              {connectionError && <Alert variant="destructive"><AlertDescription>{connectionError}</AlertDescription></Alert>}
+              {saveError && <Alert variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert>}
+            </div>}
+          </fieldset>
+        </form>
+      </div>
     </div>
   );
 }
