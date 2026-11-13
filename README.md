@@ -86,7 +86,7 @@ pnpm build
 pnpm smoke
 ```
 
-`pnpm smoke` launches the real packaged macOS app and drives its WebView and Go bridge. It uses private temporary app data, synthetic images, fake credentials, and a loopback S3 fixture. Reports and screenshots are saved under `build/smoke-*`. It never contacts a production bucket. It briefly checks the text clipboard and restores its previous text. The smoke also switches all six languages through Settings and captures each settings page and the populated minimum-size workbench. Native OS file/folder dialogs and a physical Finder drag are still manual checks.
+`pnpm smoke` launches the real packaged macOS app and drives its WebView and Go bridge. It uses private temporary app data, a disposable in-memory WebView session, synthetic images, fake credentials, and a loopback S3 fixture. Test language selections, cookies, and browser storage do not affect the normal app. Reports and screenshots are saved under `build/smoke-*`. It never contacts a production bucket. It briefly checks the text clipboard and restores its previous text. The smoke also switches all six languages through Settings and captures each settings page and the populated minimum-size workbench. Native OS file/folder dialogs and a physical Finder drag are still manual checks.
 
 The S3 implementation uses the Go standard library with SigV4 signing. Local tests cover signing, conditional uploads, pagination, safe downloads, settings, and credentials; a live AWS/R2 account is not part of automated validation.
 
