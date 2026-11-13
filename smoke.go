@@ -64,6 +64,9 @@ func runSmoke(win *mygo.Window, dir string) {
 	// Keep screenshots deterministic when macOS throttles an unattended WebView.
 	_, err := smokeEval(win, `const style = document.createElement('style'); style.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }'; document.head.append(style); window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16); window.cancelAnimationFrame = clearTimeout; return true;`)
 	must(err)
+	// A fresh disposable WebView session must not inherit user language choices.
+	must(smokeWait(win, `localStorage.getItem('pic-piper.language') === null`, 5*time.Second))
+	report.Steps = append(report.Steps, "Smoke uses an isolated WebView session without saved user language preferences")
 	// The existing workflow uses English action names regardless of host locale.
 	_, err = smokeEval(win, `localStorage.setItem('pic-piper.language', 'en'); window.dispatchEvent(new StorageEvent('storage', {key: 'pic-piper.language'})); return true;`)
 	must(err)

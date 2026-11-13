@@ -155,11 +155,7 @@ func main() {
 		_ = ImagesOpened.Emit(window, []string{path})
 	})
 	mygo.App.WhenReady(func() {
-		win := mygo.NewWindow(mygo.WindowOptions{
-			Title: "Pic Piper", URL: "/", Width: 1120, Height: 760,
-			MinWidth: 920, MinHeight: 600, TitleBarStyle: mygo.TitleBarHidden,
-			TrafficLightPosition: &mygo.Point{X: 16, Y: 18}, BackgroundColor: "#eef2f6",
-		})
+		win := mygo.NewWindow(appWindowOptions(smokeDir != ""))
 		window = win
 		if smokeDir != "" {
 			win.Page().OnDOMReady(func() { go runSmoke(win, smokeDir) })
@@ -167,5 +163,19 @@ func main() {
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func appWindowOptions(smoke bool) mygo.WindowOptions {
+	var page mygo.PageOptions
+	if smoke {
+		// Backend fixtures alone do not isolate WebView localStorage or cookies.
+		page.Session = mygo.NewEphemeralSession()
+	}
+	return mygo.WindowOptions{
+		Page:  page,
+		Title: "Pic Piper", URL: "/", Width: 1120, Height: 760,
+		MinWidth: 920, MinHeight: 600, TitleBarStyle: mygo.TitleBarHidden,
+		TrafficLightPosition: &mygo.Point{X: 16, Y: 18}, BackgroundColor: "#eef2f6",
 	}
 }

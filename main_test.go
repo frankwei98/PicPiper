@@ -59,3 +59,16 @@ func TestBridgePreservesBusinessErrorCodes(t *testing.T) {
 		}
 	}
 }
+
+func TestSmokeWindowDoesNotPersistLanguageInUserSession(t *testing.T) {
+	if appWindowOptions(false).Page.Session != nil {
+		t.Fatal("normal windows must retain the user's default session")
+	}
+	first := appWindowOptions(true).Page.Session
+	if first == nil || !first.IsEphemeral() {
+		t.Fatal("smoke language changes would persist in the user's WebView session")
+	}
+	if second := appWindowOptions(true).Page.Session; second == nil || second == first {
+		t.Fatal("each smoke run must have its own disposable WebView session")
+	}
+}
