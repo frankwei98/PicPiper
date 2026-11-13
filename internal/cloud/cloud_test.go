@@ -127,15 +127,15 @@ func TestListPaginationConditionalUploadConflictAndDownload(t *testing.T) {
 		t.Fatal(e)
 	}
 	for _, tok := range []any{nil, "next"} {
-		raw := map[string]any{"profile": p, "prefix": "pics/", "pageSize": 2}
+		var cursor *string
 		if tok != nil {
-			raw["continuationToken"] = tok
+			value := tok.(string)
+			cursor = &value
 		}
-		v, e := call(t, s, "list_gallery_objects", raw)
+		res, e := s.list(context.Background(), p, "secret", "pics/", cursor, 2)
 		if e != nil {
 			t.Fatal(e)
 		}
-		res := v.(listResponse)
 		if len(res.Objects) != 1 {
 			t.Fatalf("objects: %#v", res)
 		}
@@ -222,5 +222,24 @@ func TestSafeFilenameAndExclusiveDownloads(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(second); string(b) != "second" {
 		t.Fatalf("second download missing: %q", b)
+	}
+}
+
+func TestOnboardingCompletionSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	_, err := call(t, s, "save_app_settings", map[string]any{"settings": settings{
+		Profiles: []profile{}, NamingTemplate: "{slug}.{ext}",
+		OnboardingCompleted: true, Features: &features{Compression: true, S3: false},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := New(dir).loadSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.OnboardingCompleted || loaded.Features == nil || !loaded.Features.Compression || loaded.Features.S3 {
+		t.Fatalf("onboarding preferences lost: %#v", loaded)
 	}
 }

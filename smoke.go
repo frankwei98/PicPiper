@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"encoding/xml"
@@ -60,7 +61,7 @@ func runSmoke(win *mygo.Window, dir string) {
 		}
 	}
 	must(os.MkdirAll(dir, 0700))
-	must(smokeWait(win, `Boolean(window.mygo && document.querySelector('[role="tab"]'))`, 15*time.Second))
+	must(smokeWait(win, `Boolean(window.mygo && document.querySelector('.onboarding-cards'))`, 15*time.Second))
 	// Keep screenshots deterministic when macOS throttles an unattended WebView.
 	_, err := smokeEval(win, `const style = document.createElement('style'); style.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }'; document.head.append(style); window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 16); window.cancelAnimationFrame = clearTimeout; return true;`)
 	must(err)
@@ -71,6 +72,19 @@ func runSmoke(win *mygo.Window, dir string) {
 	_, err = smokeEval(win, `localStorage.setItem('pic-piper.language', 'en'); window.dispatchEvent(new StorageEvent('storage', {key: 'pic-piper.language'})); return true;`)
 	must(err)
 	must(smokeWait(win, `document.documentElement.lang === 'en'`, 5*time.Second))
+	must(smokeCapture(win, dir, "onboarding.png"))
+	_, err = smokeEval(win, `document.querySelectorAll('.onboarding-cards input')[1].click(); return true;`)
+	must(err)
+	must(smokeClick(win, "Continue"))
+	must(smokeCapture(win, dir, "onboarding-r2.png"))
+	_, err = smokeEval(win, `document.querySelectorAll('.onboarding-cards input')[1].click(); return true;`)
+	must(err)
+	must(smokeCapture(win, dir, "onboarding-s3.png"))
+	must(smokeClick(win, "Back"))
+	_, err = smokeEval(win, `document.querySelectorAll('.onboarding-cards input')[1].click(); return true;`)
+	must(err)
+	must(smokeClick(win, "Get started"))
+	must(smokeWait(win, `Boolean(document.querySelector('[role="tab"]'))`, 5*time.Second))
 	must(smokeCapture(win, dir, "workspace.png"))
 	report.Steps = append(report.Steps, "Packaged frontend and native runtime loaded")
 
@@ -274,6 +288,23 @@ return saved.length === 1;`)
 	must(smokeWait(win, `document.body.innerText.includes('Uploaded 1 image(s)')`, 15*time.Second))
 	must(smokeClick(win, "View uploaded images"))
 	must(smokeWait(win, `document.querySelector('#app-tab-gallery')?.getAttribute('aria-selected') === 'true' && document.body.innerText.includes('sample-photo')`, 15*time.Second))
+	must(smokeWait(win, `document.querySelector('.proof-thumbnail img')?.src.startsWith('data:image/') && document.querySelector('.proof-thumbnail img')?.naturalWidth > 0 && document.querySelector('.proof-thumbnail img')?.naturalWidth <= 384`, 15*time.Second))
+	bucket.mu.Lock()
+	thumbnailReads, publicReads := bucket.objectReads, bucket.publicReads
+	bucket.mu.Unlock()
+	if thumbnailReads != 1 || publicReads != 0 {
+		panic("Gallery thumbnail did not use authenticated S3 without a public request")
+	}
+	must(smokeClick(win, "Compress"))
+	must(smokeClick(win, "S3 Gallery"))
+	must(smokeWait(win, `document.querySelector('.proof-thumbnail img')?.src.startsWith('data:image/') && document.querySelector('.proof-thumbnail img')?.naturalWidth > 0`, 15*time.Second))
+	bucket.mu.Lock()
+	reused := bucket.objectReads == thumbnailReads && bucket.publicReads == 0
+	bucket.mu.Unlock()
+	if !reused {
+		panic("Reopening the gallery downloaded an image instead of reading the local thumbnail cache")
+	}
+	report.Steps = append(report.Steps, "Gallery rendered a local thumbnail, reused it on reopening, and made no public image requests")
 	must(smokeCapture(win, dir, "gallery.png"))
 	bucket.mu.Lock()
 	key := ""
@@ -355,6 +386,97 @@ return saved.length === 1;`)
 	}
 	report.Steps = append(report.Steps, "All six languages switched through Settings and fit the populated minimum-size workbench")
 
+	// Exercise a long gallery with real IntersectionObserver clipping and a
+	// held thumbnail response, so skeleton and lazy-mount checks are deterministic.
+	_, err = smokeEval(win, `localStorage.setItem('pic-piper.language', 'en'); window.dispatchEvent(new StorageEvent('storage', {key:'pic-piper.language'})); return true;`)
+	must(err)
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	defer release()
+	seedPath := filepath.Join(dir, "Gallery seed.jpg")
+	must(os.WriteFile(seedPath, body, 0600))
+	_, err = smokeEval(win, `for (let index = 0; index < 80; index++) {
+      const response = JSON.parse(await mygo.call('Backend.Call','upload_gallery_object', JSON.stringify({ profile: `+profileJSON+`, sourcePath: `+smokeJSON(seedPath)+`, objectKey: 'images/lazy-' + String(index).padStart(3, '0') + '.jpg', outputFilename: 'Photo-' + String(index).padStart(3, '0') + '.jpg' })));
+      if (response.error || response.data.uploadRecordWarning) throw Error('Could not seed local upload history');
+    } return true;`)
+	must(err)
+	bucket.mu.Lock()
+	bucket.thumbnailGate = gate
+	bucket.objects["images/unrelated.jpg"] = body
+	bucket.mu.Unlock()
+	win.SetSize(1120, 760)
+	must(smokeClick(win, "S3 Gallery"))
+	must(smokeWait(win, `document.querySelectorAll('.contact-sheet > [data-lazy-render]').length === 80 && document.querySelectorAll('.contact-sheet > [data-lazy-render="mounted"]').length > 0 && document.querySelector('.proof-thumbnail [data-slot="skeleton"]') !== null`, 15*time.Second))
+	value, err = smokeEval(win, `return document.querySelectorAll('.contact-sheet > [data-lazy-render="mounted"]').length < 40 && document.querySelectorAll('.proof-thumbnail').length < 40;`)
+	must(err)
+	if value != true {
+		panic("Offscreen gallery cards mounted heavy content")
+	}
+	must(smokeCapture(win, dir, "gallery-skeleton.png"))
+	release()
+	must(smokeWait(win, `document.querySelector('.proof-thumbnail img')?.naturalWidth > 0`, 15*time.Second))
+	_, err = smokeEval(win, `const scroll = document.querySelector('.workspace-scroll'); scroll.scrollTop = scroll.scrollHeight; return true;`)
+	must(err)
+	must(smokeWait(win, `document.querySelector('.contact-sheet > li:last-child')?.dataset.lazyRender === 'mounted' && document.querySelector('.contact-sheet > li:first-child')?.dataset.lazyRender === 'placeholder' && document.querySelectorAll('.proof-thumbnail').length < 40`, 10*time.Second))
+	must(smokeCapture(win, dir, "gallery-lazy-bottom.png"))
+	for _, order := range []string{"name-asc", "name-desc", "time-asc", "time-desc"} {
+		must(smokeSelect(win, "Sort by", order))
+		expected := "images/lazy-000.jpg"
+		if order == "name-desc" || order == "time-desc" {
+			expected = "images/lazy-079.jpg"
+		}
+		must(smokeWait(win, `document.querySelector('.contact-sheet > li')?.getAttribute('aria-label') === `+smokeJSON(expected)+` && document.querySelectorAll('.contact-sheet > li').length === 80`, 10*time.Second))
+	}
+	_, err = smokeEval(win, `document.querySelector('.workspace-scroll').scrollTop = 0; return true;`)
+	must(err)
+	must(smokeWait(win, `document.querySelector('.contact-sheet > li:first-child')?.dataset.lazyRender === 'mounted' && document.querySelector('.proof-name') !== null`, 5*time.Second))
+	must(smokeCapture(win, dir, "gallery-sorted.png"))
+	report.Steps = append(report.Steps, "Gallery excluded an unrelated bucket object and sorted all local uploads by name and upload time in both directions")
+	report.Steps = append(report.Steps, "80 gallery cards lazy-mounted near the viewport, unloaded on scroll, and showed skeletons during held thumbnail reads")
+
+	must(smokeClick(win, "Compress"))
+	batchPaths := []string{}
+	for index := range 40 {
+		path := filepath.Join(dir, fmt.Sprintf("Batch-%03d.jpg", index))
+		must(os.WriteFile(path, body, 0600))
+		batchPaths = append(batchPaths, path)
+	}
+	must(ImagesOpened.Emit(win, batchPaths))
+	must(smokeWait(win, `document.querySelectorAll('.batch-list > [data-lazy-render]').length >= 40 && document.querySelectorAll('.batch-list > [data-lazy-render="mounted"]').length < 25`, 15*time.Second))
+	_, err = smokeEval(win, `const list = document.querySelector('.batch-list'); list.scrollTop = list.scrollHeight; return true;`)
+	must(err)
+	must(smokeWait(win, `document.querySelector('.batch-list > [data-lazy-render]:last-child')?.dataset.lazyRender === 'mounted' && document.querySelector('.batch-list > [data-lazy-render]:first-child')?.dataset.lazyRender === 'placeholder'`, 10*time.Second))
+	must(smokeCapture(win, dir, "batch-lazy-bottom.png"))
+	report.Steps = append(report.Steps, "Long compression batch mounted only nearby cards and retained scroll placeholders")
+
+	// Check the packaged scheme through Launch Services, rather than treating
+	// the Info.plist declaration alone as proof of native URL integration.
+	win.Minimize()
+	deadline = time.Now().Add(5 * time.Second)
+	for !win.IsMinimized() && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !win.IsMinimized() {
+		panic("Could not minimize the window for the app-return test")
+	}
+	must(mygo.Shell.OpenExternal("picpiper://oauth/cloudflare/connected"))
+	deadline = time.Now().Add(8 * time.Second)
+	for (win.IsMinimized() || !win.IsFocused()) && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if win.IsMinimized() || !win.IsFocused() {
+		panic("App URL scheme did not restore and focus Pic Piper")
+	}
+	report.Steps = append(report.Steps, "OS app URL scheme restored and focused the existing Pic Piper window")
+
+	html, err := os.ReadFile(filepath.Join(dir, "oauth-connected.html"))
+	must(err)
+	win.SetSize(760, 900)
+	win.Page().LoadHTML(string(html), "http://127.0.0.1:19827/oauth/cloudflare/callback")
+	must(smokeWait(win, `document.querySelectorAll('.languages p[lang]').length === 6 && document.querySelector('a')?.href === 'picpiper://oauth/cloudflare/connected'`, 10*time.Second))
+	must(smokeCapture(win, dir, "oauth-connected.png"))
+	report.Steps = append(report.Steps, "OAuth completion HTML displayed all six languages and a manual app-return link")
+
 	report.Passed = true
 }
 
@@ -399,6 +521,15 @@ func smokeJSON(value any) string {
 }
 
 func smokeClick(win *mygo.Window, label string) error {
+	if name, ok := strings.CutPrefix(label, "Select "); ok {
+		_, err := smokeEval(win, `const item = [...document.querySelectorAll('.batch-list > [data-lazy-render]')].find(x => x.getAttribute('aria-label') === `+smokeJSON(name)+`); item?.scrollIntoView({block:'nearest'}); return true;`)
+		if err != nil {
+			return err
+		}
+		if err = smokeWait(win, `Boolean([...document.querySelectorAll('button')].find(x => x.getAttribute('aria-label') === `+smokeJSON(label)+`))`, 5*time.Second); err != nil {
+			return err
+		}
+	}
 	_, err := smokeEval(win, `const name = `+smokeJSON(label)+`;
 const button = [...document.querySelectorAll('button')].find(x => !x.disabled && (x.getAttribute('aria-label') === name || x.textContent.trim() === name));
 if (!button) throw Error('Missing enabled action: ' + name); button.click(); return true;`)
@@ -460,8 +591,12 @@ func smokeFixture(path string) error {
 }
 
 type smokeBucket struct {
-	mu      sync.Mutex
-	objects map[string][]byte
+	thumbnailGate <-chan struct{}
+	objectReads   int
+	publicReads   int
+	mu            sync.Mutex
+	objects       map[string][]byte
+	uploadIDs     map[string]string
 }
 
 func (bucket *smokeBucket) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -470,6 +605,7 @@ func (bucket *smokeBucket) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	key := strings.TrimPrefix(req.URL.Path, "/mvp-images/")
 	if strings.HasPrefix(req.URL.Path, "/public/") {
 		key = strings.TrimPrefix(req.URL.Path, "/public/")
+		bucket.publicReads++
 	} else if !strings.HasPrefix(req.Header.Get("Authorization"), "AWS4-HMAC-SHA256 ") {
 		w.WriteHeader(http.StatusForbidden)
 		return
@@ -479,6 +615,7 @@ func (bucket *smokeBucket) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			Key          string `xml:"Key"`
 			Size         int    `xml:"Size"`
 			LastModified string `xml:"LastModified"`
+			ETag         string `xml:"ETag"`
 		}
 		response := struct {
 			XMLName     xml.Name `xml:"ListBucketResult"`
@@ -487,7 +624,7 @@ func (bucket *smokeBucket) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}{}
 		for name, body := range bucket.objects {
 			if strings.HasPrefix(name, req.URL.Query().Get("prefix")) {
-				response.Contents = append(response.Contents, object{name, len(body), time.Now().UTC().Format(time.RFC3339)})
+				response.Contents = append(response.Contents, object{name, len(body), "2026-01-01T00:00:00Z", fmt.Sprintf("\"%x\"", sha256.Sum256(body))})
 			}
 		}
 		w.Header().Set("Content-Type", "application/xml")
@@ -510,7 +647,30 @@ func (bucket *smokeBucket) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		bucket.objects[key] = body
+		if bucket.uploadIDs == nil {
+			bucket.uploadIDs = map[string]string{}
+		}
+		bucket.uploadIDs[key] = req.Header.Get("X-Amz-Meta-Picpiper-Upload-Id")
+		w.Header().Set("ETag", fmt.Sprintf("\"%x\"", sha256.Sum256(body)))
+	case http.MethodHead:
+		body, exists := bucket.objects[key]
+		if !exists {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("X-Amz-Meta-Picpiper-Upload-Id", bucket.uploadIDs[key])
+		w.Header().Set("ETag", fmt.Sprintf("\"%x\"", sha256.Sum256(body)))
+		w.Header().Set("Content-Length", fmt.Sprint(len(body)))
 	case http.MethodGet:
+		if gate := bucket.thumbnailGate; gate != nil {
+			bucket.mu.Unlock()
+			select {
+			case <-gate:
+			case <-req.Context().Done():
+			}
+			bucket.mu.Lock()
+		}
+		bucket.objectReads++
 		body, exists := bucket.objects[key]
 		if !exists {
 			w.WriteHeader(http.StatusNotFound)

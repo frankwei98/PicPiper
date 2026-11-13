@@ -1,3 +1,5 @@
+import { ImageWithSkeleton } from "@/components/ImageWithSkeleton";
+import { Skeleton } from "@/components/ui/skeleton";
 import { t, useLocale } from "@/i18n";
 import { useEffect, useRef, useState, type UIEvent } from "react";
 import { Button } from "@/components/ui/button";
@@ -99,8 +101,12 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
       </div>
 
       {!images && !loadError && (
-        <div className="compare-state" role="status">
-          {t("Loading full-resolution images…")}
+        <div role="status" aria-label={t("Loading full-resolution images…")} aria-busy="true">
+          <span className="sr-only">{t("Loading full-resolution images…")}</span>
+          <div className="compare-grid" aria-hidden="true">{[0, 1].map((index) => <section key={index}>
+            <Skeleton className="h-4 w-24 mb-2" />
+            <Skeleton className="compare-pane" />
+          </section>)}</div>
         </div>
       )}
 
@@ -162,7 +168,7 @@ function ComparisonPane({ ref, label, image, mode, onScroll }: ComparisonPanePro
         className={cn("compare-pane", mode === "actual" ? "scrollable" : "grid place-items-center")}
         onScroll={onScroll}
       >
-        <img
+        <ImageWithSkeleton
           src={image.dataUrl}
           alt={t("{{label}} full-resolution preview", { label: t(label) })}
           width={image.width}

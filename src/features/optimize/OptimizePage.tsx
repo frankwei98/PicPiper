@@ -5,6 +5,7 @@ import type { CompressionSettings, ImageInspection, OptimizeItem, S3Profile, Wri
 import type { GalleryFocus } from "../../state/appState";
 import { imageApi } from "../../api/backend";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -56,11 +57,15 @@ interface OptimizePageProps {
   onOpenGallery?: () => void;
   onUploadedToS3?: (focus: GalleryFocus) => void;
   activeProfile?: S3Profile;
+  profiles?: S3Profile[];
   namingTemplate: string;
 }
 
-export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, isActive = true, onOpenGallery }: OptimizePageProps) {
+export function OptimizePage({ activeProfile, profiles, namingTemplate, onUploadedToS3, isActive = true, onOpenGallery }: OptimizePageProps) {
   useLocale();
+  const [uploadProfileId, setUploadProfileId] = useState<string | null>(null);
+  const availableProfiles = profiles ?? (activeProfile ? [activeProfile] : []);
+  const uploadProfile = availableProfiles.find((profile) => profile.id === uploadProfileId) ?? activeProfile ?? availableProfiles[0];
   const [uploadedFocus, setUploadedFocus] = useState<(GalleryFocus & { destination: string }) | null>(null);
   const [items, setItems] = useState<OptimizeItem[]>([]);
   const itemsRef = useRef(items);
@@ -91,12 +96,12 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
   const pendingQualityRef = useRef<number | undefined>(undefined);
   const qualityRef = useRef(quality);
   const uploads = useOptimizeUploads({
-    activeProfile,
+    activeProfile: uploadProfile,
     currentQuality: quality,
     items,
     namingTemplate,
     onUploadedToS3: (focus) => {
-      setUploadedFocus({ ...focus, destination: activeProfile ? `${activeProfile.name} / ${activeProfile.bucket} / ${focus.prefix}` : focus.profileId ?? "S3" });
+      setUploadedFocus({ ...focus, destination: uploadProfile ? `${uploadProfile.name} / ${uploadProfile.bucket} / ${focus.prefix}` : focus.profileId ?? "S3" });
       onUploadedToS3?.(focus);
     },
   });
@@ -734,6 +739,13 @@ export function OptimizePage({ activeProfile, namingTemplate, onUploadedToS3, is
                 {failedItemCount > 0 ? t(", {{count}} failed", { count: failedItemCount }) : ""}
                 {readyItems.length > 0 && `, ${formatBytes(readyOriginalBytes)} → ${formatBytes(readyOutputBytes)}, ${t(readyOutputBytes > readyOriginalBytes ? "{{size}} larger" : "{{size}} saved", { size: formatBytes(Math.abs(readyOriginalBytes - readyOutputBytes)) })}`}
               </p>
+              {availableProfiles.length > 0 && <NativeSelect aria-label={t("Upload destination")} value={uploadProfile?.id ?? ""} disabled={saving || uploads.isUploading} onChange={(event) => {
+                if (!canMutateQueue()) return;
+                setUploadProfileId(event.target.value);
+                setUploadedFocus(null);
+              }}>
+                {availableProfiles.map((profile) => <NativeSelectOption key={profile.id} value={profile.id}>{profile.name} / {profile.bucket}</NativeSelectOption>)}
+              </NativeSelect>}
               <p className="action-destination" aria-label={t("Upload destination")}>
                 {uploads.uploadProfile
                   ? t("Upload destination: {{value0}} / {{value1}} / {{value2}}", { value0: uploads.uploadProfile.name, value1: uploads.uploadProfile.bucket, value2: uploads.uploadProfile.defaultPrefix || "images" })

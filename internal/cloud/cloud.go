@@ -26,10 +26,14 @@ import (
 )
 
 type Service struct {
-	dataDir string
-	mu      sync.Mutex
-	client  *http.Client
-	now     func() time.Time
+	renderThumbnail func(context.Context, string) (string, error)
+	thumbnailSlot   chan struct{}
+	dataDir         string
+	oauthMu         sync.Mutex
+	oauth           *r2Session
+	mu              sync.Mutex
+	client          *http.Client
+	now             func() time.Time
 }
 
 func New(dataDir string) *Service {
@@ -41,7 +45,7 @@ func New(dataDir string) *Service {
 		// Redirected requests need a new signature; surface the endpoint issue.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	return &Service{dataDir: dataDir, client: client, now: time.Now}
+	return &Service{thumbnailSlot: make(chan struct{}, 1), dataDir: dataDir, client: client, now: time.Now}
 }
 
 type profile struct {
@@ -56,18 +60,28 @@ type profile struct {
 	PublicBaseURL *string `json:"publicBaseUrl"`
 	DefaultPrefix string  `json:"defaultPrefix"`
 }
+type features struct {
+	Compression bool `json:"compression"`
+	S3          bool `json:"s3"`
+}
 type settings struct {
-	Profiles         []profile `json:"profiles"`
-	NamingTemplate   string    `json:"namingTemplate"`
-	DefaultOutputDir *string   `json:"defaultOutputDir"`
-	DefaultProfileID *string   `json:"defaultProfileId"`
+	OnboardingCompleted bool      `json:"onboardingCompleted,omitempty"`
+	Features            *features `json:"features,omitempty"`
+	Profiles            []profile `json:"profiles"`
+	NamingTemplate      string    `json:"namingTemplate"`
+	DefaultOutputDir    *string   `json:"defaultOutputDir"`
+	DefaultProfileID    *string   `json:"defaultProfileId"`
 }
 type galleryObject struct {
-	Key          string  `json:"key"`
-	Size         int64   `json:"size"`
-	LastModified *string `json:"lastModified"`
-	PublicURL    *string `json:"publicUrl"`
-	IsImage      bool    `json:"isImage"`
+	FileName            string  `json:"fileName,omitempty"`
+	UploadedAt          string  `json:"uploadedAt,omitempty"`
+	UploadRecordWarning bool    `json:"uploadRecordWarning,omitempty"`
+	ETag                string  `json:"etag,omitempty"`
+	Key                 string  `json:"key"`
+	Size                int64   `json:"size"`
+	LastModified        *string `json:"lastModified"`
+	PublicURL           *string `json:"publicUrl"`
+	IsImage             bool    `json:"isImage"`
 }
 type listResponse struct {
 	Objects               []galleryObject `json:"objects"`
@@ -98,6 +112,15 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		return nil
 	}
 	switch operation {
+	case "start_r2_oauth":
+		return s.startR2OAuth()
+	case "poll_r2_oauth", "cancel_r2_oauth", "list_r2_accounts", "list_r2_buckets", "connect_r2_buckets":
+		var p r2Request
+		if err := decode("sessionId", &p); err != nil {
+			return nil, err
+		}
+		return s.r2Call(ctx, operation, p)
+
 	case "load_app_settings":
 		return s.loadSettings()
 	case "save_app_settings":
@@ -145,13 +168,14 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 			return nil, appErr("s3TestTimedOut", "Connection test timed out after 30 seconds.")
 		}
 		return nil, err
-	case "list_gallery_objects":
-		var p struct {
-			Profile  profile `json:"profile"`
-			Prefix   string  `json:"prefix"`
-			Token    *string `json:"continuationToken"`
-			PageSize *int    `json:"pageSize"`
+	case "read_gallery_thumbnail":
+		var p thumbnailRequest
+		if err := decode("profile", &p); err != nil {
+			return nil, err
 		}
+		return s.readGalleryThumbnail(ctx, p)
+	case "list_gallery_objects":
+		var p galleryRequest
 		if err := decode("profile", &p); err != nil {
 			return nil, err
 		}
@@ -159,11 +183,7 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		if err != nil {
 			return nil, err
 		}
-		size := 100
-		if p.PageSize != nil {
-			size = *p.PageSize
-		}
-		return s.list(ctx, p.Profile, secret, p.Prefix, p.Token, size)
+		return s.listUploads(ctx, p, secret)
 	case "delete_gallery_object":
 		var p struct {
 			Profile profile `json:"profile"`
@@ -184,6 +204,10 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 			return nil, s3error("s3DeleteFailed", err)
 		}
 		resp.Body.Close()
+		s.removeGalleryThumbnails(ctx, p.Profile, p.Key)
+		// Remote deletion already succeeded; a stale local record is also
+		// hidden by the next HEAD check if its cleanup cannot be persisted.
+		_ = s.forgetUpload(p.Profile, p.Key)
 		return nil, nil
 	case "download_gallery_object":
 		var p struct {
@@ -221,6 +245,7 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 			SourcePath  string  `json:"sourcePath"`
 			ObjectKey   string  `json:"objectKey"`
 			ContentType *string `json:"contentType"`
+			FileName    string  `json:"outputFilename"`
 		}
 		if err := decode("profile", &p); err != nil {
 			return nil, err
@@ -245,7 +270,9 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		if err != nil {
 			return nil, err
 		}
+		uploadID := randomR2ID()
 		headers := http.Header{"If-None-Match": []string{"*"}}
+		headers.Set("X-Amz-Meta-Picpiper-Upload-Id", uploadID)
 		if p.ContentType != nil {
 			headers.Set("Content-Type", *p.ContentType)
 		}
@@ -264,6 +291,18 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		}
 		resp.Body.Close()
 		obj := makeObject(p.Profile, p.ObjectKey, info.Size(), nil)
+		obj.ETag = resp.Header.Get("ETag")
+		obj.FileName = p.FileName
+		if obj.FileName == "" {
+			obj.FileName = filepath.Base(p.ObjectKey)
+		}
+		obj.UploadedAt = uploadTimestamp(s.now())
+		modified := obj.UploadedAt
+		obj.LastModified = &modified
+		record := uploadedImage{Key: obj.Key, FileName: obj.FileName, UploadedAt: obj.UploadedAt, Size: obj.Size, ETag: obj.ETag, UploadID: uploadID}
+		if isImage(obj.Key) {
+			obj.UploadRecordWarning = s.recordUpload(p.Profile, record) != nil
+		}
 		return obj, nil
 	case "generate_object_key":
 		var p struct {
@@ -331,6 +370,9 @@ func defaults() settings {
 func (s *Service) loadSettings() (settings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.loadSettingsLocked()
+}
+func (s *Service) loadSettingsLocked() (settings, error) {
 	b, e := os.ReadFile(s.settingsPath())
 	if os.IsNotExist(e) {
 		return defaults(), nil
@@ -350,6 +392,9 @@ func (s *Service) loadSettings() (settings, error) {
 func (s *Service) saveSettings(v settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveSettingsLocked(v)
+}
+func (s *Service) saveSettingsLocked(v settings) error {
 	if e := os.MkdirAll(s.dataDir, 0700); e != nil {
 		return appErr("settingsDirFailed", e.Error())
 	}
@@ -657,7 +702,7 @@ func sign(req *http.Request, region, access, secret, payload string, t time.Time
 	canonHeaders := map[string]string{"host": req.URL.Host, "x-amz-content-sha256": payload, "x-amz-date": stamp}
 	for k, v := range req.Header {
 		lk := strings.ToLower(k)
-		if lk == "content-type" || lk == "if-none-match" || lk == "range" {
+		if lk == "content-type" || lk == "if-none-match" || lk == "range" || strings.HasPrefix(lk, "x-amz-") {
 			canonHeaders[lk] = strings.Join(strings.Fields(strings.Join(v, ",")), " ")
 		}
 	}
@@ -713,6 +758,7 @@ type listXML struct {
 	IsTruncated bool     `xml:"IsTruncated"`
 	Next        string   `xml:"NextContinuationToken"`
 	Contents    []struct {
+		ETag         string `xml:"ETag"`
 		Key          string `xml:"Key"`
 		Size         int64  `xml:"Size"`
 		LastModified string `xml:"LastModified"`
@@ -746,7 +792,9 @@ func (s *Service) list(ctx context.Context, p profile, secret, prefix string, to
 			v := o.LastModified
 			lm = &v
 		}
-		out.Objects = append(out.Objects, makeObject(p, o.Key, o.Size, lm))
+		object := makeObject(p, o.Key, o.Size, lm)
+		object.ETag = o.ETag
+		out.Objects = append(out.Objects, object)
 	}
 	if doc.IsTruncated {
 		if doc.Next == "" {

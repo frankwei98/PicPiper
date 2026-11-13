@@ -35,3 +35,18 @@ it("finishes an in-flight batch at its captured destination then adopts the new 
   await act(async () => { await result.current.uploadToS3(); });
   expect(uploadObject).toHaveBeenLastCalledWith(expect.objectContaining({ profile: second }));
 });
+
+it("keeps a successful upload out of the retry queue when its local history could not be saved", async () => {
+  uploadObject.mockClear();
+  uploadObject.mockResolvedValueOnce({ key: "images/photo.jpg", uploadRecordWarning: true });
+  const profile: S3Profile = { id: "a", name: "A", endpoint: "https://s3.example.com", bucket: "a", region: "auto", accessKeyId: "fake", pathStyle: true, defaultPrefix: "images" };
+  const items: OptimizeItem[] = [{ id: "image", sourcePath: "/photo.jpg", fileName: "photo.jpg", sourceFormat: "jpg", originalBytes: 100, outputBytes: 50, outputPath: "/cache/photo.jpg", outputFileName: "photo.jpg", status: "compressed", settings: { quality: 85, targetFormat: "jpg", removeGps: true } }];
+  const onUploadedToS3 = vi.fn();
+  const { result } = renderHook(() => useOptimizeUploads({ activeProfile: profile, items, currentQuality: 85, namingTemplate: "{slug}.{ext}", onUploadedToS3 }));
+  await act(async () => { await result.current.uploadToS3(); });
+  expect(onUploadedToS3).toHaveBeenCalled();
+  expect(result.current.failedUploadCount).toBe(0);
+  expect(result.current.newUploadItemCount).toBe(0);
+  expect(result.current.uploadError).toContain("The image was uploaded");
+  expect(uploadObject).toHaveBeenCalledTimes(1);
+});

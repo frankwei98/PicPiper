@@ -1,3 +1,4 @@
+import { R2Connect } from "@/features/storage/R2Connect";
 import { t, useLocale, languages, getLanguagePreference, setLanguage, type LanguagePreference } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "../../api/backend";
@@ -114,6 +115,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [connectingR2, setConnectingR2] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -289,7 +291,8 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
           </div>
         </div>
       </section>
-      <form className="settings-sheet" onSubmit={handleSaveProfile}>
+      <section className="settings-sheet"><div className="settings-group"><R2Connect onConnected={onSettingsChange} onBusyChange={setConnectingR2} disabled={saving || testingConnection} /></div></section>
+      <form className="settings-sheet" onSubmit={handleSaveProfile}><fieldset className="contents" disabled={connectingR2}>
         {settings.profiles.length > 1 && (
           <div className="settings-scope">
             <Label>
@@ -415,7 +418,7 @@ export function SettingsPage({ settings, onSettingsChange }: SettingsPageProps) 
             )}
           </div>
         )}
-      </form>
+      </fieldset></form>
     </div>
   );
 }

@@ -28,6 +28,7 @@ describe("ImageComparison", () => {
     render(<ImageComparison originalPath="/photos/source.jpg" compressedPath="/cache/output.webp" />);
 
     expect(screen.getByRole("status")).toHaveTextContent("Loading full-resolution images");
+    expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(4);
     const taskId = readComparisonImage.mock.calls[0][0].taskId;
     expect(taskId).toEqual(expect.stringMatching(/^comparison:/));
     expect(readComparisonImage).toHaveBeenNthCalledWith(1, { taskId, path: "/photos/source.jpg" });

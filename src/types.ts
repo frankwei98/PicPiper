@@ -90,6 +90,10 @@ export interface S3Profile {
 }
 
 export interface GalleryObject {
+  fileName?: string;
+  uploadedAt?: string;
+  uploadRecordWarning?: boolean;
+  etag?: string;
   key: string;
   size: number;
   lastModified?: string;

@@ -3,6 +3,7 @@
   "slug": "pic-piper",
   "identifier": "xyz.frankwei.pic-piper.mygo",
   "version": "0.3.0",
+  "urlSchemes": ["picpiper"],
   "devUrl": "http://localhost:1420",
   "devCommand": "pnpm dev:web",
   "buildCommand": "pnpm build:web",

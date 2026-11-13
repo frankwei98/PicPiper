@@ -10,6 +10,7 @@ const app = resolve(config.out, `darwin-${process.arch}`, `${config.name}.app`);
 if (!existsSync(join(app, "Contents", "MacOS", config.name))) throw new Error("Build the app with pnpm build before running pnpm smoke.");
 mkdirSync(resolve("build"), { recursive: true });
 const reportDir = mkdtempSync(join(resolve("build"), "smoke-"));
+copyFileSync(resolve("internal/cloud/r2_connected.html"), join(reportDir, "oauth-connected.html"));
 copyFileSync(resolve("internal/imaging/testdata/sample.heic"), join(reportDir, "Imported HEIC.heic"));
 try {
   const output = execFileSync("/usr/bin/open", ["-W", "-n", app, "--args", "--smoke-test", reportDir], { encoding: "utf8", timeout: 240_000 });
