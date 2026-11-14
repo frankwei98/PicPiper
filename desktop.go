@@ -10,7 +10,7 @@ import (
 	"github.com/frankwei98/PicPiper/internal/traydrop"
 )
 
-//go:embed resources/tray@2x.png
+//go:embed resources/status-icon.png
 var miniTrayIcon []byte
 
 // All native handles below belong to MyGo's main thread.

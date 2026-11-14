@@ -55,6 +55,14 @@ func main() {
 	if err := writePNG("resources/tray@2x.png", makeTrayIcon(monoTray, 64, 56)); err != nil {
 		log.Fatal(err)
 	}
+	statusBounds, ok := alphaBoundsAbove(tray, 16)
+	if !ok {
+		log.Fatal("resources/logo-tray.png has no visible status mark")
+	}
+	statusMark := blackWithAlphaAbove(tray, statusBounds, 16)
+	if err := writePNG("resources/status-icon.png", makeStatusIcon(statusMark)); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func renderAppIcon(source image.Image, size int) *image.NRGBA {
@@ -85,12 +93,16 @@ func readPNG(path string) (image.Image, error) {
 }
 
 func alphaBounds(img image.Image) (image.Rectangle, bool) {
+	return alphaBoundsAbove(img, 0)
+}
+
+func alphaBoundsAbove(img image.Image, threshold uint8) (image.Rectangle, bool) {
 	bounds := img.Bounds()
 	minX, minY, maxX, maxY := bounds.Max.X, bounds.Max.Y, bounds.Min.X, bounds.Min.Y
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			_, _, _, a := img.At(x, y).RGBA()
-			if a == 0 {
+			if uint8(a>>8) <= threshold {
 				continue
 			}
 			if x < minX {
@@ -139,11 +151,19 @@ func hasTransparency(img image.Image) bool {
 }
 
 func blackWithAlpha(img image.Image, bounds image.Rectangle) *image.NRGBA {
+	return blackWithAlphaAbove(img, bounds, 0)
+}
+
+func blackWithAlphaAbove(img image.Image, bounds image.Rectangle, threshold uint8) *image.NRGBA {
 	mono := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			_, _, _, a := img.At(x, y).RGBA()
-			mono.SetNRGBA(x-bounds.Min.X, y-bounds.Min.Y, color.NRGBA{A: uint8(a >> 8)})
+			alpha := uint8(a >> 8)
+			if alpha <= threshold {
+				continue
+			}
+			mono.SetNRGBA(x-bounds.Min.X, y-bounds.Min.Y, color.NRGBA{A: alpha})
 		}
 	}
 	return mono
@@ -158,6 +178,22 @@ func makeTrayIcon(mark image.Image, canvasSize, markMax int) *image.NRGBA {
 	left := (canvasSize - width) / 2
 	top := (canvasSize - height) / 2
 	xdraw.CatmullRom.Scale(canvas, image.Rect(left, top, left+width, top+height), mark, bounds, stdDraw.Over, nil)
+	return canvas
+}
+
+func makeStatusIcon(mark image.Image) *image.NRGBA {
+	// MyGo sizes the entire image to 18pt high, so fit by height and keep only
+	// a small inset. A square canvas makes this wide mark unnecessarily small.
+	const canvasHeight = 64
+	const inset = 2
+	const markHeight = canvasHeight - 2*inset
+	bounds := mark.Bounds()
+	markWidth := max(1, int(math.Round(float64(markHeight)*float64(bounds.Dx())/float64(bounds.Dy()))))
+	canvasWidth := markWidth + 2*inset
+	canvas := image.NewNRGBA(image.Rect(0, 0, canvasWidth, canvasHeight))
+	left := (canvasWidth - markWidth) / 2
+	top := (canvasHeight - markHeight) / 2
+	xdraw.CatmullRom.Scale(canvas, image.Rect(left, top, left+markWidth, top+markHeight), mark, bounds, stdDraw.Over, nil)
 	return canvas
 }
 
