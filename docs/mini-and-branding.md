@@ -32,9 +32,10 @@ The current mark is the user-supplied crocodile compressing a large image into a
 - `resources/logo-tray.png`: generated transparent template master.
 - `resources/icon.png`: 1024² App icon, used by MyGo packaging for platform icons.
 - `resources/logo-ui.png`: 96² UI derivative, avoiding a large App icon download in each WebView.
-- `resources/tray.png`, `resources/tray@2x.png`: 32² / 64² black template PNGs. The native tray embeds the 64² version.
+- `resources/tray.png`, `resources/tray@2x.png`: 32² / 64² black template PNGs for the shared UI mark. The main title bar uses the 64² mask.
+- `resources/status-icon.png`: dedicated 70 × 64 black template for the native status icon. The 66 × 60 visible mark uses only a 2px inset; its rectangular canvas preserves a larger character when MyGo normalizes the entire image to 18pt high.
 
-`scripts/icon` preserves the generated masters, sizes derivatives with Catmull–Rom filtering, centers the status mark by its alpha bounds, and retains alpha while making visible RGB black. Master files are excluded from the distributable.
+`scripts/icon` preserves the generated masters, sizes derivatives with Catmull–Rom filtering, centers the UI mark by its alpha bounds, and retains alpha while making visible RGB black. The dedicated status icon removes alpha values at or below 16/255 before measuring and cropping its visible bounds, then fits the mark by height instead of placing it inside a square canvas. Master files are excluded from the distributable.
 
 App/UI derivatives promote near-opaque alpha values (245–254) to 255 while preserving RGB, transparent corners and partially transparent edge pixels. The original cutout left most of the dark tile just below full opacity; macOS IconServices classified that artwork as foreground and wrapped it in an additional white enclosure. Making only those near-opaque pixels solid removed the enclosure in a controlled native comparison. The status template's alpha is not normalized this way.
 
@@ -115,5 +116,13 @@ Wide-window settings alignment correction, 2026-11-14:
 - Removed `.settings-content`'s 850px maximum width. Preference controls and Save now share the viewport's right content inset when the window expands.
 - The native regression measures actual visible control edges against that inset. It failed before the correction (`build/smoke-fOtel4/report.json`) and passed after it in the full smoke report `build/smoke-W44sea/report.json`. Inspected English and Chinese at 1920px; Chinese at 1120px and all six languages at minimum size passed too.
 - Frontend tests (237), web/macOS builds, Go tests, full race checks, isolated codec first use, vet, formatting and `git diff --check` passed. The packaged icon, Mini, S3, clipboard, native close behavior and URL restoration checks also passed.
+
+Status-icon visible-size correction, 2026-11-14:
+
+- The settings and branding work was committed first as `c9a9b1c`. The status-size change is isolated from that checkpoint.
+- MyGo v0.9.0's macOS `SetImage` normalizes the complete PNG to 18pt high. The old square template's transparent margins left a roughly 13.5pt visible mark. The dedicated `status-icon.png` fits the character by height in a 70 × 64 canvas, with 66 × 60 visible pixels. A standalone Cocoa render using MyGo's sizing measured 19 × 17pt visible artwork at Retina resolution; the same probe rejected the old asset for falling below 16.5pt high.
+- `desktop.go` embeds the dedicated status asset. Existing App, UI and square template outputs are byte-for-byte unchanged after regeneration. No native handle, drop receiver, appearance or flyout behavior changed.
+- Frontend tests (237), web/macOS builds, Go tests, full race checks, isolated codec first use, vet, formatting and `git diff --check` passed. The packaged system app-icon check and native status-window drop replay passed.
+- `build/smoke-OwxjLL/report.json` passed the image/S3, settings, Mini/clipboard/upload and native close-behavior checks; inspected `mini-selection-zh-CN.png`. The full report remains failed because the later URL restore/focus check received no callback in the test instance. A normal Pic Piper instance was also running from the same bundle path, which can receive the protocol request instead. This is a validation limitation, not a full-suite pass; the user's running instance was left intact.
 
 Commands used `GOCACHE=/private/tmp/pic-piper-go-build-cache` because the host's default Go cache is outside the writable sandbox. Go/S3 tests and native packaging/smoke ran with approved access for loopback listeners and macOS UI integration. No real provider was contacted. The native smoke waits for the minimize notification before testing URL restoration. Normal app instances can receive the OS protocol request instead of a separately launched smoke instance; the recorded full validation passed with the test instance.
