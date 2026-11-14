@@ -31,6 +31,7 @@ import {
 } from "./optimizeQueue";
 import { ImageComparison } from "./ImageComparison";
 import { useOptimizeUploads } from "./useOptimizeUploads";
+import { useUpdateActivity } from "@/api/updates";
 
 const DEFAULT_SETTINGS: CompressionSettings = {
   targetFormat: "jpg",
@@ -108,6 +109,7 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
   });
 
   const canMutateQueue = useCallback(() => !saving && uploads.canMutateQueue(), [saving, uploads.canMutateQueue]);
+  useUpdateActivity("optimize", importing || saving || uploads.isUploading || items.some((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)));
 
   useEffect(() => {
     return () => {

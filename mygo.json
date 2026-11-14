@@ -3,12 +3,17 @@
   "slug": "pic-piper",
   "identifier": "xyz.frankwei.pic-piper.mygo",
   "version": "1.0.0",
+  "updates": {
+    "publicKey": "ksHoQVdMqjzU/fhDUG8mBcqu+u+czzbwuTbbXNkdVnc=",
+    "github": "frankwei98/PicPiper"
+  },
   "urlSchemes": ["picpiper"],
   "devUrl": "http://localhost:1420",
   "devCommand": "pnpm dev:web",
   "buildCommand": "pnpm build:web",
   "frontendDist": "dist",
   "bindings": "src/mygo.ts",
+  "i18n": { "dir": "internal/nativelocale", "source": "en" },
   "out": "build",
   "fileAssociations": [{ "ext": ["jpg", "jpeg", "png", "webp", "avif", "jxl", "heif", "heic"], "name": "Images", "mimeType": "image/*", "role": "Viewer" }],
   "icon": "resources/icon.png",

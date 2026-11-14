@@ -36,4 +36,5 @@ export const Backend = {
 export const events = {
   imagesOpened: event<string[]>("images-opened"),
   settingsChanged: event<boolean>("settings-changed"),
+  updatesChanged: event<boolean>("updates-changed"),
 } as const;

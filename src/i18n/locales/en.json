@@ -432,5 +432,21 @@
   "Quick compression": "Quick compression",
   "Default image format": "Default image format",
   "Default image quality": "Default image quality",
-  "Authorize your storage provider in a browser, then choose buckets to add.": "Authorize your storage provider in a browser, then choose buckets to add."
+  "Authorize your storage provider in a browser, then choose buckets to add.": "Authorize your storage provider in a browser, then choose buckets to add.",
+  "Updates": "Updates",
+  "Version": "Version",
+  "Version {{version}}": "Version {{version}}",
+  "Check for updates": "Check for updates",
+  "Checking...": "Checking...",
+  "Updates are available in an installed release build.": "Updates are available in an installed release build.",
+  "Automatic update checks": "Automatic update checks",
+  "Automatic update downloads": "Automatic update downloads",
+  "Last checked": "Last checked",
+  "Not checked yet": "Not checked yet",
+  "Available version": "Available version",
+  "Finish your current tasks, then quit and reopen Pic Piper to use the update.": "Finish your current tasks, then quit and reopen Pic Piper to use the update.",
+  "Could not check for updates.": "Could not check for updates.",
+  "Could not save update preferences.": "Could not save update preferences.",
+  "Checks periodically for new releases.": "Checks periodically for new releases.",
+  "Downloads available updates automatically.": "Downloads available updates automatically."
 }

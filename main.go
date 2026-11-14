@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/egoist/mygo"
@@ -15,6 +16,7 @@ import (
 	"github.com/frankwei98/PicPiper/internal/cloud"
 	"github.com/frankwei98/PicPiper/internal/imaging"
 	"github.com/frankwei98/PicPiper/internal/mini"
+	"github.com/frankwei98/PicPiper/internal/nativelocale"
 )
 
 var ImagesOpened = mygo.NewEvent[[]string]("images-opened")
@@ -22,6 +24,7 @@ var SettingsChanged = mygo.NewEvent[bool]("settings-changed")
 
 type Backend struct {
 	mini        *mini.Service
+	updates     *updateController
 	desktop     *desktopController
 	images      *imaging.Service
 	cloud       *cloud.Service
@@ -60,10 +63,25 @@ type reply struct {
 func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 	var value any
 	var err error
-	if !json.Valid([]byte(payload)) {
+	if b.updates != nil && !strings.HasPrefix(operation, "update_") {
+		var done func()
+		done, err = b.updates.begin()
+		if err == nil {
+			defer done()
+		}
+	}
+	if err != nil {
+		// The quit sequence already owns the app's resources.
+	} else if !json.Valid([]byte(payload)) {
 		err = apperror.New("invalidRequest", "This request is not valid JSON.")
 	} else {
 		switch operation {
+		case "update_state", "update_check", "update_preferences", "update_locale", "update_activity":
+			if b.updates == nil {
+				err = apperror.New("updatesDisabled", "Updates are unavailable in this build.")
+			} else {
+				value, err = b.updates.call(operation, []byte(payload))
+			}
 		case "mini_state":
 			value = b.mini.Snapshot()
 		case "mini_upload_targets":
@@ -193,6 +211,9 @@ func main() {
 	if imaging.RunWorker() {
 		return
 	}
+	if runUpdateSmokeMode() {
+		return
+	}
 	dataDir, err := mygo.App.Path(mygo.PathUserData)
 	if err != nil {
 		log.Fatal("Could not locate the app's private data folder.")
@@ -208,6 +229,7 @@ func main() {
 	backend := newBackend(dataDir)
 	backend.mini = mini.New(backend.images, backend.cloud, mygo.Clipboard.WriteImage, func(text string) error { mygo.Clipboard.WriteText(text); return nil })
 	backend.desktop = &desktopController{backend: backend}
+	backend.setupUpdates(smokeDir != "")
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { backend.desktop.removeTray(); backend.mini.Stop(); backend.images.Close() })
 	mygo.Bind(backend)
 	var window *mygo.Window
@@ -246,8 +268,22 @@ func main() {
 			win.Page().OnDOMReady(func() { start.Do(func() { go runSmoke(win, smokeDir, backend) }) })
 		}
 	})
-	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { backend.desktop.quitting = true })
-	mygo.App.OnQuitCanceled(func() { backend.desktop.quitting = false })
+	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+		if !backend.updates.prepareQuit(backend.mini.Snapshot().Busy, e.SessionEnding) {
+			e.PreventDefault()
+			backend.desktop.openMain()
+			UpdatesChanged.Broadcast(true)
+			_, _ = mygo.Dialog.Message(mygo.MessageOptions{Parent: backend.desktop.main, Title: "Pic Piper", Message: nativelocale.UpdateRestartDeferred()})
+			return
+		}
+		backend.desktop.quitting = true
+	})
+	mygo.App.OnQuitCanceled(func() {
+		backend.desktop.quitting = false
+		backend.updates.mu.Lock()
+		backend.updates.closing = false
+		backend.updates.mu.Unlock()
+	})
 	mygo.App.OnActivate(func(visible bool) {
 		if !visible && window != nil {
 			backend.desktop.openMain()

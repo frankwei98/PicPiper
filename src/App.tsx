@@ -14,9 +14,15 @@ import type { GalleryFocus } from "./state/appState";
 import { initialNavigationState } from "./state/appState";
 import type { AppNavigationState } from "./state/appState";
 import { errorMessage } from "./lib/error";
+import { updateApi } from "./api/updates";
 
 function App() {
-  useLocale();
+  const locale = useLocale();
+  const [restartDeferred, setRestartDeferred] = useState(false);
+  useEffect(() => { void updateApi.language().catch(() => {}); }, [locale]);
+  useEffect(() => updateApi.subscribe(() => {
+    void updateApi.state().then((state) => setRestartDeferred(state.restartDeferred)).catch(() => {});
+  }), []);
   const [navigation, setNavigation] = useState<AppNavigationState>(initialNavigationState);
   const [settings, setSettings] = useState<AppSettings>({
     profiles: [],
@@ -85,6 +91,7 @@ function App() {
       activeView={navigation.view}
       onViewChange={(view) => setNavigation((prev) => ({ ...prev, view }))}
     >
+      {restartDeferred && <Alert className="app-notice"><AlertDescription>{t("Finish your current tasks, then quit and reopen Pic Piper to use the update.")}</AlertDescription></Alert>}
       {settingsError && (
         <Alert variant="destructive" className="app-notice">
           <AlertTitle>{t("Could not load settings")}</AlertTitle>

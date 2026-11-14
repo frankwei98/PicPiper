@@ -32,3 +32,4 @@ dist-ssr
 build/
 .tools/
 .pnpm-store/
+mygo-update.key
