@@ -1,5 +1,5 @@
 import { t } from "@/i18n";
-import { Backend } from "../mygo";
+import { Backend, events } from "../mygo";
 import { isMyGo } from "mygo-runtime";
 import type { CompressionSettings, GalleryObject, ImageInspection, S3Profile, WritableImageFormat } from "../types";
 
@@ -148,6 +148,7 @@ export const namingApi = {
 };
 
 export interface AppSettings {
+  mini?: MiniSettings;
   onboardingCompleted?: boolean;
   features?: { compression: boolean; s3: boolean };
   profiles: S3Profile[];
@@ -155,6 +156,43 @@ export interface AppSettings {
   defaultOutputDir?: string;
   defaultProfileId?: string;
 }
+
+export interface MiniSettings {
+  enabled: boolean;
+  targetFormat: WritableImageFormat;
+  quality: number;
+  /** Legacy persisted field; Mini always copies images. Uploads are explicit. */
+  action: "clipboard" | "upload";
+  profileId: string;
+  linkFormat: "url" | "html" | "bbcode" | "markdown";
+}
+
+export const defaultMiniSettings: MiniSettings = {
+  enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url",
+};
+
+export interface MiniItem {
+  id: string; name: string; status: "queued" | "compressing" | "uploading" | "completed" | "failed";
+  outputName: string; originalBytes: number; outputBytes: number; thumbnail: string;
+  url: string; links?: Record<MiniSettings["linkFormat"], string>; error: string; warning: string;
+  uploadStatus?: "queued" | "uploading" | "completed" | "failed"; uploadError?: string;
+  uploads?: Record<string, string>; linkFormat?: MiniSettings["linkFormat"]; completedAt?: string;
+}
+export interface MiniState { items: MiniItem[]; busy: boolean; copied: "" | "image" | "links"; error: string; canUndoClear?: boolean; copySequence?: number }
+export interface MiniUploadTarget { profileId: string; name: string; bucket: string; bucketKey: string }
+export const miniApi = {
+  state: () => invoke<MiniState>("mini_state"),
+  add: (paths: string[]) => invoke<MiniState>("mini_add", { request: { paths } }),
+  upload: (ids: string[], profileId: string, linkFormat: MiniSettings["linkFormat"]) => invoke<MiniState>("mini_upload", { request: { ids, profileId, linkFormat } }),
+  targets: () => invoke<MiniUploadTarget[]>("mini_upload_targets"),
+  clear: () => invoke<MiniState>("mini_clear"),
+  restore: () => invoke<MiniState>("mini_restore"),
+  copyImage: (id: string) => invoke<void>("mini_copy_image", { request: { id } }),
+  copy: (id: string, linkFormat: MiniSettings["linkFormat"]) => invoke<void>("mini_copy", { request: { id, linkFormat } }),
+  copyAll: (linkFormat: MiniSettings["linkFormat"]) => invoke<void>("mini_copy_all", { request: { linkFormat } }),
+  save: (settings: MiniSettings) => invoke<void>("save_mini_settings", { request: { settings } }),
+  window: (action: "main" | "close" | "open") => Backend.miniWindow(action),
+};
 
 export interface SaveS3SecretRequest {
   profileId: string;
@@ -167,6 +205,7 @@ export interface TestS3ConnectionRequest {
 }
 
 export const settingsApi = {
+  onChanged: (listener: () => void): (() => void) => isMyGo() ? events.settingsChanged.on(() => listener()) : () => {},
   loadSettings: () => invoke<AppSettings>("load_app_settings"),
   saveSettings: (settings: AppSettings) => invoke<void>("save_app_settings", { request: { settings } }),
   saveS3Secret: (request: SaveS3SecretRequest) => invoke<{ credentialRef: string }>("save_s3_secret", { request }),

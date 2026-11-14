@@ -12,6 +12,8 @@
   "out": "build",
   "fileAssociations": [{ "ext": ["jpg", "jpeg", "png", "webp", "avif", "jxl", "heif", "heic"], "name": "Images", "mimeType": "image/*", "role": "Viewer" }],
   "icon": "resources/icon.png",
+  "resourcesExclude": ["logo-app.png", "logo-tray.png"],
+  "linux": { "depends": { "deb": ["libayatana-appindicator3-1"], "rpm": ["libayatana-appindicator-gtk3"], "arch": ["libayatana-appindicator"] } },
   "macos": {
     "signingIdentity": "-",
     "minimumSystemVersion": "13.0"

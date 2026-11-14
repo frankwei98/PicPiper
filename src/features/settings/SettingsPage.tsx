@@ -1,9 +1,9 @@
 import { R2Connect } from "@/features/storage/R2Connect";
 import { t, useLocale, languages, getLanguagePreference, setLanguage, type LanguagePreference, type MessageKey } from "@/i18n";
-import { ArrowUpRight, Cloud, Database, FileOutput, KeyRound, Settings2 } from "lucide-react";
+import { ArrowUpRight, Cloud, Database, FileOutput, ImageDown, KeyRound, Settings2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "../../api/backend";
-import type { AppSettings } from "../../api/backend";
+import { defaultMiniSettings, type AppSettings, type MiniSettings } from "../../api/backend";
 import type { S3Profile } from "../../types";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { errorMessage } from "../../lib/error";
+import { MiniPreferences, miniSettingsValid } from "@/features/mini/MiniPreferences";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -19,12 +20,13 @@ interface SettingsPageProps {
   isActive?: boolean;
 }
 
-type SettingsSection = "general" | "storage" | "oauth" | "publishing";
+type SettingsSection = "general" | "storage" | "oauth" | "publishing" | "mini";
 const SECTIONS: Array<{ id: SettingsSection; label: MessageKey; icon: typeof Cloud }> = [
   { id: "general", label: "General", icon: Settings2 },
   { id: "storage", label: "S3 profiles", icon: Database },
   { id: "oauth", label: "Account authorization", icon: KeyRound },
   { id: "publishing", label: "Upload and naming", icon: FileOutput },
+  { id: "mini", label: "Mini", icon: ImageDown },
 ];
 
 function upsertProfile(profiles: S3Profile[], profile: S3Profile): S3Profile[] {
@@ -55,10 +57,18 @@ function httpUrlError(value: string, label: string): string | undefined {
 export function SettingsPage({ settings, onSettingsChange, isActive = true }: SettingsPageProps) {
   useLocale();
   const [section, setSection] = useState<SettingsSection>("storage");
+  const [mini, setMini] = useState<MiniSettings>({ ...(settings.mini ?? defaultMiniSettings), action: "clipboard" });
+  const [miniSaving, setMiniSaving] = useState(false);
+  const [miniMessage, setMiniMessage] = useState<string | null>(null);
+  const [miniError, setMiniError] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState(
     settings.defaultProfileId ?? settings.profiles[0]?.id ?? "",
   );
   const [creatingNew, setCreatingNew] = useState(false);
+
+  useEffect(() => {
+    setMini({ ...(settings.mini ?? defaultMiniSettings), action: "clipboard" });
+  }, [settings.mini]);
 
   const profile = creatingNew ? undefined : settings.profiles.find((p) => p.id === editingProfileId);
 
@@ -137,6 +147,27 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
   const changeSection = (next: SettingsSection) => {
     setConnectingR2(false);
     setSection(next);
+  };
+
+  const handleSaveMini = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setMiniMessage(null);
+    setMiniError(null);
+    if (!miniSettingsValid(mini, settings.profiles)) {
+      setMiniError(t("Failed to save Mini settings."));
+      return;
+    }
+    setMiniSaving(true);
+    const nextSettings = { ...settings, mini };
+    try {
+      await settingsApi.saveSettings(nextSettings);
+      onSettingsChange(nextSettings);
+      setMiniMessage(t("Mini settings saved."));
+    } catch (error) {
+      setMiniError(errorMessage(error, t("Failed to save Mini settings.")));
+    } finally {
+      setMiniSaving(false);
+    }
   };
 
   const revealInvalidField = (field: ProfileField) => {
@@ -312,7 +343,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
       <aside className="settings-sidebar">
         <h2>{t("Settings")}</h2>
         <nav role="tablist" aria-label={t("Settings categories")} aria-orientation="vertical">
-          {SECTIONS.map(({ id, label, icon: Icon }) => <Button key={id} id={`settings-tab-${id}`} type="button" variant="ghost" role="tab" aria-selected={section === id} aria-controls={id === "storage" || id === "publishing" ? "settings-section-profile" : `settings-section-${id}`} tabIndex={section === id ? 0 : -1} disabled={saving || testingConnection} onClick={() => changeSection(id)} onKeyDown={handleSectionKeyDown}>
+          {SECTIONS.map(({ id, label, icon: Icon }) => <Button key={id} id={`settings-tab-${id}`} type="button" variant="ghost" role="tab" aria-selected={section === id} aria-controls={id === "storage" || id === "publishing" ? "settings-section-profile" : `settings-section-${id}`} tabIndex={section === id ? 0 : -1} disabled={saving || testingConnection || miniSaving} onClick={() => changeSection(id)} onKeyDown={handleSectionKeyDown}>
             <Icon className="size-4" aria-hidden="true" />{t(label)}
           </Button>)}
         </nav>
@@ -333,6 +364,16 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
           <h2 className="settings-title">{t("Account authorization")}</h2>
           {section === "oauth" && isActive && <R2Connect onConnected={onSettingsChange} onBusyChange={setConnectingR2} disabled={saving || testingConnection} />}
         </section>
+        <form id="settings-section-mini" role="tabpanel" aria-labelledby="settings-tab-mini" className="settings-sheet mini-settings" hidden={section !== "mini"} onSubmit={handleSaveMini}>
+          <fieldset className="settings-fields" disabled={miniSaving}>
+            <h2 className="settings-title">{t("Mini")}</h2>
+            <MiniPreferences value={mini} onChange={(value) => { setMini(value); setMiniMessage(null); setMiniError(null); }} profiles={settings.profiles} disabled={miniSaving} />
+            <footer className="settings-actions"><Button type="submit" disabled={miniSaving || !miniSettingsValid(mini, settings.profiles)}>{miniSaving ? t("Saving...") : t("Save Mini settings")}</Button></footer>
+            {miniSaving && <p role="status">{t("Saving...")}</p>}
+            {miniMessage && <p role="status">{miniMessage}</p>}
+            {miniError && <Alert variant="destructive"><AlertDescription>{miniError}</AlertDescription></Alert>}
+          </fieldset>
+        </form>
         <form id="settings-section-profile" role="tabpanel" aria-labelledby={`settings-tab-${section === "publishing" ? "publishing" : "storage"}`} className="settings-sheet" hidden={section !== "storage" && section !== "publishing"} onSubmit={handleSaveProfile}>
           <fieldset className="settings-fields" disabled={saving || connectingR2}>
             <section hidden={section !== "storage"}>

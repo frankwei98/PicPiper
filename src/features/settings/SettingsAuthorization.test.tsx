@@ -5,6 +5,7 @@ import { SettingsPage } from "./SettingsPage";
 import { r2Api } from "@/api/backend";
 
 vi.mock("@/api/backend", () => ({
+  defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
   settingsApi: {},
   r2Api: {
     start: vi.fn(async () => ({ sessionId: "test-session", authorizationUrl: "https://example.com/oauth" })),

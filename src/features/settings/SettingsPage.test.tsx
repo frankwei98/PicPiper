@@ -17,6 +17,7 @@ vi.mock("../../api/backend", async () => ({
     saveS3Secret,
     testS3Connection,
   },
+  defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
 }));
 
 import { SettingsPage } from "./SettingsPage";
@@ -47,6 +48,46 @@ describe("SettingsPage", () => {
     );
 
     expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
+  });
+
+  it("saves Mini settings while preserving the rest of the app settings", async () => {
+    const user = userEvent.setup();
+    const settings = { profiles: [], namingTemplate: "{slug}.{ext}", defaultOutputDir: "/tmp/out", features: { compression: true, s3: false } };
+    const onSettingsChange = vi.fn();
+    render(<SettingsPage settings={settings} onSettingsChange={onSettingsChange} />);
+    await goToSection(user, "Mini");
+    await user.click(screen.getByRole("switch", { name: "Enable Mini" }));
+    await user.click(screen.getByRole("button", { name: "Save Mini settings" }));
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ ...settings, mini: expect.objectContaining({ enabled: true }) }));
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ ...settings, mini: expect.objectContaining({ enabled: true }) }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Mini settings saved.");
+  });
+
+  it("saves clipboard Mini settings without requiring an S3 profile", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={onSettingsChange} />);
+    await goToSection(user, "Mini");
+    await user.click(screen.getByRole("switch", { name: "Enable Mini" }));
+    expect(screen.queryByRole("combobox", { name: "After compression" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("S3 profile")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Link format")).not.toBeInTheDocument();
+    expect(screen.queryByText("Copies the image after compression. Upload to S3 anytime.")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save Mini settings" }));
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ mini: expect.objectContaining({ enabled: true, action: "clipboard" }) }));
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ mini: expect.objectContaining({ enabled: true, action: "clipboard" }) }));
+  });
+
+  it("shows Mini save errors and does not publish unsaved settings", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    saveSettings.mockRejectedValueOnce(new Error("Disk unavailable"));
+    render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={onSettingsChange} />);
+    await goToSection(user, "Mini");
+    await user.click(screen.getByRole("switch", { name: "Enable Mini" }));
+    await user.click(screen.getByRole("button", { name: "Save Mini settings" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Disk unavailable");
+    expect(onSettingsChange).not.toHaveBeenCalled();
   });
 
   it("keeps drafts while moving between settings categories", async () => {

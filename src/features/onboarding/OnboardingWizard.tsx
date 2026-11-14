@@ -3,9 +3,10 @@ import { useState } from "react";
 import { Cloud, ImageDown, ArrowRight, Check } from "lucide-react";
 import { t, useLocale } from "@/i18n";
 import { Button } from "@/components/ui/button";
-import type { AppSettings } from "@/api/backend";
-import { settingsApi } from "@/api/backend";
+import type { AppSettings, MiniSettings } from "@/api/backend";
+import { defaultMiniSettings, settingsApi } from "@/api/backend";
 import { errorMessage } from "@/lib/error";
+import { MiniPreferences, miniSettingsValid } from "@/features/mini/MiniPreferences";
 
 type Features = NonNullable<AppSettings["features"]>;
 interface Props {
@@ -18,14 +19,20 @@ export function OnboardingWizard({ settings, onComplete }: Props) {
   const [connectedSettings, setConnectedSettings] = useState(settings);
   const [connecting, setConnecting] = useState(false);
   const [features, setFeatures] = useState<Features>({ compression: true, s3: false });
-  const [step, setStep] = useState<"features" | "provider">("features");
+  const [step, setStep] = useState<"features" | "provider" | "mini">("features");
+  const [mini, setMini] = useState<MiniSettings>({ ...(settings.mini ?? defaultMiniSettings), action: "clipboard" });
   const [provider, setProvider] = useState<"r2" | "other">("r2");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const complete = async () => {
     setSaving(true);
     setError(undefined);
-    const next = { ...connectedSettings, onboardingCompleted: true, features };
+    if (!miniSettingsValid(mini, connectedSettings.profiles)) {
+      setError(t("Could not save setup. Please try again."));
+      setSaving(false);
+      return;
+    }
+    const next = { ...connectedSettings, onboardingCompleted: true, features, mini };
     try {
       await settingsApi.saveSettings(next);
       onComplete(next);
@@ -44,9 +51,10 @@ export function OnboardingWizard({ settings, onComplete }: Props) {
         <ol className="onboarding-steps" aria-label={t("Welcome to Pic Piper")}>
           <li aria-current={step === "features" ? "step" : undefined}>1 · {t("Features")}</li>
           {features.s3 && <li aria-current={step === "provider" ? "step" : undefined}>2 · {t("Storage provider")}</li>}
+          <li aria-current={step === "mini" ? "step" : undefined}>{features.s3 ? "3" : "2"} · {t("Mini")}</li>
         </ol>
-        <h1 id="onboarding-title">{step === "features" ? t("What would you like to use?") : t("Choose your storage provider")}</h1>
-        <p className="onboarding-note">{step === "features" ? t("Choose one or both. You can add S3 storage later in Settings.") : t("Browse and upload files with one or more S3 profiles.")}</p>
+        <h1 id="onboarding-title">{step === "features" ? t("What would you like to use?") : step === "provider" ? t("Choose your storage provider") : t("Mini")}</h1>
+        <p className="onboarding-note">{step === "features" ? t("Choose one or both. You can add S3 storage later in Settings.") : step === "provider" ? t("Browse and upload files with one or more S3 profiles.") : t("Configure the menu bar capture shortcut. You can change this later in Settings.")}</p>
         {step === "features" ? (
           <div className="onboarding-cards" role="group" aria-label={t("Features")}>
             {([
@@ -60,7 +68,7 @@ export function OnboardingWizard({ settings, onComplete }: Props) {
               </label>
             ))}
           </div>
-        ) : (
+        ) : step === "provider" ? (
           <>
             <div className="onboarding-cards" role="radiogroup" aria-label={t("Storage provider")}>
               {([ ["r2", t("Cloudflare R2"), t("Connect with your Cloudflare account.")], ["other", t("Other S3-compatible storage"), t("Use your provider’s S3 credentials.")] ] as const).map(([id, title, description]) => (
@@ -75,17 +83,18 @@ export function OnboardingWizard({ settings, onComplete }: Props) {
               <p>{t("This provider needs manual configuration. Finish setup now, then add one or more S3 profiles in Settings.")}</p>
             </div>}
           </>
-        )}
-        {!features.compression && !features.s3 && <p role="status" className="field-error">{t("Choose at least one feature.")}</p>}
+        ) : <MiniPreferences value={mini} onChange={setMini} profiles={connectedSettings.profiles} disabled={saving} />}
+        {step === "features" && !features.compression && !features.s3 && <p role="status" className="field-error">{t("Choose at least one feature.")}</p>}
         {error && <p role="alert" className="field-error">{error}</p>}
         <footer className="onboarding-actions">
-          {step === "provider" && <Button variant="ghost" disabled={saving || connecting} onClick={() => { setStep("features"); setError(undefined); }}>{t("Back")}</Button>}
-          <Button variant={skipR2 ? "outline" : "default"} disabled={saving || connecting || (!features.compression && !features.s3)} onClick={() => {
-            if (step === "features" && features.s3) setStep("provider");
+          {step !== "features" && <Button variant="ghost" disabled={saving || connecting} onClick={() => { setStep(step === "mini" ? (features.s3 ? "provider" : "features") : "features"); setError(undefined); }}>{t("Back")}</Button>}
+          <Button variant={skipR2 ? "outline" : "default"} disabled={saving || connecting || (step === "features" && !features.compression && !features.s3) || (step === "mini" && !miniSettingsValid(mini, connectedSettings.profiles))} onClick={() => {
+            if (step === "features") setStep(features.s3 ? "provider" : "mini");
+            else if (step === "provider") setStep("mini");
             else void complete();
           }}>
-            {saving ? t("Saving...") : step === "features" && features.s3 ? t("Continue") : skipR2 ? t("Configure S3 later") : t("Get started")}
-            {step === "features" && features.s3 ? <ArrowRight aria-hidden="true" /> : <Check aria-hidden="true" />}
+            {saving ? t("Saving...") : step === "mini" ? t("Complete setup") : step === "provider" && skipR2 ? t("Configure S3 later") : t("Continue")}
+            {step === "mini" ? <Check aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
           </Button>
         </footer>
       </section>

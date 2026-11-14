@@ -202,11 +202,10 @@
 }
 
 .brand-mark {
-  width: 10px;
-  height: 10px;
-  flex: 0 0 10px;
-  border-radius: 2px;
-  background: var(--primary);
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  background: url("../../resources/logo-ui.png") center / contain no-repeat;
 }
 
 .masthead nav {
