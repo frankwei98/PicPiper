@@ -4,7 +4,7 @@ import { vi } from "vitest";
 import App from "@/App";
 import { settingsApi, type AppSettings } from "@/api/backend";
 
-vi.mock("@/api/backend", () => ({ settingsApi: { loadSettings: vi.fn(), saveSettings: vi.fn() } }));
+vi.mock("@/api/backend", () => ({ settingsApi: { loadSettings: vi.fn(), saveSettings: vi.fn() }, defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" } }));
 vi.mock("@/features/optimize/OptimizePage", () => ({ OptimizePage: () => <p>Compression workspace</p> }));
 vi.mock("@/features/gallery/S3GalleryPage", () => ({ S3GalleryPage: () => <p>Storage workspace</p> }));
 vi.mock("@/features/settings/SettingsPage", () => ({ SettingsPage: () => <p>Settings workspace</p> }));
@@ -25,7 +25,8 @@ it("shows a skeleton while initial settings are loading", async () => {
 it("persists completion so compression-only users do not see setup again", async () => {
   const user = userEvent.setup();
   render(<App />);
-  await user.click(await screen.findByRole("button", { name: "Get started" }));
+  await user.click(await screen.findByRole("button", { name: "Continue" }));
+  await user.click(await screen.findByRole("button", { name: "Complete setup" }));
   expect(await screen.findByText("Compression workspace")).toBeVisible();
   const saved = vi.mocked(settingsApi.saveSettings).mock.calls[0][0];
   cleanup();
@@ -42,6 +43,7 @@ it("opens storage after completing S3-only setup", async () => {
   await user.click(screen.getByRole("checkbox", { name: /S3 storage/ }));
   await user.click(screen.getByRole("button", { name: "Continue" }));
   await user.click(screen.getByRole("button", { name: "Configure S3 later" }));
+  await user.click(screen.getByRole("button", { name: "Complete setup" }));
   expect(await screen.findByText("Storage workspace")).toBeVisible();
 });
 
@@ -57,7 +59,7 @@ it("blocks setup on a settings read failure and lets users retry", async () => {
   vi.mocked(settingsApi.loadSettings).mockRejectedValueOnce(new Error("Unreadable settings"));
   render(<App />);
   expect(await screen.findByRole("alert")).toHaveTextContent("Unreadable settings");
-  expect(screen.queryByRole("button", { name: "Get started" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Retry" }));
   expect(await screen.findByRole("heading", { name: "What would you like to use?" })).toBeVisible();
   expect(settingsApi.saveSettings).not.toHaveBeenCalled();

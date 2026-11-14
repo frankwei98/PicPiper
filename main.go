@@ -14,11 +14,15 @@ import (
 	"github.com/frankwei98/PicPiper/internal/apperror"
 	"github.com/frankwei98/PicPiper/internal/cloud"
 	"github.com/frankwei98/PicPiper/internal/imaging"
+	"github.com/frankwei98/PicPiper/internal/mini"
 )
 
 var ImagesOpened = mygo.NewEvent[[]string]("images-opened")
+var SettingsChanged = mygo.NewEvent[bool]("settings-changed")
 
 type Backend struct {
+	mini        *mini.Service
+	desktop     *desktopController
 	images      *imaging.Service
 	cloud       *cloud.Service
 	openMu      sync.Mutex
@@ -60,10 +64,71 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 		err = apperror.New("invalidRequest", "This request is not valid JSON.")
 	} else {
 		switch operation {
+		case "mini_state":
+			value = b.mini.Snapshot()
+		case "mini_upload_targets":
+			value, err = b.cloud.MiniUploadTargets()
+		case "mini_clear":
+			b.mini.Clear()
+			value = b.mini.Snapshot()
+		case "mini_restore":
+			b.mini.Restore()
+			value = b.mini.Snapshot()
+		case "mini_add":
+			var req struct {
+				Paths []string `json:"paths"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				err = b.mini.Add(req.Paths)
+			}
+			value = b.mini.Snapshot()
+		case "mini_upload":
+			var req struct {
+				IDs        []string `json:"ids"`
+				ProfileID  string   `json:"profileId"`
+				LinkFormat string   `json:"linkFormat"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				err = b.mini.Upload(req.IDs, req.ProfileID, req.LinkFormat)
+			}
+			value = b.mini.Snapshot()
+		case "mini_copy_image":
+			var req struct {
+				ID string `json:"id"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				err = b.mini.CopyImage(req.ID)
+			}
+		case "mini_copy":
+			var req struct {
+				ID         string `json:"id"`
+				LinkFormat string `json:"linkFormat"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				err = b.mini.Copy(req.ID, req.LinkFormat)
+			}
+		case "mini_copy_all":
+			var req struct {
+				LinkFormat string `json:"linkFormat"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				err = b.mini.CopyAll(req.LinkFormat)
+			}
+		case "save_mini_settings":
+			var req struct {
+				Settings cloud.MiniSettings `json:"settings"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				err = b.cloud.SaveMiniSettings(req.Settings)
+			}
 		case "inspect_image", "create_optimizer_run", "compress_image", "copy_outputs_to_dir", "read_thumbnail", "read_comparison_image", "cancel_image_task":
 			value, err = b.images.Call(ctx, operation, json.RawMessage(payload))
 		default:
 			value, err = b.cloud.Call(ctx, operation, json.RawMessage(payload))
+		}
+		if err == nil && (operation == "save_app_settings" || operation == "save_mini_settings") && b.desktop != nil {
+			mygo.RunOnMain(b.desktop.refresh)
+			SettingsChanged.Broadcast(true)
 		}
 	}
 	response := reply{Data: value}
@@ -141,7 +206,9 @@ func main() {
 		dataDir = filepath.Join(smokeDir, "data")
 	}
 	backend := newBackend(dataDir)
-	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { backend.images.Close() })
+	backend.mini = mini.New(backend.images, backend.cloud, mygo.Clipboard.WriteImage, func(text string) error { mygo.Clipboard.WriteText(text); return nil })
+	backend.desktop = &desktopController{backend: backend}
+	mygo.App.OnWillQuit(func(*mygo.QuitEvent) { backend.desktop.removeTray(); backend.mini.Stop(); backend.images.Close() })
 	mygo.Bind(backend)
 	var window *mygo.Window
 	mygo.App.OnOpenURL(func(raw string) {
@@ -167,16 +234,49 @@ func main() {
 		_ = ImagesOpened.Emit(window, []string{path})
 	})
 	mygo.App.WhenReady(func() {
-		win := mygo.NewWindow(appWindowOptions(smokeDir != ""))
+		options := appWindowOptions(smokeDir != "")
+		win := mygo.NewWindow(options)
+		backend.desktop.page = options.Page
 		window = win
+		backend.desktop.main = win
+		backend.desktop.refresh()
+		win.OnClose(func(e *mygo.CloseEvent) {
+			if backend.desktop.tray != nil && !backend.desktop.quitting {
+				e.PreventDefault()
+				win.Hide()
+			}
+		})
 		if smokeDir != "" {
 			var start sync.Once
-			win.Page().OnDOMReady(func() { start.Do(func() { go runSmoke(win, smokeDir) }) })
+			win.Page().OnDOMReady(func() { start.Do(func() { go runSmoke(win, smokeDir, backend) }) })
+		}
+	})
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { backend.desktop.quitting = true })
+	mygo.App.OnQuitCanceled(func() { backend.desktop.quitting = false })
+	mygo.App.OnActivate(func(visible bool) {
+		if !visible && window != nil {
+			backend.desktop.openMain()
 		}
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func (b *Backend) MiniWindow(action string) {
+	if b.desktop == nil {
+		return
+	}
+	mygo.RunOnMain(func() {
+		switch action {
+		case "close":
+			b.desktop.closePanel()
+		case "main":
+			b.desktop.openMain()
+		case "open":
+			b.desktop.showPanel()
+		}
+	})
 }
 
 func appWindowOptions(smoke bool) mygo.WindowOptions {

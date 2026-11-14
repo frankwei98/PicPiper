@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
 });
 vi.mock("@/platform/desktop", () => ({ open: mocks.open, onFileDrop: mocks.onFileDrop, onImagesOpened: mocks.onImagesOpened }));
 vi.mock("./api/backend", () => ({
+  defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
   settingsApi: { loadSettings: mocks.load, saveSettings: vi.fn(), saveS3Secret: vi.fn() },
   imageApi: {
     cancelImageTask: vi.fn(async () => {}),

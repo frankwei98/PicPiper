@@ -4,6 +4,7 @@ import App from "./App";
 
 vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeClipboard: vi.fn(), onFileDrop: vi.fn(() => vi.fn()), onImagesOpened: vi.fn(() => vi.fn()) }));
 vi.mock("./api/backend", () => ({
+  defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
   settingsApi: { loadSettings: vi.fn(async () => ({ profiles: [], onboardingCompleted: true, namingTemplate: "{slug}.{ext}" })) },
   imageApi: {}, galleryApi: {}, uploadApi: {}, namingApi: {},
 }));

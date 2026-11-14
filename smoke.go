@@ -34,7 +34,7 @@ type smokeReport struct {
 
 // runSmoke drives the packaged application's real WebView and native Go bridge.
 // It runs only with --smoke-test and uses private fixtures and a loopback bucket.
-func runSmoke(win *mygo.Window, dir string) {
+func runSmoke(win *mygo.Window, dir string, backend *Backend) {
 	report := smokeReport{Steps: []string{}}
 	defer func() {
 		if value := recover(); value != nil {
@@ -83,7 +83,12 @@ func runSmoke(win *mygo.Window, dir string) {
 	must(smokeClick(win, "Back"))
 	_, err = smokeEval(win, `document.querySelectorAll('.onboarding-cards input')[1].click(); return true;`)
 	must(err)
-	must(smokeClick(win, "Get started"))
+	must(smokeClick(win, "Continue"))
+	must(smokeWait(win, `Boolean(document.querySelector('[role="switch"][aria-label="Enable Mini"]'))`, 5*time.Second))
+	must(smokeCapture(win, dir, "onboarding-mini-off.png"))
+	must(smokeClick(win, "Enable Mini"))
+	must(smokeCapture(win, dir, "onboarding-mini-on.png"))
+	must(smokeClick(win, "Complete setup"))
 	must(smokeWait(win, `Boolean(document.querySelector('[role="tab"]'))`, 5*time.Second))
 	must(smokeCapture(win, dir, "workspace.png"))
 	report.Steps = append(report.Steps, "Packaged frontend and native runtime loaded")
@@ -478,9 +483,28 @@ return saved.length === 1;`)
 	must(smokeCapture(win, dir, "batch-lazy-bottom.png"))
 	report.Steps = append(report.Steps, "Long compression batch mounted only nearby cards and retained scroll placeholders")
 
+	must(smokeMini(backend, dir, bucket))
+	report.Steps = append(report.Steps, "Mini supports selection, on-demand upload sheets, same-bucket skips, four clipboard link formats, clear/undo without changing gallery objects, and fixed controls in all six languages")
+	report.Steps = append(report.Steps, "Mini: native status icon drop adapter installed; persistent flyout, background image clipboard, S3 upload, four link formats and reopen verified")
+
 	// Check the packaged scheme through Launch Services, rather than treating
 	// the Info.plist declaration alone as proof of native URL integration.
+	// Wait for AppKit's did-miniaturize notification, not only the early
+	// isMiniaturized flag, before asking Launch Services to restore the window.
+	minimized := make(chan struct{}, 1)
+	offMinimize := win.OnMinimize(func() {
+		select {
+		case minimized <- struct{}{}:
+		default:
+		}
+	})
+	defer offMinimize()
 	win.Minimize()
+	select {
+	case <-minimized:
+	case <-time.After(5 * time.Second):
+		panic("Window minimization did not finish")
+	}
 	deadline = time.Now().Add(5 * time.Second)
 	for !win.IsMinimized() && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
@@ -488,13 +512,29 @@ return saved.length === 1;`)
 	if !win.IsMinimized() {
 		panic("Could not minimize the window for the app-return test")
 	}
+	receivedURL := make(chan struct{}, 1)
+	offURL := mygo.App.OnOpenURL(func(raw string) {
+		if isCloudflareReturnURL(raw) {
+			select {
+			case receivedURL <- struct{}{}:
+			default:
+			}
+		}
+	})
+	defer offURL()
 	must(mygo.Shell.OpenExternal("picpiper://oauth/cloudflare/connected"))
 	deadline = time.Now().Add(8 * time.Second)
 	for (win.IsMinimized() || !win.IsFocused()) && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if win.IsMinimized() || !win.IsFocused() {
-		panic("App URL scheme did not restore and focus Pic Piper")
+		received := false
+		select {
+		case <-receivedURL:
+			received = true
+		default:
+		}
+		panic(fmt.Sprintf("App URL scheme did not restore and focus Pic Piper (received=%t, minimized=%t, focused=%t, active=%t)", received, win.IsMinimized(), win.IsFocused(), mygo.App.IsActive()))
 	}
 	report.Steps = append(report.Steps, "OS app URL scheme restored and focused the existing Pic Piper window")
 
@@ -560,7 +600,7 @@ func smokeClick(win *mygo.Window, label string) error {
 		}
 	}
 	_, err := smokeEval(win, `const name = `+smokeJSON(label)+`;
-const button = [...document.querySelectorAll('button')].find(x => !x.disabled && (x.getAttribute('aria-label') === name || x.textContent.trim() === name));
+const button = [...document.querySelectorAll('button,[role="switch"]')].find(x => !x.disabled && (x.getAttribute('aria-label') === name || x.textContent.trim() === name));
 if (!button) throw Error('Missing enabled action: ' + name); button.click(); return true;`)
 	return err
 }
@@ -630,6 +670,8 @@ func smokeFixture(path string) error {
 type smokeBucket struct {
 	thumbnailGate <-chan struct{}
 	objectReads   int
+	putAttempts   int
+	putCount      int
 	publicReads   int
 	mu            sync.Mutex
 	objects       map[string][]byte
@@ -670,6 +712,7 @@ func (bucket *smokeBucket) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	switch req.Method {
 	case http.MethodPut:
+		bucket.putAttempts++
 		if req.Header.Get("If-None-Match") != "*" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -683,6 +726,7 @@ func (bucket *smokeBucket) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		bucket.putCount++
 		bucket.objects[key] = body
 		if bucket.uploadIDs == nil {
 			bucket.uploadIDs = map[string]string{}

@@ -12,6 +12,9 @@ export const Backend = {
   call(operation: string, payload: string): Promise<string> {
     return call("Backend.Call", operation, payload);
   },
+  miniWindow(action: string): Promise<void> {
+    return call("Backend.MiniWindow", action);
+  },
   open(encoded: string): Promise<string[]> {
     return call("Backend.Open", encoded);
   },
@@ -32,4 +35,5 @@ export const Backend = {
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
 export const events = {
   imagesOpened: event<string[]>("images-opened"),
+  settingsChanged: event<boolean>("settings-changed"),
 } as const;

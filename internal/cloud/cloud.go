@@ -65,12 +65,13 @@ type features struct {
 	S3          bool `json:"s3"`
 }
 type settings struct {
-	OnboardingCompleted bool      `json:"onboardingCompleted,omitempty"`
-	Features            *features `json:"features,omitempty"`
-	Profiles            []profile `json:"profiles"`
-	NamingTemplate      string    `json:"namingTemplate"`
-	DefaultOutputDir    *string   `json:"defaultOutputDir"`
-	DefaultProfileID    *string   `json:"defaultProfileId"`
+	Mini                *MiniSettings `json:"mini,omitempty"`
+	OnboardingCompleted bool          `json:"onboardingCompleted,omitempty"`
+	Features            *features     `json:"features,omitempty"`
+	Profiles            []profile     `json:"profiles"`
+	NamingTemplate      string        `json:"namingTemplate"`
+	DefaultOutputDir    *string       `json:"defaultOutputDir"`
+	DefaultProfileID    *string       `json:"defaultProfileId"`
 }
 type galleryObject struct {
 	FileName            string  `json:"fileName,omitempty"`
@@ -130,6 +131,7 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		if err := decode("settings", &p); err != nil {
 			return nil, err
 		}
+		p.Settings.Mini = clipboardMiniSettings(p.Settings.Mini)
 		if err := validateSettings(p.Settings); err != nil {
 			return nil, err
 		}
@@ -365,7 +367,8 @@ func (s *Service) secretPath(id string) string {
 	return filepath.Join(s.dataDir, "credentials", id+".secret")
 }
 func defaults() settings {
-	return settings{Profiles: []profile{}, NamingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}"}
+	mini := DefaultMiniSettings()
+	return settings{Mini: &mini, Profiles: []profile{}, NamingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}"}
 }
 func (s *Service) loadSettings() (settings, error) {
 	s.mu.Lock()
@@ -387,6 +390,7 @@ func (s *Service) loadSettingsLocked() (settings, error) {
 	if v.Profiles == nil {
 		v.Profiles = []profile{}
 	}
+	v.Mini = clipboardMiniSettings(v.Mini)
 	return v, nil
 }
 func (s *Service) saveSettings(v settings) error {
@@ -395,6 +399,7 @@ func (s *Service) saveSettings(v settings) error {
 	return s.saveSettingsLocked(v)
 }
 func (s *Service) saveSettingsLocked(v settings) error {
+	v.Mini = clipboardMiniSettings(v.Mini)
 	if e := os.MkdirAll(s.dataDir, 0700); e != nil {
 		return appErr("settingsDirFailed", e.Error())
 	}
@@ -461,6 +466,11 @@ func (s *Service) getSecret(p profile, draft *string) (string, error) {
 	return string(b), nil
 }
 func validateSettings(v settings) error {
+	if v.Mini != nil {
+		if err := validateMini(*v.Mini, v.Profiles); err != nil {
+			return err
+		}
+	}
 	if strings.TrimSpace(v.NamingTemplate) == "" {
 		return appErr("invalidSettings", "Naming template is required.")
 	}
