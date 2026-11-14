@@ -98,9 +98,15 @@ func runSmoke(win *mygo.Window, dir string, backend *Backend) {
 	defer server.Close()
 	must(smokeClick(win, "Settings"))
 	win.SetSize(1920, 900)
-	must(smokeWait(win, `innerWidth >= 1900 && innerHeight >= 860`, 5*time.Second))
+	// AppKit clamps height to the display's work area (684px on the CI
+	// runner). Horizontal alignment only needs the supported 600px minimum.
+	must(smokeWait(win, `innerWidth >= 1900 && innerHeight >= 600`, 5*time.Second))
 	must(smokeSettingsPreferencesFit(win))
 	must(smokeCapture(win, dir, "settings-general-wide-en.png"))
+	win.SetSize(1920, 684)
+	must(smokeWait(win, `innerWidth >= 1900 && innerHeight >= 600 && innerHeight <= 689`, 5*time.Second))
+	must(smokeSettingsPreferencesFit(win))
+	must(smokeCapture(win, dir, "settings-general-wide-short-en.png"))
 	win.SetSize(1120, 820)
 	must(smokeWait(win, `innerWidth <= 1125 && innerHeight <= 825`, 5*time.Second))
 	must(smokeClick(win, "S3 profiles"))
@@ -130,6 +136,7 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	must(smokeCapture(win, dir, "account-authorization.png"))
 	must(smokeClick(win, "S3 profiles"))
 	report.Steps = append(report.Steps, "Settings form tested a draft S3 connection and saved the profile")
+	report.Steps = append(report.Steps, "Wide settings align controls with the right content inset at the CI runner's 684px viewport height")
 
 	fixture := filepath.Join(dir, "Sample photo.jpg")
 	must(smokeFixture(fixture))
@@ -411,11 +418,11 @@ return saved.length === 1;`)
 		must(smokeCapture(win, dir, "settings-"+locale+".png"))
 		if locale == "zh-CN" {
 			win.SetSize(1120, 820)
-			must(smokeWait(win, `innerWidth >= 1080 && innerHeight >= 780`, 5*time.Second))
+			must(smokeWait(win, `innerWidth >= 1080 && innerHeight >= 600`, 5*time.Second))
 			must(smokeSettingsPreferencesFit(win))
 			must(smokeCapture(win, dir, "settings-general-zh-CN.png"))
 			win.SetSize(1920, 900)
-			must(smokeWait(win, `innerWidth >= 1900 && innerHeight >= 860`, 5*time.Second))
+			must(smokeWait(win, `innerWidth >= 1900 && innerHeight >= 600`, 5*time.Second))
 			must(smokeSettingsPreferencesFit(win))
 			must(smokeCapture(win, dir, "settings-general-wide-zh-CN.png"))
 			win.SetSize(920, 600)
@@ -653,7 +660,8 @@ func smokeWait(win *mygo.Window, expression string, timeout time.Duration) error
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("timed out waiting for: %s", expression)
+	viewport, _ := smokeEval(win, `({width: innerWidth, height: innerHeight, availableWidth: screen.availWidth, availableHeight: screen.availHeight})`)
+	return fmt.Errorf("timed out waiting for: %s (viewport: %v)", expression, viewport)
 }
 
 func smokeCapture(win *mygo.Window, dir, name string) error {
