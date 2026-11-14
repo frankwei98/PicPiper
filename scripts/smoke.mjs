@@ -11,6 +11,7 @@ const app = resolve(config.out, `darwin-${process.arch}`, `${config.name}.app`);
 if (!existsSync(join(app, "Contents", "MacOS", config.name))) throw new Error("Build the app with pnpm build before running pnpm smoke.");
 mkdirSync(resolve("build"), { recursive: true });
 const reportDir = mkdtempSync(join(resolve("build"), "smoke-"));
+execFileSync(process.execPath, [resolve("scripts/test-app-icon.mjs"), reportDir], { stdio: "inherit" });
 copyFileSync(resolve("internal/cloud/r2_connected.html"), join(reportDir, "oauth-connected.html"));
 copyFileSync(resolve("internal/imaging/testdata/sample.heic"), join(reportDir, "Imported HEIC.heic"));
 try {

@@ -240,12 +240,7 @@ func main() {
 		window = win
 		backend.desktop.main = win
 		backend.desktop.refresh()
-		win.OnClose(func(e *mygo.CloseEvent) {
-			if backend.desktop.tray != nil && !backend.desktop.quitting {
-				e.PreventDefault()
-				win.Hide()
-			}
-		})
+		win.OnClose(backend.desktop.closeMain)
 		if smokeDir != "" {
 			var start sync.Once
 			win.Page().OnDOMReady(func() { start.Do(func() { go runSmoke(win, smokeDir, backend) }) })

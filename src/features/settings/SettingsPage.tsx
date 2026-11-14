@@ -1,18 +1,21 @@
 import { R2Connect } from "@/features/storage/R2Connect";
 import { t, useLocale, languages, getLanguagePreference, setLanguage, type LanguagePreference, type MessageKey } from "@/i18n";
-import { ArrowUpRight, Cloud, Database, FileOutput, ImageDown, KeyRound, Settings2 } from "lucide-react";
+import { ArrowUpRight, Cloud, Database, FileOutput, KeyRound, Settings2 } from "lucide-react";
+import { Tabs } from "@base-ui/react/tabs";
 import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "../../api/backend";
 import { defaultMiniSettings, type AppSettings, type MiniSettings } from "../../api/backend";
 import type { S3Profile } from "../../types";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { errorMessage } from "../../lib/error";
 import { MiniPreferences, miniSettingsValid } from "@/features/mini/MiniPreferences";
+import { PreferenceRow } from "@/components/ui/preference-row";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -20,13 +23,14 @@ interface SettingsPageProps {
   isActive?: boolean;
 }
 
-type SettingsSection = "general" | "storage" | "oauth" | "publishing" | "mini";
-const SECTIONS: Array<{ id: SettingsSection; label: MessageKey; icon: typeof Cloud }> = [
-  { id: "general", label: "General", icon: Settings2 },
-  { id: "storage", label: "S3 profiles", icon: Database },
-  { id: "oauth", label: "Account authorization", icon: KeyRound },
-  { id: "publishing", label: "Upload and naming", icon: FileOutput },
-  { id: "mini", label: "Mini", icon: ImageDown },
+type SettingsSection = "general" | "storage" | "oauth" | "publishing";
+const SECTION_GROUPS: Array<{ label: MessageKey; items: Array<{ id: SettingsSection; label: MessageKey; icon: typeof Cloud }> }> = [
+  { label: "Application", items: [{ id: "general", label: "General", icon: Settings2 }] },
+  { label: "Cloud storage", items: [
+    { id: "storage", label: "S3 profiles", icon: Database },
+    { id: "oauth", label: "One-click authorization", icon: KeyRound },
+    { id: "publishing", label: "Links and naming", icon: FileOutput },
+  ] },
 ];
 
 function upsertProfile(profiles: S3Profile[], profile: S3Profile): S3Profile[] {
@@ -56,11 +60,12 @@ function httpUrlError(value: string, label: string): string | undefined {
 
 export function SettingsPage({ settings, onSettingsChange, isActive = true }: SettingsPageProps) {
   useLocale();
-  const [section, setSection] = useState<SettingsSection>("storage");
+  const [section, setSection] = useState<SettingsSection>("general");
   const [mini, setMini] = useState<MiniSettings>({ ...(settings.mini ?? defaultMiniSettings), action: "clipboard" });
-  const [miniSaving, setMiniSaving] = useState(false);
-  const [miniMessage, setMiniMessage] = useState<string | null>(null);
-  const [miniError, setMiniError] = useState<string | null>(null);
+  const [closeBehavior, setCloseBehavior] = useState<AppSettings["closeBehavior"]>(settings.closeBehavior ?? "quit");
+  const [generalSaving, setGeneralSaving] = useState(false);
+  const [generalMessage, setGeneralMessage] = useState<string | null>(null);
+  const [generalError, setGeneralError] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState(
     settings.defaultProfileId ?? settings.profiles[0]?.id ?? "",
   );
@@ -69,6 +74,9 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
   useEffect(() => {
     setMini({ ...(settings.mini ?? defaultMiniSettings), action: "clipboard" });
   }, [settings.mini]);
+  useEffect(() => {
+    setCloseBehavior(settings.closeBehavior ?? "quit");
+  }, [settings.closeBehavior]);
 
   const profile = creatingNew ? undefined : settings.profiles.find((p) => p.id === editingProfileId);
 
@@ -136,37 +144,37 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [connectingR2, setConnectingR2] = useState(false);
+  const [providerBusy, setProviderBusy] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const connectionGenerationRef = useRef(0);
 
-  useEffect(() => { if (!isActive) setConnectingR2(false); }, [isActive]);
+  useEffect(() => { if (!isActive) setProviderBusy(false); }, [isActive]);
 
   const changeSection = (next: SettingsSection) => {
-    setConnectingR2(false);
+    setProviderBusy(false);
     setSection(next);
   };
 
-  const handleSaveMini = async (event: React.FormEvent) => {
+  const handleSaveGeneral = async (event: React.FormEvent) => {
     event.preventDefault();
-    setMiniMessage(null);
-    setMiniError(null);
+    setGeneralMessage(null);
+    setGeneralError(null);
     if (!miniSettingsValid(mini, settings.profiles)) {
-      setMiniError(t("Failed to save Mini settings."));
+      setGeneralError(t("Failed to save general settings."));
       return;
     }
-    setMiniSaving(true);
-    const nextSettings = { ...settings, mini };
+    setGeneralSaving(true);
+    const nextSettings = { ...settings, mini, closeBehavior };
     try {
       await settingsApi.saveSettings(nextSettings);
       onSettingsChange(nextSettings);
-      setMiniMessage(t("Mini settings saved."));
+      setGeneralMessage(t("General settings saved."));
     } catch (error) {
-      setMiniError(errorMessage(error, t("Failed to save Mini settings.")));
+      setGeneralError(errorMessage(error, t("Failed to save general settings.")));
     } finally {
-      setMiniSaving(false);
+      setGeneralSaving(false);
     }
   };
 
@@ -320,16 +328,6 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
     ? <span id={`${field}-error`} className="field-error">{fieldErrors[field]}</span>
     : null;
 
-  const handleSectionKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
-    const tabs = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []);
-    const index = tabs.indexOf(event.currentTarget);
-    event.preventDefault();
-    const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + tabs.length) % tabs.length;
-    tabs[next]?.focus();
-    tabs[next]?.click();
-  };
-
   const inputField = (field: ProfileField, label: MessageKey, value: string, update: (value: string) => void, extra: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
     <Label className="field">
       <span>{t(label)}</span>
@@ -339,60 +337,67 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
   );
 
   return (
-    <div className="page settings-page">
+    <Tabs.Root className="page settings-page" value={section} orientation="vertical" onValueChange={(value: SettingsSection) => changeSection(value)}>
       <aside className="settings-sidebar">
         <h2>{t("Settings")}</h2>
-        <nav role="tablist" aria-label={t("Settings categories")} aria-orientation="vertical">
-          {SECTIONS.map(({ id, label, icon: Icon }) => <Button key={id} id={`settings-tab-${id}`} type="button" variant="ghost" role="tab" aria-selected={section === id} aria-controls={id === "storage" || id === "publishing" ? "settings-section-profile" : `settings-section-${id}`} tabIndex={section === id ? 0 : -1} disabled={saving || testingConnection || miniSaving} onClick={() => changeSection(id)} onKeyDown={handleSectionKeyDown}>
-            <Icon className="size-4" aria-hidden="true" />{t(label)}
-          </Button>)}
-        </nav>
+        <Tabs.List className="settings-navigation" aria-label={t("Settings categories")} activateOnFocus>
+          {SECTION_GROUPS.map((group) => <div key={group.label} className="settings-nav-group">
+            <h3>{t(group.label)}</h3>
+            {group.items.map(({ id, label, icon: Icon }) => <Tabs.Tab key={id} value={id} id={`settings-tab-${id}`} className={cn(buttonVariants({ variant: "ghost" }))} disabled={saving || testingConnection || generalSaving}>
+              <Icon className="size-4" aria-hidden="true" />{t(label)}
+            </Tabs.Tab>)}
+          </div>)}
+        </Tabs.List>
       </aside>
       <div className="settings-content">
-        <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section !== "general"}>
-          <h2 className="settings-title">{t("General")}</h2>
-          <Label className="settings-language field">
-            <span>{t("Language")}</span>
-            <NativeSelect aria-label={t("Language")} value={getLanguagePreference()} onChange={(event) => setLanguage(event.target.value as LanguagePreference)}>
-              <NativeSelectOption value="system">{t("System default")}</NativeSelectOption>
-              {languages.map(({ id, label }) => <NativeSelectOption key={id} value={id}>{label}</NativeSelectOption>)}
-            </NativeSelect>
-          </Label>
-          <p className="field-hint">{t("Language changes apply immediately and are saved on this device.")}</p>
-        </section>
-        <section id="settings-section-oauth" role="tabpanel" aria-labelledby="settings-tab-oauth" hidden={section !== "oauth"}>
-          <h2 className="settings-title">{t("Account authorization")}</h2>
-          {section === "oauth" && isActive && <R2Connect onConnected={onSettingsChange} onBusyChange={setConnectingR2} disabled={saving || testingConnection} />}
-        </section>
-        <form id="settings-section-mini" role="tabpanel" aria-labelledby="settings-tab-mini" className="settings-sheet mini-settings" hidden={section !== "mini"} onSubmit={handleSaveMini}>
-          <fieldset className="settings-fields" disabled={miniSaving}>
-            <h2 className="settings-title">{t("Mini")}</h2>
-            <MiniPreferences value={mini} onChange={(value) => { setMini(value); setMiniMessage(null); setMiniError(null); }} profiles={settings.profiles} disabled={miniSaving} />
-            <footer className="settings-actions"><Button type="submit" disabled={miniSaving || !miniSettingsValid(mini, settings.profiles)}>{miniSaving ? t("Saving...") : t("Save Mini settings")}</Button></footer>
-            {miniSaving && <p role="status">{t("Saving...")}</p>}
-            {miniMessage && <p role="status">{miniMessage}</p>}
-            {miniError && <Alert variant="destructive"><AlertDescription>{miniError}</AlertDescription></Alert>}
+        <Tabs.Panel value="general" id="settings-section-general" keepMounted render={<form className="settings-sheet settings-general" onSubmit={handleSaveGeneral} />}>
+          <fieldset className="settings-fields" disabled={generalSaving}>
+            <h2 className="settings-title">{t("General")}</h2>
+            <section className="settings-group settings-preferences">
+              <h3>{t("Preferences")}</h3>
+              <PreferenceRow label={t("Language")} htmlFor="settings-language" description={t("Language changes apply immediately and are saved on this device.")} descriptionId="settings-language-description">
+                <NativeSelect id="settings-language" aria-label={t("Language")} aria-describedby="settings-language-description" value={getLanguagePreference()} onChange={(event) => setLanguage(event.target.value as LanguagePreference)}>
+                  <NativeSelectOption value="system">{t("System default")}</NativeSelectOption>
+                  {languages.map(({ id, label }) => <NativeSelectOption key={id} value={id}>{label}</NativeSelectOption>)}
+                </NativeSelect>
+              </PreferenceRow>
+              <PreferenceRow label={t("Close window behavior")} htmlFor="settings-close-behavior" description={mini.enabled ? t("The status bar icon needs Pic Piper to keep running in the background. Disable the icon to change this behavior.") : undefined} descriptionId="close-behavior-reason">
+                <NativeSelect id="settings-close-behavior" aria-label={t("Close window behavior")} aria-describedby={mini.enabled ? "close-behavior-reason" : undefined} value={mini.enabled ? "background" : closeBehavior} disabled={mini.enabled} onChange={(event) => { setCloseBehavior(event.target.value as AppSettings["closeBehavior"]); setGeneralMessage(null); setGeneralError(null); }}>
+                  <NativeSelectOption value="quit">{t("Quit application")}</NativeSelectOption>
+                  <NativeSelectOption value="background">{t("Close window and run in background")}</NativeSelectOption>
+                </NativeSelect>
+              </PreferenceRow>
+            </section>
+            <section className="settings-group settings-preferences">
+              <h3>{t("Quick compression")}</h3>
+              <MiniPreferences value={mini} onChange={(value) => { setMini(value); setGeneralMessage(null); setGeneralError(null); }} profiles={settings.profiles} disabled={generalSaving} label="Show status bar icon" hint="Drag images to the icon or open Mini to compress and copy them." layout="rows" />
+            </section>
+            <footer className="settings-actions"><Button type="submit" disabled={generalSaving || !miniSettingsValid(mini, settings.profiles)}>{generalSaving ? t("Saving...") : t("Save general settings")}</Button></footer>
+            {(generalSaving || generalMessage || generalError) && <div className="settings-status">
+              {(generalSaving || generalMessage) && <p role="status">{generalSaving ? t("Saving...") : generalMessage}</p>}
+              {generalError && <Alert variant="destructive"><AlertDescription>{generalError}</AlertDescription></Alert>}
+            </div>}
           </fieldset>
-        </form>
-        <form id="settings-section-profile" role="tabpanel" aria-labelledby={`settings-tab-${section === "publishing" ? "publishing" : "storage"}`} className="settings-sheet" hidden={section !== "storage" && section !== "publishing"} onSubmit={handleSaveProfile}>
-          <fieldset className="settings-fields" disabled={saving || connectingR2}>
-            <section hidden={section !== "storage"}>
-              <h2 className="settings-title">{t("S3 profiles")}</h2>
-              <div className="storage-hero">
-                <div><h3>{t("Add R2 with your Cloudflare account")}</h3><p>{t("Authorize in your browser, then choose buckets to create profiles.")}</p></div>
-                <Button type="button" onClick={() => changeSection("oauth")}>{t("Add with an account")}<ArrowUpRight className="size-4" aria-hidden="true" /></Button>
-              </div>
-            </section>
-            <section hidden={section !== "publishing"}>
-              <h2 className="settings-title">{t("Upload and naming")}</h2>
-            </section>
-            <div className="settings-scope">
-              {settings.profiles.length > 1 && <Label className="field"><span>{t("Editing profile")}</span><NativeSelect value={creatingNew ? "new" : editingProfileId} onChange={(event) => { setCreatingNew(false); setEditingProfileId(event.target.value); }}>
+        </Tabs.Panel>
+        <Tabs.Panel value="oauth" id="settings-section-oauth" keepMounted render={<section />}>
+          <h2 className="settings-title">{t("One-click authorization")}</h2>
+          {section === "oauth" && isActive && <R2Connect onConnected={onSettingsChange} onBusyChange={setProviderBusy} disabled={saving || testingConnection} />}
+        </Tabs.Panel>
+        <Tabs.Panel value={section === "publishing" ? "publishing" : "storage"} id="settings-section-profile" keepMounted render={<form className="settings-sheet" onSubmit={handleSaveProfile} />}>
+          <fieldset className="settings-fields" disabled={saving || providerBusy}>
+            <header className="settings-heading">
+              <h2 className="settings-title">{t(section === "publishing" ? "Links and naming" : "S3 profiles")}</h2>
+              <Button variant="outline" type="button" aria-label={t("Add profile")} onClick={() => { setCreatingNew(true); changeSection("storage"); }}>{t("Add manually")}</Button>
+            </header>
+            {section === "storage" && <PreferenceRow label={t("One-click authorization")} description={t("Authorize your storage provider in a browser, then choose buckets to add.")}>
+              <Button variant="outline" type="button" onClick={() => changeSection("oauth")}>{t("Add with an account")}<ArrowUpRight className="size-4" aria-hidden="true" /></Button>
+            </PreferenceRow>}
+            {settings.profiles.length > 1 && <PreferenceRow label={t("Editing profile")} htmlFor="settings-profile">
+              <NativeSelect id="settings-profile" aria-label={t("Editing profile")} value={creatingNew ? "new" : editingProfileId} onChange={(event) => { setCreatingNew(false); setEditingProfileId(event.target.value); }}>
                 {creatingNew && <NativeSelectOption value="new">{t("Add profile")}</NativeSelectOption>}
                 {settings.profiles.map((entry) => <NativeSelectOption key={entry.id} value={entry.id}>{entry.name}</NativeSelectOption>)}
-              </NativeSelect></Label>}
-              <Button variant="ghost" type="button" aria-label={t("Add profile")} onClick={() => { setCreatingNew(true); changeSection("storage"); }}>{t("Add manually")}</Button>
-            </div>
+              </NativeSelect>
+            </PreferenceRow>}
             <div hidden={section !== "storage"}>
               <section className="settings-group">
                 <h3>{t("Connection")}</h3>
@@ -401,8 +406,10 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
                   {inputField("bucket", "Bucket", bucket, setBucket, { placeholder: "my-image-bucket" })}
                   <div className="field-full">{inputField("endpoint", "Endpoint", endpoint, setEndpoint, { placeholder: "https://s3.example.com" })}</div>
                   {inputField("region", "Region", region, setRegion)}
-                  <Label className="field-switch"><span>{t("Path style addressing")}<small>{t("Use bucket-in-path requests when your provider requires them.")}</small></span><Switch aria-label={t("Path style addressing")} checked={pathStyle} onCheckedChange={setPathStyle} /></Label>
                 </div>
+                <PreferenceRow label={t("Path style addressing")} htmlFor="settings-path-style" description={t("Use bucket-in-path requests when your provider requires them.")} descriptionId="settings-path-style-description">
+                  <Switch id="settings-path-style" aria-label={t("Path style addressing")} aria-describedby="settings-path-style-description" checked={pathStyle} onCheckedChange={setPathStyle} />
+                </PreferenceRow>
               </section>
               <section className="settings-group">
                 <h3>{t("Credentials")}</h3>
@@ -421,11 +428,13 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
                 </div>
               </section>
               <section className="settings-group">
-                <p className="settings-scope-note">{t("Applies to all profiles")}</p>
                 {inputField("namingTemplate", "Naming template", namingTemplate, setNamingTemplate)}
+                <p className="field-hint">{t("Applies to all profiles")}</p>
               </section>
               <section className="settings-group">
-                <Label className="field-switch"><span>{t("Use as default profile")}<small>{t("New compressions upload here unless you choose another profile.")}</small></span><Switch aria-label={t("Use as default profile")} checked={makeDefault} onCheckedChange={setMakeDefault} /></Label>
+                <PreferenceRow label={t("Use as default profile")} htmlFor="settings-default-profile" description={t("New compressions upload here unless you choose another profile.")} descriptionId="settings-default-profile-description">
+                  <Switch id="settings-default-profile" aria-label={t("Use as default profile")} aria-describedby="settings-default-profile-description" checked={makeDefault} onCheckedChange={setMakeDefault} />
+                </PreferenceRow>
               </section>
             </div>
             <footer className="settings-actions">
@@ -440,8 +449,8 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
               {saveError && <Alert variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert>}
             </div>}
           </fieldset>
-        </form>
+        </Tabs.Panel>
       </div>
-    </div>
+    </Tabs.Root>
   );
 }

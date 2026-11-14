@@ -20,6 +20,7 @@ it("cancels browser authorization when leaving Settings and allows another attem
   const settings = { profiles: [], namingTemplate: "{slug}.{ext}" };
   const onSettingsChange = vi.fn();
   const view = render(<SettingsPage settings={settings} onSettingsChange={onSettingsChange} isActive />);
+  await user.click(screen.getByRole("tab", { name: "S3 profiles" }));
   await user.click(screen.getByRole("button", { name: "Add with an account" }));
   await user.click(screen.getByRole("button", { name: "Sign in with Cloudflare" }));
   expect(await screen.findByRole("status")).toHaveTextContent("Waiting for browser authorization");

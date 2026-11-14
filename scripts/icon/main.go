@@ -35,8 +35,7 @@ func main() {
 		log.Fatal("resources/logo-tray.png has no usable visible mark")
 	}
 
-	appIcon := image.NewNRGBA(image.Rect(0, 0, 1024, 1024))
-	xdraw.CatmullRom.Scale(appIcon, appIcon.Bounds(), app, app.Bounds(), stdDraw.Over, nil)
+	appIcon := renderAppIcon(app, 1024)
 	appPath := "resources/icon.png"
 	if len(os.Args) == 2 {
 		appPath = os.Args[1]
@@ -44,8 +43,7 @@ func main() {
 	if err := writePNG(appPath, appIcon); err != nil {
 		log.Fatal(err)
 	}
-	uiIcon := image.NewNRGBA(image.Rect(0, 0, 96, 96))
-	xdraw.CatmullRom.Scale(uiIcon, uiIcon.Bounds(), app, app.Bounds(), stdDraw.Over, nil)
+	uiIcon := renderAppIcon(app, 96)
 	if err := writePNG("resources/logo-ui.png", uiIcon); err != nil {
 		log.Fatal(err)
 	}
@@ -57,6 +55,20 @@ func main() {
 	if err := writePNG("resources/tray@2x.png", makeTrayIcon(monoTray, 64, 56)); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func renderAppIcon(source image.Image, size int) *image.NRGBA {
+	output := image.NewNRGBA(image.Rect(0, 0, size, size))
+	xdraw.CatmullRom.Scale(output, output.Bounds(), source, source.Bounds(), stdDraw.Over, nil)
+	// Keep the intended solid tile opaque. Almost-opaque cutout pixels can make
+	// modern macOS wrap the artwork in its own white background. Preserve true
+	// transparency and antialiasing at the rounded corners, and leave RGB intact.
+	for offset := 3; offset < len(output.Pix); offset += 4 {
+		if output.Pix[offset] >= 245 {
+			output.Pix[offset] = 255
+		}
+	}
+	return output
 }
 
 func readPNG(path string) (image.Image, error) {

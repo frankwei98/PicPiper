@@ -148,6 +148,7 @@ export const namingApi = {
 };
 
 export interface AppSettings {
+  closeBehavior?: "quit" | "background";
   mini?: MiniSettings;
   onboardingCompleted?: boolean;
   features?: { compression: boolean; s3: boolean };

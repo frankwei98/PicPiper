@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "test:go": "node scripts/go.mjs test ./...",
     "test:tray": "node scripts/test-tray-drop.mjs",
+    "test:app-icon": "node scripts/test-app-icon.mjs",
     "generate": "node scripts/go.mjs run github.com/egoist/mygo/cmd/mygo@v0.9.0 generate",
     "smoke": "node scripts/smoke.mjs"
   },
