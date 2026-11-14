@@ -41,3 +41,12 @@ export function useUpdateActivity(scope: "optimize" | "gallery", busy: boolean) 
   }, [scope, busy]);
   useEffect(() => () => { if (isMyGo()) activity(scope, false); }, [scope]);
 }
+
+// Upload batches outlive gallery navigation. Their lease belongs to the async
+// operation, rather than an effect that would clear it when the page unmounts.
+export async function beginUpdateActivity(scope: "gallery"): Promise<() => Promise<void>> {
+  if (!isMyGo()) return async () => {};
+  const id = crypto.randomUUID();
+  await call<void>("update_activity", { scope, id, busy: true });
+  return () => call<void>("update_activity", { scope, id, busy: false }).catch(() => {});
+}

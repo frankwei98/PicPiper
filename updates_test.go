@@ -61,3 +61,26 @@ func TestUpdateActivityConcurrent(t *testing.T) {
 		t.Fatal("request count leaked")
 	}
 }
+
+func TestUploadLeasesSurviveNavigationAndIndependentBatches(t *testing.T) {
+	u := &updateController{installed: true}
+	activity := func(payload string) {
+		t.Helper()
+		if _, err := u.call("update_activity", []byte(payload)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	activity(`{"scope":"gallery","id":"first","busy":true}`)
+	activity(`{"scope":"gallery","id":"second","busy":true}`)
+	activity(`{"scope":"gallery","id":"first","busy":false}`)
+	if u.prepareQuit(false, false) {
+		t.Fatal("one completed batch released another batch's lease")
+	}
+	activity(`{"scope":"gallery","id":"second","busy":false}`)
+	if !u.prepareQuit(false, false) {
+		t.Fatal("completed batches retained a lease")
+	}
+	if _, err := u.call("update_activity", []byte(`{"scope":"gallery","id":"third","busy":true}`)); err == nil {
+		t.Fatal("batch started during quit")
+	}
+}

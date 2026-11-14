@@ -118,20 +118,29 @@ func (u *updateController) call(operation string, payload []byte) (any, error) {
 	case "update_activity":
 		var req struct {
 			Scope string `json:"scope"`
+			ID    string `json:"id"`
 			Busy  bool   `json:"busy"`
 		}
 		if err := json.Unmarshal(payload, &req); err != nil {
 			return nil, err
 		}
-		if req.Scope != "optimize" && req.Scope != "gallery" {
+		if (req.Scope != "optimize" && req.Scope != "gallery") || len(req.ID) > 64 {
 			return nil, apperror.New("invalidRequest", "Unknown task scope.")
 		}
 		u.mu.Lock()
+		defer u.mu.Unlock()
+		if req.Busy && u.closing {
+			return nil, apperror.New("closing", "Pic Piper is closing. Try again after reopening the app.")
+		}
 		if u.queues == nil {
 			u.queues = make(map[string]bool)
 		}
-		u.queues[req.Scope] = req.Busy
-		u.mu.Unlock()
+		key := req.Scope + ":" + req.ID
+		if req.Busy {
+			u.queues[key] = true
+		} else {
+			delete(u.queues, key)
+		}
 	}
 	return nil, nil
 }
