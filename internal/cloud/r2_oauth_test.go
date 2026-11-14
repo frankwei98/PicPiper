@@ -31,7 +31,7 @@ const fakeR2TokenID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 func beginR2(t *testing.T, s *Service) *r2Session {
 	t.Helper()
-	_, err := s.startR2OAuth()
+	_, err := startR2OnTestPort(s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestR2PKCECallbackAndCancellation(t *testing.T) {
 		}
 		return r2Response(200, `{"access_token":"private-oauth-token","token_type":"Bearer"}`), nil
 	})
-	started, err := s.startR2OAuth()
+	started, err := startR2OnTestPort(s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestR2PKCECallbackAndCancellation(t *testing.T) {
 	payload := started.(map[string]string)
 	u, _ := url.Parse(payload["authorizationUrl"])
 	expected := sha256.Sum256([]byte(session.verifier))
-	if u.Query().Get("code_challenge") != base64.RawURLEncoding.EncodeToString(expected[:]) || u.Query().Get("code_challenge_method") != "S256" || u.Query().Get("scope") != r2Scopes {
+	if u.Query().Get("redirect_uri") != r2Redirect || u.Query().Get("code_challenge") != base64.RawURLEncoding.EncodeToString(expected[:]) || u.Query().Get("code_challenge_method") != "S256" || u.Query().Get("scope") != r2Scopes {
 		t.Fatal("PKCE or scopes missing")
 	}
 	bad := httptest.NewRecorder()

@@ -35,6 +35,7 @@ type r2Session struct {
 	ctx                                         context.Context
 	cancel                                      context.CancelFunc
 	server                                      *http.Server
+	listener                                    net.Listener
 	importing                                   bool
 	// Only buckets obtained from the provider may be provisioned.
 	buckets map[string][]r2Bucket
@@ -64,6 +65,12 @@ func randomR2ID() string {
 }
 
 func (s *Service) startR2OAuth() (any, error) {
+	return s.startR2OAuthWithListener(func() (net.Listener, error) {
+		return net.Listen("tcp4", "127.0.0.1:19827")
+	})
+}
+
+func (s *Service) startR2OAuthWithListener(listen func() (net.Listener, error)) (any, error) {
 	s.oauthMu.Lock()
 	defer s.oauthMu.Unlock()
 	if s.oauth != nil {
@@ -75,12 +82,12 @@ func (s *Service) startR2OAuth() (any, error) {
 		s.oauth.stopLocked()
 		s.oauth.mu.Unlock()
 	}
-	listener, err := net.Listen("tcp4", "127.0.0.1:19827")
+	listener, err := listen()
 	if err != nil {
 		return nil, appErr("r2CallbackUnavailable", "The R2 sign-in callback port 19827 is in use. Close the other sign-in attempt and retry.")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	session := &r2Session{id: randomR2ID(), state: randomR2ID(), verifier: randomR2ID(), status: "pending", ctx: ctx, cancel: cancel, buckets: map[string][]r2Bucket{}}
+	session := &r2Session{id: randomR2ID(), state: randomR2ID(), verifier: randomR2ID(), status: "pending", ctx: ctx, cancel: cancel, listener: listener, buckets: map[string][]r2Bucket{}}
 	session.server = &http.Server{ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 5 * time.Second, MaxHeaderBytes: 8192, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.r2Callback(session, w, r) })}
 	s.oauth = session
 	go func() { _ = session.server.Serve(listener) }()
@@ -92,7 +99,7 @@ func (s *Service) startR2OAuth() (any, error) {
 		if session.status != "closed" {
 			session.status = "expired"
 		}
-		_ = session.server.Close()
+		session.closeServer()
 	}()
 	challenge := sha256.Sum256([]byte(session.verifier))
 	query := url.Values{"client_id": {r2ClientID}, "redirect_uri": {r2Redirect}, "response_type": {"code"}, "scope": {r2Scopes}, "state": {session.state}, "code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"}}
@@ -101,7 +108,17 @@ func (s *Service) startR2OAuth() (any, error) {
 func (session *r2Session) stopLocked() {
 	session.status, session.token = "closed", ""
 	session.cancel()
-	_ = session.server.Close()
+	session.closeServer()
+}
+func (session *r2Session) closeServer() {
+	// Server.Close only knows listeners already registered by Serve. Own the
+	// listener as well so cancellation releases its port before Serve starts.
+	if session.listener != nil {
+		_ = session.listener.Close()
+	}
+	if session.server != nil {
+		_ = session.server.Close()
+	}
 }
 func (s *Service) r2Callback(session *r2Session, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -121,7 +138,7 @@ func (s *Service) r2Callback(session *r2Session, w http.ResponseWriter, r *http.
 	verifier := session.verifier
 	session.verifier = ""
 	session.mu.Unlock()
-	defer func() { go session.server.Close() }()
+	defer func() { go session.closeServer() }()
 	fail := func(message string) {
 		session.mu.Lock()
 		defer session.mu.Unlock()
