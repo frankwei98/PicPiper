@@ -52,7 +52,7 @@ On an Apple Silicon Mac, the packaged artifacts are:
 
 ```text
 build/darwin-arm64/Pic Piper.app
-build/darwin-arm64/pic-piper-0.3.0-arm64.dmg
+build/darwin-arm64/pic-piper-1.0.0-arm64.dmg
 ```
 
 Open the app directly, or open the DMG and copy the app into Applications. macOS 13 or later is required by the Go 1.27 runtime. The current package is ad-hoc signed for local evaluation; it is not notarized for public distribution. Other operating systems and Intel Macs have not been validated for this MVP.
