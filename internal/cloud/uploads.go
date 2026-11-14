@@ -12,8 +12,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
+
+const galleryVerificationConcurrency = 8
 
 type uploadedImage struct {
 	Key        string `json:"key"`
@@ -96,6 +99,50 @@ func (s *Service) forgetUpload(p profile, key string) error {
 	return atomicWrite(s.uploadRecordsPath(p), data, 0600, "uploadHistoryWriteFailed")
 }
 
+func (s *Service) forgetInvalidUploads(p profile, invalid []uploadedImage) error {
+	if len(invalid) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records, err := s.loadUploadRecordsLocked(p)
+	if err != nil {
+		return err
+	}
+	changed := false
+	for _, observed := range invalid {
+		// A HEAD checked an earlier snapshot. Do not remove a newer upload of
+		// the same key or overwrite records added while verification ran.
+		if current, exists := records[observed.Key]; exists && current == observed {
+			delete(records, observed.Key)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	data, err := json.Marshal(records)
+	if err != nil {
+		return err
+	}
+	return atomicWrite(s.uploadRecordsPath(p), data, 0600, "uploadHistoryWriteFailed")
+}
+
+func (s *Service) verifyUpload(ctx context.Context, p profile, secret string, record uploadedImage) (bool, error) {
+	// Verify only known app uploads, never enumerate unrelated bucket contents.
+	resp, err := s.doS3(ctx, p, secret, http.MethodHead, record.Key, nil, "", nil)
+	if err != nil {
+		var status *statusError
+		if errors.As(err, &status) && status.status == http.StatusNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	defer resp.Body.Close()
+	return resp.Header.Get("X-Amz-Meta-Picpiper-Upload-Id") == record.UploadID &&
+		(record.ETag == "" || resp.Header.Get("ETag") == record.ETag), nil
+}
+
 func compareUpload(a, b uploadedImage, order string) int {
 	var result int
 	switch order {
@@ -160,41 +207,63 @@ func (s *Service) listUploads(ctx context.Context, request galleryRequest, secre
 		}
 		after = &token.After
 	}
+	if after != nil {
+		start := sort.Search(len(candidates), func(index int) bool { return compareUpload(candidates[index], *after, order) > 0 })
+		candidates = candidates[start:]
+	}
 	size := 100
 	if request.PageSize != nil {
 		size = min(100, max(1, *request.PageSize))
 	}
 	out := listResponse{Objects: []galleryObject{}}
-	for index, record := range candidates {
-		if after != nil && compareUpload(record, *after, order) <= 0 {
-			continue
+	var invalid []uploadedImage
+	defer func() {
+		// Cleanup is best effort: a local write failure must not discard a
+		// remotely verified page. Never forget records on transient errors.
+		_ = s.forgetInvalidUploads(request.Profile, invalid)
+	}()
+	index := 0
+	for index < len(candidates) && len(out.Objects) < size {
+		count := min(galleryVerificationConcurrency, size-len(out.Objects), len(candidates)-index)
+		batch := candidates[index : index+count]
+		checks := make([]struct {
+			valid bool
+			err   error
+		}, count)
+		var workers sync.WaitGroup
+		for offset, record := range batch {
+			workers.Go(func() {
+				checks[offset].valid, checks[offset].err = s.verifyUpload(ctx, request.Profile, secret, record)
+			})
 		}
-		// Verify only known app uploads, never enumerate unrelated bucket contents.
-		resp, headErr := s.doS3(ctx, request.Profile, secret, http.MethodHead, record.Key, nil, "", nil)
-		if headErr != nil {
-			var status *statusError
-			if errors.As(headErr, &status) && status.status == http.StatusNotFound {
+		workers.Wait()
+		for offset, check := range checks {
+			if check.err == nil && !check.valid {
+				invalid = append(invalid, batch[offset])
+			}
+		}
+		// Assemble in candidate order, independent of HEAD completion order.
+		// The next batch fills gaps left by deleted or replaced objects.
+		for offset, check := range checks {
+			if check.err != nil {
+				return listResponse{}, appErr("s3ListFailed", "Could not check uploaded images in this bucket.")
+			}
+			if !check.valid {
 				continue
 			}
-			return listResponse{}, appErr("s3ListFailed", "Could not check uploaded images in this bucket.")
+			record := batch[offset]
+			modified := record.UploadedAt
+			object := makeObject(request.Profile, record.Key, record.Size, &modified)
+			object.ETag = record.ETag
+			object.FileName, object.UploadedAt = record.FileName, record.UploadedAt
+			out.Objects = append(out.Objects, object)
 		}
-		resp.Body.Close()
-		if resp.Header.Get("X-Amz-Meta-Picpiper-Upload-Id") != record.UploadID || (record.ETag != "" && resp.Header.Get("ETag") != record.ETag) {
-			continue
-		}
-		modified := record.UploadedAt
-		object := makeObject(request.Profile, record.Key, record.Size, &modified)
-		object.ETag = record.ETag
-		object.FileName, object.UploadedAt = record.FileName, record.UploadedAt
-		out.Objects = append(out.Objects, object)
-		if len(out.Objects) == size {
-			if index < len(candidates)-1 {
-				raw, _ := json.Marshal(cursor{Scope: scope, After: record})
-				next := base64.RawURLEncoding.EncodeToString(raw)
-				out.NextContinuationToken = &next
-			}
-			break
-		}
+		index += count
+	}
+	if index < len(candidates) {
+		raw, _ := json.Marshal(cursor{Scope: scope, After: candidates[index-1]})
+		next := base64.RawURLEncoding.EncodeToString(raw)
+		out.NextContinuationToken = &next
 	}
 	return out, nil
 }
