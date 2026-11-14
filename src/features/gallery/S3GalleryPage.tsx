@@ -11,6 +11,7 @@ import type { GalleryObject, S3Profile } from "../../types";
 import type { GalleryFocus } from "../../state/appState";
 import type { AppView } from "../../types";
 import { galleryApi, namingApi, uploadApi, type ListGalleryObjectsResponse } from "../../api/backend";
+import { useUpdateActivity } from "@/api/updates";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -98,6 +99,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [localHighlights, setLocalHighlights] = useState<ScopedHighlights | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
   const [uploading, setUploading] = useState(false);
+  useUpdateActivity("gallery", uploading);
   const statusTimersRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentScopeRef = useRef<{ profileId: string; prefix: string } | null>(null);
   const scopeEditedByUserRef = useRef(false);

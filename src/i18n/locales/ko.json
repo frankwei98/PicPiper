@@ -432,5 +432,21 @@
   "Quick compression": "빠른 압축",
   "Default image format": "기본 이미지 형식",
   "Default image quality": "기본 이미지 품질",
-  "Authorize your storage provider in a browser, then choose buckets to add.": "브라우저에서 스토리지 제공업체를 인증한 다음 추가할 버킷을 선택하세요."
+  "Authorize your storage provider in a browser, then choose buckets to add.": "브라우저에서 스토리지 제공업체를 인증한 다음 추가할 버킷을 선택하세요.",
+  "Updates": "업데이트",
+  "Version": "버전",
+  "Version {{version}}": "버전 {{version}}",
+  "Check for updates": "업데이트 확인",
+  "Checking...": "확인 중…",
+  "Updates are available in an installed release build.": "업데이트는 설치된 릴리스 빌드에서 사용할 수 있습니다.",
+  "Automatic update checks": "업데이트 자동 확인",
+  "Automatic update downloads": "업데이트 자동 다운로드",
+  "Last checked": "마지막 확인",
+  "Not checked yet": "아직 확인하지 않음",
+  "Available version": "사용 가능한 버전",
+  "Finish your current tasks, then quit and reopen Pic Piper to use the update.": "현재 작업을 마친 뒤 Pic Piper를 종료하고 다시 열면 업데이트를 사용할 수 있습니다.",
+  "Could not check for updates.": "업데이트를 확인할 수 없습니다.",
+  "Could not save update preferences.": "업데이트 설정을 저장할 수 없습니다.",
+  "Checks periodically for new releases.": "새 릴리스가 있는지 주기적으로 확인합니다.",
+  "Downloads available updates automatically.": "사용 가능한 업데이트를 자동으로 다운로드합니다."
 }

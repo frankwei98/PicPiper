@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { errorMessage } from "../../lib/error";
 import { MiniPreferences, miniSettingsValid } from "@/features/mini/MiniPreferences";
 import { PreferenceRow } from "@/components/ui/preference-row";
+import { UpdatePreferences } from "./UpdatePreferences";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -378,6 +379,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
               {generalError && <Alert variant="destructive"><AlertDescription>{generalError}</AlertDescription></Alert>}
             </div>}
           </fieldset>
+          <UpdatePreferences isActive={isActive && section === "general"} />
         </Tabs.Panel>
         <Tabs.Panel value="oauth" id="settings-section-oauth" keepMounted render={<section />}>
           <h2 className="settings-title">{t("One-click authorization")}</h2>

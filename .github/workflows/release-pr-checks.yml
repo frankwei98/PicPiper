@@ -1,0 +1,46 @@
+name: Release PR checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact release PR head to validate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/release.mjs metadata
+      - run: pnpm test
+      - run: pnpm build:web
+      - run: node --test scripts/release-checks.mjs
+      - name: Record result on the exact PR commit
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ inputs.sha }}
+          CHECK_RESULT: ${{ job.status }}
+        run: |
+          state=failure
+          if [ "$CHECK_RESULT" = success ]; then state=success; fi
+          gh api --method POST "repos/$GH_REPO/statuses/$SOURCE_SHA" -f state="$state" -f context="Release PR validation" -f description="Version consistency and frontend checks" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

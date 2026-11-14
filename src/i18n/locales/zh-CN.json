@@ -432,5 +432,21 @@
   "Quick compression": "快捷压缩",
   "Default image format": "默认图片格式",
   "Default image quality": "默认图片质量",
-  "Authorize your storage provider in a browser, then choose buckets to add.": "在浏览器中授权存储服务，然后选择要添加的 Bucket。"
+  "Authorize your storage provider in a browser, then choose buckets to add.": "在浏览器中授权存储服务，然后选择要添加的 Bucket。",
+  "Updates": "更新",
+  "Version": "版本",
+  "Version {{version}}": "版本 {{version}}",
+  "Check for updates": "检查更新",
+  "Checking...": "正在检查…",
+  "Updates are available in an installed release build.": "更新功能仅在已安装的正式版中提供。",
+  "Automatic update checks": "自动检查更新",
+  "Automatic update downloads": "自动下载更新",
+  "Last checked": "上次检查",
+  "Not checked yet": "尚未检查",
+  "Available version": "可用版本",
+  "Finish your current tasks, then quit and reopen Pic Piper to use the update.": "完成当前任务后，退出并重新打开 Pic Piper 以使用此更新。",
+  "Could not check for updates.": "无法检查更新。",
+  "Could not save update preferences.": "无法保存更新偏好设置。",
+  "Checks periodically for new releases.": "定期检查是否有新版本。",
+  "Downloads available updates automatically.": "自动下载可用更新。"
 }

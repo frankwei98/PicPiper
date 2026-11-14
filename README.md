@@ -57,6 +57,20 @@ build/darwin-arm64/pic-piper-1.0.0-arm64.dmg
 
 Open the app directly, or open the DMG and copy the app into Applications. macOS 13 or later is required by the Go 1.27 runtime. The current package is ad-hoc signed for local evaluation; it is not notarized for public distribution. Other operating systems and Intel Macs have not been validated for this MVP.
 
+## Updates and releases
+
+Use **Settings → General → Updates** or the application menu to check for updates.
+Installed builds check automatically; automatic downloads are optional. Updates
+are verified with the application's update signing key and run after restart.
+An update waits for active compression, upload and Mini tasks before quitting.
+Development builds and read-only installation locations cannot update in place.
+
+Versions and changelogs are maintained by Release Please. Merge its release PR
+to publish the accumulated changes after automated tests, packaging and GUI
+smoke pass. See [release operations](docs/releasing.md) for version rules, signed
+assets, key backup and failed-release recovery. Users of releases without an
+updater need to install the first update-enabled version manually.
+
 ## Language
 
 Use **Settings → Language** to choose a language or follow the system. Unsupported system languages fall back to English; regional Chinese variants currently use Simplified Chinese. The language preference is stored separately from S3 profiles and does not require saving a profile. Backend and operating-system diagnostic details can still appear in their original language. See [localization development](src/i18n/README.md) for message catalogs and adding languages.

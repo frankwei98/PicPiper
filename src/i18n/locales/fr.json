@@ -432,5 +432,21 @@
   "Quick compression": "Compression rapide",
   "Default image format": "Format d’image par défaut",
   "Default image quality": "Qualité d’image par défaut",
-  "Authorize your storage provider in a browser, then choose buckets to add.": "Autorisez votre fournisseur de stockage dans un navigateur, puis choisissez les compartiments à ajouter."
+  "Authorize your storage provider in a browser, then choose buckets to add.": "Autorisez votre fournisseur de stockage dans un navigateur, puis choisissez les compartiments à ajouter.",
+  "Updates": "Mises à jour",
+  "Version": "Version",
+  "Version {{version}}": "Version {{version}}",
+  "Check for updates": "Rechercher des mises à jour",
+  "Checking...": "Vérification…",
+  "Updates are available in an installed release build.": "Les mises à jour sont disponibles dans une version installée.",
+  "Automatic update checks": "Rechercher automatiquement les mises à jour",
+  "Automatic update downloads": "Télécharger automatiquement les mises à jour",
+  "Last checked": "Dernière vérification",
+  "Not checked yet": "Pas encore vérifié",
+  "Available version": "Version disponible",
+  "Finish your current tasks, then quit and reopen Pic Piper to use the update.": "Terminez vos tâches, puis quittez et rouvrez Pic Piper pour utiliser la mise à jour.",
+  "Could not check for updates.": "Impossible de rechercher des mises à jour.",
+  "Could not save update preferences.": "Impossible d’enregistrer les préférences de mise à jour.",
+  "Checks periodically for new releases.": "Recherche régulièrement les nouvelles versions.",
+  "Downloads available updates automatically.": "Télécharge automatiquement les mises à jour disponibles."
 }

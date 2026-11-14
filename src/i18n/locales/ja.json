@@ -432,5 +432,21 @@
   "Quick compression": "クイック圧縮",
   "Default image format": "既定の画像形式",
   "Default image quality": "既定の画像品質",
-  "Authorize your storage provider in a browser, then choose buckets to add.": "ブラウザーでストレージプロバイダーを認証し、追加するバケットを選択してください。"
+  "Authorize your storage provider in a browser, then choose buckets to add.": "ブラウザーでストレージプロバイダーを認証し、追加するバケットを選択してください。",
+  "Updates": "アップデート",
+  "Version": "バージョン",
+  "Version {{version}}": "バージョン {{version}}",
+  "Check for updates": "アップデートを確認",
+  "Checking...": "確認中…",
+  "Updates are available in an installed release build.": "アップデートはインストール済みのリリース版で利用できます。",
+  "Automatic update checks": "アップデートを自動確認",
+  "Automatic update downloads": "アップデートを自動ダウンロード",
+  "Last checked": "最終確認",
+  "Not checked yet": "未確認",
+  "Available version": "利用可能なバージョン",
+  "Finish your current tasks, then quit and reopen Pic Piper to use the update.": "作業を終えたら Pic Piper を終了して再起動すると、アップデートを適用できます。",
+  "Could not check for updates.": "アップデートを確認できませんでした。",
+  "Could not save update preferences.": "アップデート設定を保存できませんでした。",
+  "Checks periodically for new releases.": "新しいリリースがないか定期的に確認します。",
+  "Downloads available updates automatically.": "利用可能なアップデートを自動的にダウンロードします。"
 }
