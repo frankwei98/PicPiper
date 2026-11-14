@@ -36,56 +36,56 @@ describe("SettingsPage", () => {
     testS3Connection.mockResolvedValue(undefined);
   });
 
-  it("renders a save action for profile settings", () => {
-    render(
-      <SettingsPage
-        settings={{
-          profiles: [],
-          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
-        }}
-        onSettingsChange={() => {}}
-      />,
-    );
+  it("starts on General and renders its save action", () => {
+    render(<SettingsPage settings={{ profiles: [], namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}" }} onSettingsChange={() => {}} />);
 
-    expect(screen.getByRole("button", { name: /save profile/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Save general settings" })).toBeInTheDocument();
   });
 
-  it("saves Mini settings while preserving the rest of the app settings", async () => {
+  it("shows the settings groups and expected tab order without a Mini tab", () => {
+    render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+
+    expect(screen.getByText("Application")).toBeVisible();
+    expect(screen.getByText("Cloud storage")).toBeVisible();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent?.trim())).toEqual([
+      "General", "S3 profiles", "One-click authorization", "Links and naming",
+    ]);
+    expect(screen.queryByRole("tab", { name: "Mini" })).not.toBeInTheDocument();
+  });
+
+  it("saves status bar settings while preserving the rest of the app settings", async () => {
     const user = userEvent.setup();
     const settings = { profiles: [], namingTemplate: "{slug}.{ext}", defaultOutputDir: "/tmp/out", features: { compression: true, s3: false } };
     const onSettingsChange = vi.fn();
     render(<SettingsPage settings={settings} onSettingsChange={onSettingsChange} />);
-    await goToSection(user, "Mini");
-    await user.click(screen.getByRole("switch", { name: "Enable Mini" }));
-    await user.click(screen.getByRole("button", { name: "Save Mini settings" }));
-    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ ...settings, mini: expect.objectContaining({ enabled: true }) }));
-    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ ...settings, mini: expect.objectContaining({ enabled: true }) }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Mini settings saved.");
+    await user.click(screen.getByRole("switch", { name: "Show status bar icon" }));
+    await user.click(screen.getByRole("button", { name: "Save general settings" }));
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ ...settings, closeBehavior: "quit", mini: expect.objectContaining({ enabled: true, action: "clipboard" }) }));
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ ...settings, closeBehavior: "quit", mini: expect.objectContaining({ enabled: true, action: "clipboard" }) }));
+    expect(await screen.findByRole("status")).toHaveTextContent("General settings saved.");
   });
 
-  it("saves clipboard Mini settings without requiring an S3 profile", async () => {
+  it("saves general settings without requiring an S3 profile", async () => {
     const user = userEvent.setup();
     const onSettingsChange = vi.fn();
     render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={onSettingsChange} />);
-    await goToSection(user, "Mini");
-    await user.click(screen.getByRole("switch", { name: "Enable Mini" }));
+    await user.click(screen.getByRole("switch", { name: "Show status bar icon" }));
     expect(screen.queryByRole("combobox", { name: "After compression" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("S3 profile")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Link format")).not.toBeInTheDocument();
-    expect(screen.queryByText("Copies the image after compression. Upload to S3 anytime.")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Save Mini settings" }));
-    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ mini: expect.objectContaining({ enabled: true, action: "clipboard" }) }));
-    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ mini: expect.objectContaining({ enabled: true, action: "clipboard" }) }));
+    await user.click(screen.getByRole("button", { name: "Save general settings" }));
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ closeBehavior: "quit", mini: expect.objectContaining({ enabled: true, action: "clipboard" }) }));
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ closeBehavior: "quit", mini: expect.objectContaining({ enabled: true, action: "clipboard" }) }));
   });
 
-  it("shows Mini save errors and does not publish unsaved settings", async () => {
+  it("shows general settings save errors and does not publish unsaved settings", async () => {
     const user = userEvent.setup();
     const onSettingsChange = vi.fn();
     saveSettings.mockRejectedValueOnce(new Error("Disk unavailable"));
     render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={onSettingsChange} />);
-    await goToSection(user, "Mini");
-    await user.click(screen.getByRole("switch", { name: "Enable Mini" }));
-    await user.click(screen.getByRole("button", { name: "Save Mini settings" }));
+    await user.click(screen.getByRole("switch", { name: "Show status bar icon" }));
+    await user.click(screen.getByRole("button", { name: "Save general settings" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Disk unavailable");
     expect(onSettingsChange).not.toHaveBeenCalled();
   });
@@ -94,15 +94,16 @@ describe("SettingsPage", () => {
     const user = userEvent.setup();
     render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
 
+    await goToSection(user, "S3 profiles");
     await user.clear(screen.getByLabelText("Profile name"));
     await user.type(screen.getByLabelText("Profile name"), "Draft profile");
     await goToSection(user, "General");
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     await user.type(screen.getByLabelText("Default prefix"), "draft/images");
     await goToSection(user, "S3 profiles");
 
     expect(screen.getByLabelText("Profile name")).toHaveValue("Draft profile");
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     expect(screen.getByLabelText("Default prefix")).toHaveValue("draft/images");
   });
 
@@ -110,24 +111,31 @@ describe("SettingsPage", () => {
     const user = userEvent.setup();
     render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
 
+    await goToSection(user, "S3 profiles");
     await user.click(screen.getByRole("button", { name: "Add with an account" }));
 
-    expect(screen.getByRole("tab", { name: "Account authorization" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tabpanel", { name: "Account authorization" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "One-click authorization" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: "One-click authorization" })).toBeVisible();
     expect(screen.queryByRole("textbox", { name: "Profile name" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Endpoint" })).not.toBeInTheDocument();
   });
 
-  it("does not render preset management", () => {
-    render(
-      <SettingsPage
-        settings={{
-          profiles: [],
-          namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
-        }}
-        onSettingsChange={() => {}}
-      />,
-    );
+  it("shows provider-neutral one-click authorization with the Cloudflare R2 provider", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+
+    await goToSection(user, "One-click authorization");
+
+    expect(screen.getByRole("tabpanel", { name: "One-click authorization" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Cloudflare R2" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign in with Cloudflare" })).toBeVisible();
+    expect(screen.queryByRole("tab", { name: /Cloudflare authorization/i })).not.toBeInTheDocument();
+  });
+
+  it("does not render preset management", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage settings={{ profiles: [], namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}" }} onSettingsChange={() => {}} />);
+    await goToSection(user, "Links and naming");
 
     expect(screen.queryByText(/presets/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /add preset/i })).not.toBeInTheDocument();
@@ -190,7 +198,7 @@ describe("SettingsPage", () => {
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "access-key");
     await user.type(screen.getByLabelText("Secret access key"), "secret-key");
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "https://cdn.example.com");
     await user.type(screen.getByLabelText("Default prefix"), "images/2026/06");
 
@@ -219,6 +227,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.clear(screen.getByLabelText("Profile name"));
     await user.type(screen.getByLabelText("Profile name"), "Personal R2");
     await user.type(screen.getByLabelText("Endpoint"), "https://example.r2.cloudflarestorage.com");
@@ -260,7 +269,7 @@ describe("SettingsPage", () => {
 
     await goToSection(user, "S3 profiles");
     await user.type(screen.getByLabelText("Secret access key"), "replacement-secret");
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     await user.clear(screen.getByLabelText("Default prefix"));
     await user.type(screen.getByLabelText("Default prefix"), "images/2026/06");
 
@@ -300,7 +309,7 @@ describe("SettingsPage", () => {
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "local-key");
     await user.type(screen.getByLabelText("Secret access key"), "local-secret");
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "http://localhost:9000/images");
 
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -346,6 +355,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     // Profile selector should be visible
     const select = screen.getByRole("combobox", { name: /editing profile/i });
     expect(select).toBeInTheDocument();
@@ -386,6 +396,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.clear(screen.getByLabelText("Default prefix"));
     await user.type(screen.getByLabelText("Default prefix"), "images/2026/06");
 
@@ -414,6 +425,7 @@ describe("SettingsPage", () => {
     ];
 
     render(<SettingsPage settings={{ profiles, namingTemplate: "{slug}.{ext}", defaultProfileId: "default" }} onSettingsChange={() => {}} />);
+    await goToSection(user, "S3 profiles");
     await user.selectOptions(screen.getByRole("combobox", { name: /editing profile/i }), "other");
     expect(screen.getByLabelText("Use as default profile")).not.toBeChecked();
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -424,6 +436,7 @@ describe("SettingsPage", () => {
   it("shows field errors and focuses the first invalid field", async () => {
     const user = userEvent.setup();
     render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+    await goToSection(user, "S3 profiles");
 
     await user.clear(screen.getByLabelText("Profile name"));
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -460,6 +473,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     const checkbox = screen.getByLabelText("Path style addressing");
     expect(checkbox).toBeInTheDocument();
     expect(checkbox).toBeChecked();
@@ -508,6 +522,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     // Click Add profile
     await user.click(screen.getByRole("button", { name: /add profile/i }));
 
@@ -533,7 +548,8 @@ describe("SettingsPage", () => {
     expect(savedSettings.profiles[1].id).not.toBe("existing");
   });
 
-  it("renders local credential storage copy", () => {
+  it("renders local credential storage copy", async () => {
+    const user = userEvent.setup();
     render(
       <SettingsPage
         settings={{
@@ -544,6 +560,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     expect(screen.getByText(/stored locally on this device/i)).toBeInTheDocument();
   });
 
@@ -561,12 +578,13 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.type(screen.getByLabelText("Profile name"), "Test");
     await user.type(screen.getByLabelText("Endpoint"), "https://s3.example.com");
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "key");
     await user.type(screen.getByLabelText("Secret access key"), "secret");
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "https://cdn.example.com?v=1");
 
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -589,12 +607,13 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.type(screen.getByLabelText("Profile name"), "Test");
     await user.type(screen.getByLabelText("Endpoint"), "https://s3.example.com");
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "key");
     await user.type(screen.getByLabelText("Secret access key"), "secret");
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "https://cdn.example.com#section");
 
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -617,12 +636,13 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.type(screen.getByLabelText("Profile name"), "Test");
     await user.type(screen.getByLabelText("Endpoint"), "https://s3.example.com");
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "key");
     await user.type(screen.getByLabelText("Secret access key"), "secret");
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     await user.type(screen.getByLabelText("Public Base URL"), "javascript:alert(1)");
 
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -644,6 +664,8 @@ describe("SettingsPage", () => {
       />,
     );
 
+    const user = userEvent.setup();
+    await goToSection(user, "Links and naming");
     expect(screen.getByLabelText("Naming template")).toHaveValue(
       "{yyyy}/{mm}/{slug}-{hash}.{ext}",
     );
@@ -658,7 +680,7 @@ describe("SettingsPage", () => {
       />,
     );
 
-    await goToSection(userEvent.setup(), "Upload and naming");
+    await goToSection(user, "Links and naming");
     expect(screen.getByLabelText("Naming template")).toHaveValue("{slug}-{hash}.{ext}");
   });
 
@@ -697,12 +719,13 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     expect(screen.getByLabelText("Profile name")).toHaveValue("Personal R2");
     expect(screen.getByLabelText("Endpoint")).toHaveValue(
       "https://example.r2.cloudflarestorage.com",
     );
 
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     await user.clear(screen.getByLabelText("Default prefix"));
     await user.type(screen.getByLabelText("Default prefix"), "images/2026/07");
     await user.click(screen.getByRole("button", { name: /save profile/i }));
@@ -732,13 +755,14 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.clear(screen.getByLabelText("Profile name"));
     await user.type(screen.getByLabelText("Profile name"), "Draft R2");
     await user.type(screen.getByLabelText("Endpoint"), "https://example.r2.cloudflarestorage.com");
     await user.type(screen.getByLabelText("Bucket"), "images");
     await user.type(screen.getByLabelText("Access key ID"), "draft-key");
     await user.type(screen.getByLabelText("Secret access key"), "unsaved-secret");
-    await goToSection(user, "Upload and naming");
+    await goToSection(user, "Links and naming");
     await user.type(screen.getByLabelText("Default prefix"), "draft/images");
     await goToSection(user, "S3 profiles");
     await user.click(screen.getByRole("button", { name: /test connection/i }));
@@ -778,6 +802,7 @@ describe("SettingsPage", () => {
       />,
     );
 
+    await goToSection(user, "S3 profiles");
     await user.click(screen.getByRole("button", { name: /test connection/i }));
 
     expect(testS3Connection).toHaveBeenCalledWith({ profile: existing });
@@ -795,6 +820,7 @@ describe("SettingsPage", () => {
     };
     render(<SettingsPage settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
 
+    await goToSection(user, "S3 profiles");
     await user.click(screen.getByRole("button", { name: /test connection/i }));
 
     expect(await screen.findByText("Access denied")).toBeInTheDocument();
@@ -813,6 +839,7 @@ describe("SettingsPage", () => {
     };
     render(<SettingsPage settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
 
+    await goToSection(user, "S3 profiles");
     await user.click(screen.getByRole("button", { name: /test connection/i }));
     await user.clear(screen.getByLabelText("Endpoint"));
     await user.type(screen.getByLabelText("Endpoint"), "https://new.s3.example.com");

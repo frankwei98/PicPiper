@@ -6,6 +6,7 @@ import (
 	"runtime"
 
 	"github.com/egoist/mygo"
+	"github.com/frankwei98/PicPiper/internal/cloud"
 	"github.com/frankwei98/PicPiper/internal/traydrop"
 )
 
@@ -21,15 +22,17 @@ type desktopController struct {
 	quitting, dismiss bool
 	trayError         string
 	page              mygo.PageOptions
+	closeBehavior     cloud.CloseBehavior
 }
 
 func (d *desktopController) refresh() {
-	plan, err := d.backend.cloud.MiniPlan()
+	preferences, err := d.backend.cloud.DesktopPreferences()
 	if err != nil {
-		d.trayError = "Could not load Mini settings."
+		d.trayError = "Could not load desktop settings."
 		return
 	}
-	if !plan.Settings.Enabled {
+	d.closeBehavior = preferences.CloseBehavior
+	if !preferences.StatusIconEnabled {
 		d.removeTray()
 		return
 	}
@@ -73,6 +76,19 @@ func (d *desktopController) refresh() {
 		log.Print(d.trayError)
 	}
 }
+
+func (d *desktopController) closeMain(event *mygo.CloseEvent) {
+	if d.quitting {
+		return
+	}
+	event.PreventDefault()
+	if d.tray != nil || d.closeBehavior == cloud.CloseBackground {
+		d.main.Hide()
+		return
+	}
+	mygo.App.Quit()
+}
+
 func (d *desktopController) removeTray() {
 	d.closePanel()
 	if d.detachDrop != nil {

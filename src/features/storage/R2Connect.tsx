@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { errorMessage } from "@/lib/error";
+import { PreferenceRow } from "@/components/ui/preference-row";
 
 interface Props { onConnected: (settings: AppSettings) => void; onBusyChange?: (busy: boolean) => void; disabled?: boolean }
 
@@ -127,22 +128,25 @@ export function R2Connect({ onConnected, onBusyChange, disabled = false }: Props
   };
   const scopeMatches = loadedScope === `${accountId.trim()}:${jurisdiction}`;
   return <section className="r2-connect" aria-label={t("Connect Cloudflare R2")} aria-busy={busy}>
-    <h3>{t("Connect Cloudflare R2")}</h3>
-    {stage === "idle" && <><p>{t("Sign in in your browser, then choose the buckets to add. Only the selected buckets receive S3 credentials.")}</p><Button type="button" disabled={busy || disabled} onClick={() => void start()}>{t("Sign in with Cloudflare")}</Button></>}
-    {stage === "waiting" && <p role="status">{t("Waiting for browser authorization...")}</p>}
+    <PreferenceRow label={<h3>Cloudflare R2</h3>} description={stage === "idle" ? t("Sign in in your browser, then choose the buckets to add. Only the selected buckets receive S3 credentials.") : undefined}>
+      {stage === "idle" && <Button type="button" disabled={busy || disabled} onClick={() => void start()}>{t("Sign in with Cloudflare")}</Button>}
+      {stage !== "idle" && stage !== "done" && <Button type="button" variant="ghost" disabled={busy || disabled} onClick={cancel}>{t("Cancel")}</Button>}
+      {stage === "done" && <Button type="button" variant="outline" onClick={cancel}>{t("Add another Cloudflare account")}</Button>}
+    </PreferenceRow>
+    {stage === "waiting" && <p className="field-hint" role="status">{t("Waiting for browser authorization...")}</p>}
     {stage === "choose" && <>
-      <div className="field-grid">
-        <Label className="field"><span>{t("Cloudflare account ID")}</span>
-          <div aria-busy={loadingAccounts}>
-            {loadingAccounts ? <Skeleton className="h-10 w-full" aria-hidden="true" /> : accounts.length ? <NativeSelect value={accountId} disabled={busy || disabled} onChange={(event) => setAccountId(event.target.value)}>{accounts.map((account) => <NativeSelectOption key={account.id} value={account.id}>{account.name || account.id}</NativeSelectOption>)}</NativeSelect> : <Input value={accountId} disabled={busy || disabled} onChange={(event) => setAccountId(event.target.value)} />}
+      <div className="r2-scope">
+        <PreferenceRow label={t("Cloudflare account ID")} htmlFor="r2-account">
+          <div className="r2-account-control" aria-busy={loadingAccounts}>
+            {loadingAccounts ? <Skeleton className="h-9 w-full" aria-hidden="true" /> : accounts.length ? <NativeSelect id="r2-account" aria-label={t("Cloudflare account ID")} value={accountId} disabled={busy || disabled} onChange={(event) => setAccountId(event.target.value)}>{accounts.map((account) => <NativeSelectOption key={account.id} value={account.id}>{account.name || account.id}</NativeSelectOption>)}</NativeSelect> : <Input id="r2-account" aria-label={t("Cloudflare account ID")} value={accountId} disabled={busy || disabled} onChange={(event) => setAccountId(event.target.value)} />}
           </div>
-        </Label>
-        <Label className="field"><span>{t("R2 jurisdiction")}</span><NativeSelect value={jurisdiction} disabled={busy || disabled} onChange={(event) => setJurisdiction(event.target.value)}>
+        </PreferenceRow>
+        <PreferenceRow label={t("R2 jurisdiction")} htmlFor="r2-jurisdiction"><NativeSelect id="r2-jurisdiction" aria-label={t("R2 jurisdiction")} value={jurisdiction} disabled={busy || disabled} onChange={(event) => setJurisdiction(event.target.value)}>
           <NativeSelectOption value="default">{t("Default")}</NativeSelectOption>
           <NativeSelectOption value="eu">EU</NativeSelectOption><NativeSelectOption value="us">US</NativeSelectOption><NativeSelectOption value="fedramp">FedRAMP</NativeSelectOption>
-        </NativeSelect></Label>
+        </NativeSelect></PreferenceRow>
       </div>
-      <Button type="button" variant="outline" disabled={busy || disabled || !/^[a-f\d]{32}$/i.test(accountId.trim())} onClick={() => void loadBuckets()}>{t("Load buckets")}</Button>
+      <div className="r2-actions"><Button type="button" variant="outline" disabled={busy || disabled || !/^[a-f\d]{32}$/i.test(accountId.trim())} onClick={() => void loadBuckets()}>{t("Load buckets")}</Button></div>
       {(scopeMatches || loadingBuckets) && <fieldset className="r2-buckets" aria-busy={loadingBuckets}><legend>{t("Choose buckets")}</legend>
         {loadingBuckets ? <div className="space-y-3">
           <Skeleton className="h-5 w-2/3" aria-hidden="true" />
@@ -158,12 +162,10 @@ export function R2Connect({ onConnected, onBusyChange, disabled = false }: Props
           </div>}
         </div>)}
       </fieldset>}
-      <p>{t("Credentials are stored locally on this device as private files with restricted permissions. Not synced or encrypted.")}</p>
-      <Button type="button" disabled={busy || disabled || !scopeMatches || !selected.length || selected.length > 50} onClick={() => void connect()}>{busy ? t("Saving...") : t("Add selected buckets")}</Button>
+      <p className="field-hint">{t("Credentials are stored locally on this device as private files with restricted permissions. Not synced or encrypted.")}</p>
+      <div className="r2-actions"><Button type="button" disabled={busy || disabled || !scopeMatches || !selected.length || selected.length > 50} onClick={() => void connect()}>{busy ? t("Saving...") : t("Add selected buckets")}</Button></div>
     </>}
-    {stage === "done" && <p role="status">{t("Added {{count}} R2 profile(s).", { count: importedCount })}</p>}
+    {stage === "done" && <p className="field-hint" role="status">{t("Added {{count}} R2 profile(s).", { count: importedCount })}</p>}
     {error && <p role="alert" className="field-error">{error}</p>}
-    {stage !== "idle" && stage !== "done" && <Button type="button" variant="ghost" disabled={busy || disabled} onClick={cancel}>{t("Cancel")}</Button>}
-    {stage === "done" && <Button type="button" variant="outline" onClick={cancel}>{t("Add another Cloudflare account")}</Button>}
   </section>;
 }

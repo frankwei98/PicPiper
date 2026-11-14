@@ -45,7 +45,7 @@ it("shows skeletons only while account and bucket content is loading", async () 
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Sign in with Cloudflare" }));
   await waitFor(() => expect(view.container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(1));
-  expect(screen.getByText("Cloudflare account ID").parentElement?.querySelector("[aria-busy]")).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByText("Cloudflare account ID").closest(".preference-row")?.querySelector("[aria-busy]")).toHaveAttribute("aria-busy", "true");
   await act(async () => { resolveAccounts([{ id: accountId, name: "Personal" }]); });
   expect(view.container.querySelector('[data-slot="skeleton"]')).not.toBeInTheDocument();
 

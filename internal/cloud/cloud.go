@@ -65,6 +65,7 @@ type features struct {
 	S3          bool `json:"s3"`
 }
 type settings struct {
+	CloseBehavior       CloseBehavior `json:"closeBehavior"`
 	Mini                *MiniSettings `json:"mini,omitempty"`
 	OnboardingCompleted bool          `json:"onboardingCompleted,omitempty"`
 	Features            *features     `json:"features,omitempty"`
@@ -368,7 +369,7 @@ func (s *Service) secretPath(id string) string {
 }
 func defaults() settings {
 	mini := DefaultMiniSettings()
-	return settings{Mini: &mini, Profiles: []profile{}, NamingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}"}
+	return settings{CloseBehavior: CloseQuit, Mini: &mini, Profiles: []profile{}, NamingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}"}
 }
 func (s *Service) loadSettings() (settings, error) {
 	s.mu.Lock()
@@ -391,6 +392,7 @@ func (s *Service) loadSettingsLocked() (settings, error) {
 		v.Profiles = []profile{}
 	}
 	v.Mini = clipboardMiniSettings(v.Mini)
+	v.CloseBehavior = normalizedCloseBehavior(v.CloseBehavior)
 	return v, nil
 }
 func (s *Service) saveSettings(v settings) error {
@@ -400,6 +402,7 @@ func (s *Service) saveSettings(v settings) error {
 }
 func (s *Service) saveSettingsLocked(v settings) error {
 	v.Mini = clipboardMiniSettings(v.Mini)
+	v.CloseBehavior = normalizedCloseBehavior(v.CloseBehavior)
 	if e := os.MkdirAll(s.dataDir, 0700); e != nil {
 		return appErr("settingsDirFailed", e.Error())
 	}
@@ -466,6 +469,9 @@ func (s *Service) getSecret(p profile, draft *string) (string, error) {
 	return string(b), nil
 }
 func validateSettings(v settings) error {
+	if v.CloseBehavior != "" && v.CloseBehavior != CloseQuit && v.CloseBehavior != CloseBackground {
+		return appErr("invalidSettings", "Choose a supported close-window behavior.")
+	}
 	if v.Mini != nil {
 		if err := validateMini(*v.Mini, v.Profiles); err != nil {
 			return err

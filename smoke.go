@@ -97,11 +97,18 @@ func runSmoke(win *mygo.Window, dir string, backend *Backend) {
 	server := httptest.NewServer(bucket)
 	defer server.Close()
 	must(smokeClick(win, "Settings"))
-	must(smokeWait(win, `Boolean([...document.querySelectorAll('label')].find(x => x.textContent.trim().startsWith('Profile name')))`, 5*time.Second))
+	win.SetSize(1920, 900)
+	must(smokeWait(win, `innerWidth >= 1900 && innerHeight >= 860`, 5*time.Second))
+	must(smokeSettingsPreferencesFit(win))
+	must(smokeCapture(win, dir, "settings-general-wide-en.png"))
+	win.SetSize(1120, 820)
+	must(smokeWait(win, `innerWidth <= 1125 && innerHeight <= 825`, 5*time.Second))
+	must(smokeClick(win, "S3 profiles"))
+	must(smokeWait(win, `document.getElementById('settings-section-profile')?.hidden === false`, 5*time.Second))
 	fields := [][2]string{{"Profile name", "MVP local bucket"}, {"Endpoint", server.URL}, {"Region", "us-east-1"}, {"Bucket", "mvp-images"}, {"Access key ID", "MVP-TEST-ACCESS"}, {"Secret access key", "local-test-secret"}, {"Public Base URL", server.URL + "/public"}, {"Default prefix", "images"}}
 	for _, field := range fields {
 		if field[0] == "Public Base URL" || field[0] == "Default prefix" {
-			must(smokeClick(win, "Upload and naming"))
+			must(smokeClick(win, "Links and naming"))
 		}
 		label, value := smokeJSON(field[0]), smokeJSON(field[1])
 		_, err := smokeEval(win, `const label = [...document.querySelectorAll('label')].find(x => x.textContent.trim().startsWith(`+label+`));
@@ -381,7 +388,7 @@ return saved.length === 1;`)
 	_, err = smokeEval(win, `document.documentElement.classList.add('dark'); document.documentElement.style.colorScheme = 'dark'; return true;`)
 	must(err)
 	must(smokeCapture(win, dir, "dark-theme.png"))
-	_, err = smokeEval(win, `document.documentElement.classList.remove('dark'); return true;`)
+	_, err = smokeEval(win, `document.documentElement.classList.remove('dark'); document.documentElement.style.colorScheme = 'light'; return true;`)
 	must(err)
 	must(smokeCapture(win, dir, "light-theme.png"))
 	win.SetSize(1480, 900)
@@ -400,13 +407,27 @@ return saved.length === 1;`)
 		must(err)
 		must(smokeWait(win, `document.documentElement.lang === `+smokeJSON(locale), 5*time.Second))
 		must(smokeWait(win, `[...document.querySelectorAll('.settings-sidebar [role="tab"]')].every(x => x.getBoundingClientRect().right <= document.querySelector('.settings-sidebar').getBoundingClientRect().right + 1)`, 5*time.Second))
+		must(smokeSettingsPreferencesFit(win))
 		must(smokeCapture(win, dir, "settings-"+locale+".png"))
+		if locale == "zh-CN" {
+			win.SetSize(1120, 820)
+			must(smokeWait(win, `innerWidth >= 1080 && innerHeight >= 780`, 5*time.Second))
+			must(smokeSettingsPreferencesFit(win))
+			must(smokeCapture(win, dir, "settings-general-zh-CN.png"))
+			win.SetSize(1920, 900)
+			must(smokeWait(win, `innerWidth >= 1900 && innerHeight >= 860`, 5*time.Second))
+			must(smokeSettingsPreferencesFit(win))
+			must(smokeCapture(win, dir, "settings-general-wide-zh-CN.png"))
+			win.SetSize(920, 600)
+			must(smokeWait(win, `innerWidth <= 925 && innerHeight <= 605`, 5*time.Second))
+		}
 		_, err = smokeEval(win, `document.getElementById('app-tab-optimize').click(); return true;`)
 		must(err)
 		must(smokeWorkbenchFits(win))
 		must(smokeCapture(win, dir, "workbench-"+locale+".png"))
 	}
 	report.Steps = append(report.Steps, "All six languages switched through Settings and fit the populated minimum-size workbench")
+	report.Steps = append(report.Steps, "General preference rows align visible controls and Save with the viewport's right inset in all six languages at minimum size and in English/Chinese at 1920px width, with 14px field titles, 12px descriptions and 36px inputs")
 
 	// Exercise a long gallery with real IntersectionObserver clipping and a
 	// held thumbnail response, so skeleton and lazy-mount checks are deterministic.
@@ -486,6 +507,8 @@ return saved.length === 1;`)
 	must(smokeMini(backend, dir, bucket))
 	report.Steps = append(report.Steps, "Mini supports selection, on-demand upload sheets, same-bucket skips, four clipboard link formats, clear/undo without changing gallery objects, and fixed controls in all six languages")
 	report.Steps = append(report.Steps, "Mini: native status icon drop adapter installed; persistent flyout, background image clipboard, S3 upload, four link formats and reopen verified")
+	must(smokeWindowCloseBehavior(win, backend))
+	report.Steps = append(report.Steps, "Native main-window close uses the independent background preference, is forced to background by a live status icon, and requests application quit by default")
 
 	// Check the packaged scheme through Launch Services, rather than treating
 	// the Info.plist declaration alone as proof of native URL integration.

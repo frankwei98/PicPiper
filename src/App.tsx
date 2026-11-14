@@ -27,8 +27,8 @@ function App() {
   const [loaded, setLoaded] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   useEffect(() => settingsApi.onChanged?.(() => {
-    // A Mini preference change must not reset unsaved storage form fields.
-    void settingsApi.loadSettings().then((latest) => setSettings((current) => ({ ...current, mini: latest.mini }))).catch(() => {});
+    // Native preference changes must not reset unsaved storage form fields.
+    void settingsApi.loadSettings().then((latest) => setSettings((current) => ({ ...current, mini: latest.mini, closeBehavior: latest.closeBehavior }))).catch(() => {});
   }), []);
 
   useEffect(() => {
