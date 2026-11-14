@@ -1,11 +1,9 @@
 //go:build darwin && cgo
 
 #import <Cocoa/Cocoa.h>
-#import <objc/runtime.h>
 #include <stdint.h>
 
 extern void picPiperTrayFiles(uintptr_t, const char *);
-static char PPHandleKey, PPClassKey;
 
 static NSView *PPFindButton(NSView *view, NSString *tooltip) {
     if ([view isKindOfClass:NSClassFromString(@"NSStatusBarButton")] && [[view toolTip] isEqualToString:tooltip]) return view;
@@ -15,53 +13,75 @@ static NSView *PPFindButton(NSView *view, NSString *tooltip) {
 static NSArray *PPURLs(NSPasteboard *pasteboard) {
     return [pasteboard readObjectsForClasses:@[[NSURL class]] options:@{NSPasteboardURLReadingFileURLsOnlyKey:@YES}];
 }
-static NSDragOperation PPEntered(id self, SEL cmd, id<NSDraggingInfo> info) {
+// Status-item drags can arrive at NSStatusBarWindow rather than its button.
+// NSWindow forwards drag messages to its delegate when registered. Keep the
+// native button (including MyGo's appearance observer) entirely intact.
+@interface PPTrayDropReceiver : NSObject <NSWindowDelegate, NSDraggingDestination>
+@property(retain) NSWindow *window;
+@property(retain) id previousDelegate;
+@property(assign) uintptr_t handle;
+@end
+
+@implementation PPTrayDropReceiver
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)info {
     return [PPURLs([info draggingPasteboard]) count] ? NSDragOperationCopy : NSDragOperationNone;
 }
-static BOOL PPPrepare(id self, SEL cmd, id<NSDraggingInfo> info) { return PPEntered(self, cmd, info) != NSDragOperationNone; }
-static BOOL PPPerform(id self, SEL cmd, id<NSDraggingInfo> info) {
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)info { return [self draggingEntered:info]; }
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)info { return [self draggingEntered:info] != NSDragOperationNone; }
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)info {
     NSMutableArray *paths = [NSMutableArray array];
     for (NSURL *url in PPURLs([info draggingPasteboard])) { if ([url isFileURL] && [url path]) [paths addObject:[url path]]; }
-    NSNumber *handle = objc_getAssociatedObject(self, &PPHandleKey);
-    if (!handle || !paths.count) return NO;
+    if (!self.handle || !paths.count) return NO;
     NSData *data = [NSJSONSerialization dataWithJSONObject:paths options:0 error:nil];
+    if (!data) return NO;
     NSString *json = [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
-    picPiperTrayFiles([handle unsignedLongLongValue], [json UTF8String]);
+    picPiperTrayFiles(self.handle, [json UTF8String]);
     return YES;
 }
+- (BOOL)respondsToSelector:(SEL)selector {
+    return [super respondsToSelector:selector] || [self.previousDelegate respondsToSelector:selector];
+}
+- (id)forwardingTargetForSelector:(SEL)selector {
+    if ([self.previousDelegate respondsToSelector:selector]) return self.previousDelegate;
+    return [super forwardingTargetForSelector:selector];
+}
+- (void)dealloc {
+    [_window release];
+    [_previousDelegate release];
+    [super dealloc];
+}
+@end
 uintptr_t PPInstallTrayDrop(const char *label, uintptr_t handle) {
     @autoreleasepool {
         NSString *tooltip = [NSString stringWithUTF8String:label];
         NSView *button = nil;
-        for (NSWindow *window in [NSApp windows]) { button = PPFindButton([window contentView], tooltip); if (button) break; }
-        if (!button) return 0;
-        // Subclass the actual runtime class so AppKit's KVO behavior is retained.
-        Class original = object_getClass(button);
-        NSString *name = [@"PicPiperDrop_" stringByAppendingString:NSStringFromClass(original)];
-        Class subclass = NSClassFromString(name);
-        if (!subclass) {
-            subclass = objc_allocateClassPair(original, name.UTF8String, 0);
-            class_addMethod(subclass, @selector(draggingEntered:), (IMP)PPEntered, "Q@:@");
-            class_addMethod(subclass, @selector(draggingUpdated:), (IMP)PPEntered, "Q@:@");
-            class_addMethod(subclass, @selector(prepareForDragOperation:), (IMP)PPPrepare, "B@:@");
-            class_addMethod(subclass, @selector(performDragOperation:), (IMP)PPPerform, "B@:@");
-            objc_registerClassPair(subclass);
+        // A destroyed status item can leave a hidden window alive until the
+        // autorelease pool drains. Prefer the current visible item on re-enable.
+        for (NSWindow *candidate in [NSApp windows]) {
+            NSView *found = PPFindButton([candidate contentView], tooltip);
+            if (!found) continue;
+            if (!button || candidate.isVisible) button = found;
+            if (candidate.isVisible) break;
         }
-        objc_setAssociatedObject(button, &PPClassKey, [NSValue valueWithPointer:original], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(button, &PPHandleKey, @(handle), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        object_setClass(button, subclass);
-        [button registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
-        return (uintptr_t)[button retain];
+        NSWindow *window = [button window];
+        if (!window || [window.delegate isKindOfClass:[PPTrayDropReceiver class]]) return 0;
+        PPTrayDropReceiver *receiver = [[PPTrayDropReceiver alloc] init];
+        receiver.window = window;
+        receiver.previousDelegate = window.delegate;
+        receiver.handle = handle;
+        window.delegate = receiver;
+        [window registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
+        return (uintptr_t)receiver;
     }
 }
 void PPRemoveTrayDrop(uintptr_t value) {
     @autoreleasepool {
-        NSView *button = (NSView *)value;
-        [button unregisterDraggedTypes];
-        Class original = [objc_getAssociatedObject(button, &PPClassKey) pointerValue];
-        if (original) object_setClass(button, original);
-        objc_setAssociatedObject(button, &PPHandleKey, nil, OBJC_ASSOCIATION_ASSIGN);
-        objc_setAssociatedObject(button, &PPClassKey, nil, OBJC_ASSOCIATION_ASSIGN);
-        [button release];
+        PPTrayDropReceiver *receiver = (PPTrayDropReceiver *)value;
+        receiver.handle = 0;
+        if (receiver.window.delegate == receiver) {
+            [receiver.window unregisterDraggedTypes];
+            receiver.window.delegate = receiver.previousDelegate;
+        }
+        [receiver release];
     }
 }

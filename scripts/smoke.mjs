@@ -5,6 +5,7 @@ import { resolve, join } from "node:path";
 if (process.platform !== "darwin") {
   throw new Error("The packaged UI smoke driver currently supports macOS. Go and frontend tests run on other platforms.");
 }
+execFileSync(process.execPath, [resolve("scripts/test-tray-drop.mjs")], { stdio: "inherit" });
 const config = JSON.parse(readFileSync(resolve("mygo.json"), "utf8"));
 const app = resolve(config.out, `darwin-${process.arch}`, `${config.name}.app`);
 if (!existsSync(join(app, "Contents", "MacOS", config.name))) throw new Error("Build the app with pnpm build before running pnpm smoke.");

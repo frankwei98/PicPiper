@@ -1,6 +1,6 @@
 //go:build darwin && cgo
 
-// Package traydrop attaches Finder file drops to this app's status button.
+// Package traydrop attaches Finder file drops to this app's status-item window.
 // Install and its returned cleanup function must run on the AppKit main thread.
 package traydrop
 
@@ -25,12 +25,12 @@ func Install(tooltip string, fn func([]string)) (func(), error) {
 	handle := cgo.NewHandle(fn)
 	label := C.CString(tooltip)
 	defer C.free(unsafe.Pointer(label))
-	button := C.PPInstallTrayDrop(label, C.uintptr_t(handle))
-	if button == 0 {
+	receiver := C.PPInstallTrayDrop(label, C.uintptr_t(handle))
+	if receiver == 0 {
 		handle.Delete()
 		return nil, errors.New("could not locate the app's native status button")
 	}
-	return sync.OnceFunc(func() { C.PPRemoveTrayDrop(button); handle.Delete() }), nil
+	return sync.OnceFunc(func() { C.PPRemoveTrayDrop(receiver); handle.Delete() }), nil
 }
 
 //export picPiperTrayFiles
