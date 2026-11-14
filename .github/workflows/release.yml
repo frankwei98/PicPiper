@@ -28,7 +28,7 @@ on:
 
 concurrency:
   group: build-${{ inputs.release_tag || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.release_sha || (inputs.release_tag && format('refs/tags/{0}', inputs.release_tag)) || github.ref }}
+          ref: ${{ inputs.release_sha || (inputs.release_tag && format('refs/tags/{0}', inputs.release_tag)) || github.sha }}
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
