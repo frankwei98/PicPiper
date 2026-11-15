@@ -186,12 +186,15 @@ describe("OptimizePage", () => {
     expect(screen.getByText(/choose images/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Clear batch" })).not.toBeInTheDocument();
+    const railTools = screen.getByLabelText("Images to compress").querySelector(".rail-tools");
+    expect(Array.from(railTools!.querySelectorAll("button"), (button) => button.getAttribute("aria-label"))).toEqual(["Add images"]);
     expect(screen.queryByText("photo-01.jpg")).not.toBeInTheDocument();
     expect(screen.queryByText("/sample/photo-01.jpg")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Add images" }));
     expect(await screen.findByText("1 of 1 ready")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled();
+    expect(Array.from(railTools!.querySelectorAll("button"), (button) => button.getAttribute("aria-label"))).toEqual(["Clear batch", "Add images"]);
     await user.click(screen.getByRole("button", { name: "Clear batch" }));
     expect(screen.queryByRole("button", { name: "Clear batch" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled();

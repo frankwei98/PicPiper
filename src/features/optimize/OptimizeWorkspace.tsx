@@ -82,6 +82,9 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             </span>
           </span>
           <div className="rail-tools">
+            {props.items.length > 0 && (
+              <Button type="button" variant="ghost" size="icon-xs" aria-label={t("Clear batch")} disabled={props.locked} onClick={props.onClear}><Trash2 className="size-3.5" /></Button>
+            )}
             <Button
               type="button"
               variant="ghost"
@@ -96,9 +99,6 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             >
               <Plus className="size-4" aria-hidden="true" />
             </Button>
-            {props.items.length > 0 && (
-              <Button type="button" variant="ghost" size="icon-xs" aria-label={t("Clear batch")} disabled={props.locked} onClick={props.onClear}><Trash2 className="size-3.5" /></Button>
-            )}
           </div>
         </div>
         <div className="batch-list" role="list">
