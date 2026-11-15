@@ -448,5 +448,19 @@
   "Could not check for updates.": "Impossible de rechercher des mises à jour.",
   "Could not save update preferences.": "Impossible d’enregistrer les préférences de mise à jour.",
   "Checks periodically for new releases.": "Recherche régulièrement les nouvelles versions.",
-  "Downloads available updates automatically.": "Télécharge automatiquement les mises à jour disponibles."
+  "Downloads available updates automatically.": "Télécharge automatiquement les mises à jour disponibles.",
+  "Compression results": "Résultats de compression",
+  "Preview compressed images, then copy, save or upload your selection.": "Prévisualisez les images, puis copiez, enregistrez ou importez la sélection.",
+  "Copy selected images": "Copier la sélection",
+  "Save selected images": "Enregistrer la sélection",
+  "Save image": "Enregistrer l’image",
+  "Back to compression": "Retour à la compression",
+  "Images copied to clipboard": "Images copiées",
+  "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.": "Une image copie les pixels ; plusieurs copient les fichiers à coller dans le Finder ou une app compatible.",
+  "View compression results": "Voir les résultats",
+  "Add images": "Ajouter des images",
+  "Parallel image tasks": "Tâches d’image en parallèle",
+  "Auto ({{count}} tasks)": "Auto ({{count}} tâches)",
+  "{{count}} tasks": "{{count}} tâches",
+  "Auto uses 50% of available CPU cores, rounded up.": "Le mode auto utilise 50 % des cœurs CPU disponibles, arrondis à l’entier supérieur."
 }

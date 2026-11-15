@@ -74,7 +74,11 @@ export interface ReadComparisonImageResponse {
   height: number;
 }
 
+export interface ProcessingLimits { cpuCount: number; defaultConcurrency: number; concurrency: number }
+
 export const imageApi = {
+  processingLimits: () => invoke<ProcessingLimits>("image_processing_limits"),
+  copyImages: (outputPaths: string[]) => invoke<void>("copy_compressed_images", { request: { outputPaths } }),
   cancelImageTask: (request: { taskId: string }) => invoke<void>("cancel_image_task", { request }),
   inspectImage: (request: InspectImageRequest) => invoke<ImageInspection>("inspect_image", { request }),
   createOptimizerRun: () => invoke<CreateOptimizerRunResponse>("create_optimizer_run"),
@@ -148,6 +152,7 @@ export const namingApi = {
 };
 
 export interface AppSettings {
+  processingConcurrency?: number;
   closeBehavior?: "quit" | "background";
   mini?: MiniSettings;
   onboardingCompleted?: boolean;
@@ -182,6 +187,7 @@ export interface MiniItem {
 export interface MiniState { items: MiniItem[]; busy: boolean; copied: "" | "image" | "links"; error: string; canUndoClear?: boolean; copySequence?: number }
 export interface MiniUploadTarget { profileId: string; name: string; bucket: string; bucketKey: string }
 export const miniApi = {
+  export: (ids: string[], targetDir: string) => invoke<string[]>("mini_export", { request: { ids, targetDir } }),
   state: () => invoke<MiniState>("mini_state"),
   add: (paths: string[]) => invoke<MiniState>("mini_add", { request: { paths } }),
   upload: (ids: string[], profileId: string, linkFormat: MiniSettings["linkFormat"]) => invoke<MiniState>("mini_upload", { request: { ids, profileId, linkFormat } }),

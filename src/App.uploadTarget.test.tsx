@@ -14,6 +14,7 @@ const { settings } = vi.hoisted(() => ({ settings: {
 vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeClipboard: vi.fn(), onFileDrop: vi.fn(() => vi.fn()), onImagesOpened: vi.fn(() => vi.fn()) }));
 vi.mock("./api/backend", () => ({
   defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
+  imageApi: { processingLimits: vi.fn(async () => ({ cpuCount: 4, defaultConcurrency: 2, concurrency: 2 })) },
   settingsApi: { loadSettings: vi.fn(async () => settings) },
 }));
 vi.mock("./features/optimize/OptimizePage", () => ({ OptimizePage: ({ activeProfile, onUploadedToS3 }: {

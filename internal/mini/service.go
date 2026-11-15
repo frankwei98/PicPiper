@@ -253,6 +253,51 @@ func (s *Service) Upload(ids []string, profileID, format string) error {
 	return nil
 }
 
+// Export copies completed Mini results from the private optimizer cache into a
+// user-selected directory. The private paths never leave this service.
+func (s *Service) Export(ctx context.Context, ids []string, targetDir string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, apperror.New("invalidMiniExport", "Choose compressed images to save.")
+	}
+	if strings.TrimSpace(targetDir) == "" {
+		return nil, apperror.New("invalidTargetDir", "Choose an output folder.")
+	}
+	s.mu.Lock()
+	s.pruneLocked()
+	positions := make(map[string]Item, len(s.items))
+	for _, item := range s.items {
+		positions[item.ID] = item
+	}
+	paths := make([]string, 0, len(ids))
+	seen := map[string]bool{}
+	for _, id := range ids {
+		item, ok := positions[id]
+		if seen[id] {
+			s.mu.Unlock()
+			return nil, apperror.New("invalidMiniExport", "Choose each image only once.")
+		}
+		seen[id] = true
+		if !ok {
+			s.mu.Unlock()
+			return nil, apperror.New("miniItemMissing", "This Mini result is no longer available.")
+		}
+		if item.hidden || item.Status != "completed" || item.outputPath == "" || activeItem(item) {
+			s.mu.Unlock()
+			return nil, apperror.New("miniNotReady", "Wait for this image to finish before saving it.")
+		}
+		paths = append(paths, item.outputPath)
+	}
+	s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var copied []string
+	if err := s.imageCallContext(ctx, "copy_outputs_to_dir", map[string]any{"outputPaths": paths, "targetDir": targetDir}, &copied); err != nil {
+		return nil, err
+	}
+	return copied, nil
+}
+
 func (s *Service) update(id string, fn func(*Item)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -273,6 +318,10 @@ func (s *Service) work() {
 			s.mu.Lock()
 			s.working = true
 			s.mu.Unlock()
+			var processErrors []error
+			if !b.uploadOnly {
+				processErrors = s.processBatch(b)
+			}
 			last := ""
 			links := []string{}
 			for n, id := range b.ids {
@@ -280,8 +329,7 @@ func (s *Service) work() {
 					return
 				}
 				if !b.uploadOnly {
-					if err := s.process(id, b.paths[n], b.plan); err != nil {
-						s.update(id, func(i *Item) { i.Status = "failed"; i.Error = safeError(err); i.CompletedAt = s.now() })
+					if processErrors[n] != nil {
 						continue
 					}
 				}
@@ -320,6 +368,55 @@ func (s *Service) work() {
 			s.mu.Unlock()
 		}
 	}
+}
+
+// processBatch pipelines independent images while the imaging service enforces
+// the shared budget across Mini, the main window and previews.
+func (s *Service) processBatch(b batch) []error {
+	results := make([]error, len(b.ids))
+	finished := make(chan int, len(b.ids))
+	// A running Mini panel is independent of the main WebView's settings events.
+	// Recheck while jobs are pending so raising the budget also affects this batch.
+	changes := time.NewTicker(100 * time.Millisecond)
+	defer changes.Stop()
+	next, active := 0, 0
+	for next < len(b.ids) || active > 0 {
+		var limits imaging.ProcessingLimits
+		_ = s.imageCall("image_processing_limits", map[string]any{}, &limits)
+		for s.ctx.Err() == nil && next < len(b.ids) && active < max(1, limits.Concurrency) {
+			n := next
+			next++
+			active++
+			go func() {
+				err := s.process(b.ids[n], b.paths[n], b.plan)
+				results[n] = err
+				if err != nil {
+					s.update(b.ids[n], func(i *Item) { i.Status = "failed"; i.Error = safeError(err); i.CompletedAt = s.now() })
+				}
+				finished <- n
+			}()
+		}
+		if s.ctx.Err() != nil {
+			for remaining := next; remaining < len(results); remaining++ {
+				results[remaining] = s.ctx.Err()
+			}
+			for active > 0 {
+				<-finished
+				active--
+			}
+			return results
+		}
+		if active == 0 {
+			break
+		}
+		select {
+		case <-finished:
+			active--
+		case <-changes.C:
+		case <-s.ctx.Done():
+		}
+	}
+	return results
 }
 
 func (s *Service) upload(id string, plan cloud.MiniPlan) error {
@@ -385,7 +482,10 @@ func (s *Service) process(id, path string, plan cloud.MiniPlan) error {
 	return nil
 }
 func (s *Service) imageCall(op string, req any, dst any) error {
-	v, err := s.images.Call(s.ctx, op, mustJSON(req))
+	return s.imageCallContext(s.ctx, op, req, dst)
+}
+func (s *Service) imageCallContext(ctx context.Context, op string, req any, dst any) error {
+	v, err := s.images.Call(ctx, op, mustJSON(req))
 	if err != nil {
 		return err
 	}

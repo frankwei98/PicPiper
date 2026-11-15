@@ -41,11 +41,13 @@ describe("optimizeQueue", () => {
     expect(AVAILABLE_OUTPUT_FORMATS).toEqual(["jpg", "png", "webp", "avif", "jxl"]);
   });
 
-  it("caps compression concurrency so large machines do not start unbounded work", () => {
-    expect(getCompressionConcurrency(10)).toBe(3);
+  it("uses half of available cores, rounded up", () => {
+    expect(getCompressionConcurrency(10)).toBe(5);
     expect(getCompressionConcurrency(2)).toBe(1);
+    expect(getCompressionConcurrency(11)).toBe(6);
+    expect(getCompressionConcurrency(12)).toBe(6);
     expect(getCompressionConcurrency(1)).toBe(1);
-    expect(getCompressionConcurrency(undefined)).toBe(3);
+    expect(getCompressionConcurrency(undefined)).toBe(2);
   });
 
   it("derives output filename from current target format", () => {

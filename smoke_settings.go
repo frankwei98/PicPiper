@@ -11,7 +11,7 @@ func smokeSettingsPreferencesFit(win *mygo.Window) error {
 const panel = document.getElementById('settings-section-general');
 if (!panel || panel.hidden) return false;
 const rows = [...panel.querySelectorAll('.preference-row')].filter(row => row.getBoundingClientRect().height > 0);
-if (rows.length !== 9) return false;
+if (rows.length !== 10) return false;
 const viewport = panel.closest('.workspace-scroll'), content = panel.closest('.settings-content');
 const expectedRight = viewport.getBoundingClientRect().left + viewport.clientWidth - parseFloat(getComputedStyle(content).paddingRight);
 return rows.every(row => {

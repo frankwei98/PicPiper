@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,7 @@ const maxPixels = 40_000_000
 type Service struct {
 	dataDir       string
 	cacheDir      string
-	workers       chan struct{}
+	workers       *operationLimit
 	jobs          imageJobs
 	workerMu      sync.Mutex
 	idleWorkers   []*imageWorker
@@ -41,20 +42,16 @@ type Service struct {
 
 func New(dataDir string) *Service {
 	lifetime, stop := context.WithCancel(context.Background())
-	return &Service{dataDir: dataDir, cacheDir: filepath.Join(dataDir, "optimizer-cache"), workers: make(chan struct{}, 2), lifetime: lifetime, stop: stop}
+	return &Service{dataDir: dataDir, cacheDir: filepath.Join(dataDir, "optimizer-cache"), workers: newOperationLimit(defaultConcurrency(runtime.NumCPU())), lifetime: lifetime, stop: stop}
 }
 
 func (s *Service) Close() {
 	s.closeOnce.Do(func() {
 		s.stop()
-		// Reap child processes before the application exits.
-		for range cap(s.workers) {
-			s.workers <- struct{}{}
-		}
+		s.workers.close()
+		// Reap child processes after cancellation has released all image slots.
+		s.workers.wait()
 		s.closeIdleWorkers()
-		for range cap(s.workers) {
-			<-s.workers
-		}
 	})
 }
 
@@ -129,17 +126,17 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 		defer finish()
 	}
 	switch operation {
+	case "image_processing_limits":
+		return s.ProcessingLimits(), nil
 	case "create_optimizer_run":
 		return s.createRun()
 	case "copy_outputs_to_dir":
 		return s.copyOutputs(ctx, req)
 	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image":
-		select {
-		case s.workers <- struct{}{}:
-			defer func() { <-s.workers }()
-		case <-ctx.Done():
-			return nil, apperror.New("cancelled", "Image processing was cancelled.")
+		if err := s.workers.acquire(ctx); err != nil {
+			return nil, err
 		}
+		defer s.workers.release()
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -545,17 +542,9 @@ func resize(src image.Image, width, height int) *image.NRGBA {
 }
 
 func (s *Service) copyOutputs(ctx context.Context, req request) ([]string, error) {
-	paths := make([]string, 0, len(req.OutputPaths))
-	for _, path := range req.OutputPaths {
-		resolved, err := under(s.cacheDir, path)
-		if err != nil {
-			return nil, err
-		}
-		info, err := os.Stat(resolved)
-		if err != nil || !info.Mode().IsRegular() {
-			return nil, apperror.New("invalidOutputPath", "Only generated image files can be exported.")
-		}
-		paths = append(paths, resolved)
+	paths, err := s.OutputPaths(req.OutputPaths)
+	if err != nil {
+		return nil, err
 	}
 	if len(paths) == 0 {
 		return []string{}, nil
@@ -606,4 +595,49 @@ func (s *Service) ThumbnailDataURL(ctx context.Context, path string, maxSize int
 		return "", err
 	}
 	return result.DataURL, nil
+}
+
+// OutputPaths validates generated files before native clipboard or export access.
+func (s *Service) OutputPaths(outputPaths []string) ([]string, error) {
+	paths := make([]string, 0, len(outputPaths))
+	for _, path := range outputPaths {
+		resolved, err := under(s.cacheDir, path)
+		if err != nil {
+			return nil, err
+		}
+		info, err := os.Stat(resolved)
+		if err != nil || !info.Mode().IsRegular() {
+			return nil, apperror.New("invalidOutputPath", "Only generated image files can be exported.")
+		}
+		paths = append(paths, resolved)
+	}
+	return paths, nil
+}
+
+// ClipboardPNG uses the same bounded decoding and color handling as comparison.
+func (s *Service) ClipboardPNG(ctx context.Context, path string) ([]byte, error) {
+	paths, err := s.OutputPaths([]string{path})
+	if err != nil {
+		return nil, err
+	}
+	payload, _ := json.Marshal(request{Path: paths[0]})
+	result, err := s.Call(ctx, "read_comparison_image", payload)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	var preview struct {
+		DataURL string `json:"dataUrl"`
+	}
+	if err = json.Unmarshal(raw, &preview); err != nil {
+		return nil, err
+	}
+	encoded, ok := strings.CutPrefix(preview.DataURL, "data:image/png;base64,")
+	if !ok {
+		return nil, apperror.New("clipboardFailed", "Could not prepare the clipboard image.")
+	}
+	return base64.StdEncoding.DecodeString(encoded)
 }

@@ -90,6 +90,7 @@ func runSmoke(win *mygo.Window, dir string, backend *Backend) {
 	must(smokeCapture(win, dir, "onboarding-mini-on.png"))
 	must(smokeClick(win, "Complete setup"))
 	must(smokeWait(win, `Boolean(document.querySelector('[role="tab"]'))`, 5*time.Second))
+	must(smokeWait(win, `Boolean(document.querySelector('.rail-tools button[aria-label="Add images"]:not(:disabled)')) && !document.querySelector('.rail-tools button[aria-label="Clear batch"]')`, 5*time.Second))
 	must(smokeCapture(win, dir, "workspace.png"))
 	report.Steps = append(report.Steps, "Packaged frontend and native runtime loaded")
 
@@ -101,6 +102,20 @@ func runSmoke(win *mygo.Window, dir string, backend *Backend) {
 	// AppKit clamps height to the display's work area (684px on the CI
 	// runner). Horizontal alignment only needs the supported 600px minimum.
 	must(smokeWait(win, `innerWidth >= 1900 && innerHeight >= 600`, 5*time.Second))
+	must(smokeSelect(win, "Parallel image tasks", "1"))
+	must(smokeClick(win, "Save general settings"))
+	must(smokeWait(win, `document.querySelector('#settings-processing-concurrency')?.value === '1' && document.body.innerText.includes('General settings saved.')`, 5*time.Second))
+	if backend.images.ProcessingLimits().Concurrency != 1 {
+		must(fmt.Errorf("manual concurrency did not apply to native workers"))
+	}
+	must(smokeSelect(win, "Parallel image tasks", "0"))
+	must(smokeClick(win, "Save general settings"))
+	must(smokeWait(win, `document.querySelector('#settings-processing-concurrency')?.value === '0' && document.body.innerText.includes('General settings saved.')`, 5*time.Second))
+	limits := backend.images.ProcessingLimits()
+	if limits.Concurrency != max(1, (limits.CPUCount+1)/2) {
+		must(fmt.Errorf("automatic concurrency was not rounded up from 50%% of CPU count"))
+	}
+	report.Steps = append(report.Steps, "General settings applied a manual image processing budget and restored the CPU-based automatic default without restarting")
 	must(smokeSettingsPreferencesFit(win))
 	must(smokeCapture(win, dir, "settings-general-wide-en.png"))
 	win.SetSize(1920, 684)
@@ -152,7 +167,55 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	must(smokeClick(win, "Compress"))
 	must(smokeWait(win, `Boolean(document.querySelector('[data-testid="image-drop-zone"]'))`, 5*time.Second))
 	must(smokeWait(win, `Boolean(document.querySelector('button[aria-label="Compare Sample photo.jpg"]'))`, 15*time.Second))
+	must(smokeWait(win, `!document.querySelector('[role="dialog"]')`, 5*time.Second))
+	must(smokeClick(win, "View compression results"))
+	must(smokeWait(win, `Boolean([...document.querySelectorAll('[role="dialog"] h2')].find(x => x.textContent==='Compression results'))`, 5*time.Second))
+	must(smokeCapture(win, dir, "compression-results.png"))
+	must(smokeClick(win, "Copy image"))
+	must(smokeWait(win, `document.querySelector('[role="dialog"]').innerText.includes('Image copied to clipboard')`, 10*time.Second))
+	clipboardPixels, err := png.DecodeConfig(bytes.NewReader(mygo.Clipboard.ReadImage()))
+	must(err)
+	if clipboardPixels.Width != 1200 || clipboardPixels.Height != 800 {
+		must(fmt.Errorf("clipboard image lost full resolution"))
+	}
+	report.Steps = append(report.Steps, "Results opened on request and copied full-resolution pixels to native clipboard")
+	must(smokeClick(win, "Back to compression"))
+	must(smokeWait(win, `Boolean(document.querySelector('.rail-tools button[aria-label="Add images"]:not(:disabled)')) && Boolean(document.querySelector('.rail-tools button[aria-label="Clear batch"]:not(:disabled)'))`, 5*time.Second))
 	must(smokeCapture(win, dir, "compressed.png"))
+	report.Steps = append(report.Steps, "Queue header offers Add images when empty and populated, with Clear batch only for populated queues")
+	runsBefore, err := filepath.Glob(filepath.Join(dir, "data", "optimizer-cache", "run-*"))
+	must(err)
+	_, err = smokeEval(win, `const slider=document.getElementById('output-quality'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(slider,'60'); slider.dispatchEvent(new Event('input',{bubbles:true})); await new Promise(r=>setTimeout(r,1000)); if(document.querySelector('input.quality-input').value!=='60') throw Error('Quality draft did not follow slider'); return true;`)
+	must(err)
+	heldRuns, err := filepath.Glob(filepath.Join(dir, "data", "optimizer-cache", "run-*"))
+	must(err)
+	if len(heldRuns) != len(runsBefore) {
+		must(fmt.Errorf("quality drag started compression before release"))
+	}
+	_, err = smokeEval(win, `const slider=document.getElementById('output-quality'); slider.dispatchEvent(new Event('change',{bubbles:true})); return true;`)
+	must(err)
+	waitQualityRun := func(previous int) {
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) {
+			runs, err := filepath.Glob(filepath.Join(dir, "data", "optimizer-cache", "run-*"))
+			must(err)
+			if len(runs) > previous {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		must(fmt.Errorf("committed quality did not start compression"))
+	}
+	waitQualityRun(len(runsBefore))
+	must(smokeWait(win, `Boolean(document.querySelector('button[aria-label="Compare Sample photo.jpg"]'))`, 15*time.Second))
+	restoredFrom, err := filepath.Glob(filepath.Join(dir, "data", "optimizer-cache", "run-*"))
+	must(err)
+	_, err = smokeEval(win, `const input=document.querySelector('input.quality-input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'85'); input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new FocusEvent('focusout',{bubbles:true})); return true;`)
+	must(err)
+	waitQualityRun(len(restoredFrom))
+	must(smokeWait(win, `Boolean(document.querySelector('button[aria-label="Compare Sample photo.jpg"]'))`, 15*time.Second))
+	report.Steps = append(report.Steps, "Holding a quality drag updated the draft for one second without starting compression; release committed once, and number-field blur restored quality")
+
 	report.Steps = append(report.Steps, "Native file-open event received in Settings imported an image and completed compression")
 	galleryFixture := filepath.Join(dir, "Opened from gallery.jpg")
 	must(smokeFixture(galleryFixture))
@@ -160,6 +223,18 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	must(ImagesOpened.Emit(win, []string{galleryFixture}))
 	must(smokeClick(win, "Compress"))
 	must(smokeWait(win, `Boolean(document.querySelector('button[aria-label="Compare Opened from gallery.jpg"]'))`, 15*time.Second))
+	must(smokeWait(win, `!document.querySelector('[role="dialog"]')`, 5*time.Second))
+	must(smokeClick(win, "View compression results"))
+	must(smokeWait(win, `Boolean([...document.querySelectorAll('button')].find(x => x.textContent==='Copy selected images'))`, 5*time.Second))
+	must(smokeClick(win, "Copy selected images"))
+	must(smokeWait(win, `document.querySelector('[role="dialog"]').innerText.includes('Images copied to clipboard')`, 10*time.Second))
+	copiedFiles, err := mygo.Clipboard.ReadFiles()
+	must(err)
+	if len(copiedFiles) != 2 {
+		must(fmt.Errorf("batch clipboard contains %d files", len(copiedFiles)))
+	}
+	report.Steps = append(report.Steps, "Batch result action copied two native file URLs")
+	must(smokeClick(win, "Back to compression"))
 	must(smokeCapture(win, dir, "open-with-across-views.png"))
 	must(smokeClick(win, "Remove Opened from gallery.jpg"))
 	report.Steps = append(report.Steps, "Native file-open event received in S3 Gallery was retained across navigation")

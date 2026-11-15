@@ -23,7 +23,7 @@ type workerRequest struct {
 }
 
 // Each process handles one request at a time, keeping compiled WASM codecs warm.
-// The service's worker semaphore bounds both busy and cached processes.
+// The service's image budget bounds busy and cached processes.
 type imageWorker struct {
 	command *exec.Cmd
 	input   io.WriteCloser
@@ -128,6 +128,7 @@ func (s *Service) isolated(ctx context.Context, operation string, req request) (
 	s.workerMu.Lock()
 	s.idleWorkers = append(s.idleWorkers, worker)
 	s.workerMu.Unlock()
+	s.trimIdleWorkers()
 	if response.Error != nil {
 		return nil, response.Error
 	}

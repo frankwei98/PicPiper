@@ -166,7 +166,7 @@ export function useOptimizeUploads({
     return { newlyUploaded, newlyUploadedItemIds, failed, recordWarning };
   };
 
-  const uploadToS3 = async () => {
+  const uploadToS3 = async (ids?: string[]) => {
     if (!canMutateQueue()) return;
     if (!activeProfile) {
       setUploadError(t("Configure and select an S3 profile before uploading."));
@@ -181,8 +181,9 @@ export function useOptimizeUploads({
     const compressedItems = items.filter(
       (item) =>
         isCurrentCompressionOutput(item, currentQuality) &&
+        (!ids || ids.includes(item.id)) &&
         !uploadedItemIds.has(item.id) &&
-        !currentFailures.has(item.id),
+        (ids || !currentFailures.has(item.id)),
     );
     if (compressedItems.length === 0) {
       setUploadError(t("No compressed outputs to upload."));
@@ -193,6 +194,7 @@ export function useOptimizeUploads({
       compressedItems,
       activeProfile,
       prefix,
+      new Set(compressedItems.filter((item) => currentFailures.get(item.id)?.code === "objectAlreadyExists").map((item) => item.id)),
     );
     const remainingFailures = updateFailedUploads((current) => {
       const next = new Map(current);

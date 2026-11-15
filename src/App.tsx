@@ -6,7 +6,7 @@ import { Layout } from "./components/Layout";
 import { S3GalleryPage } from "./features/gallery/S3GalleryPage";
 import { OptimizePage } from "./features/optimize/OptimizePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
-import { settingsApi } from "./api/backend";
+import { imageApi, settingsApi, type ProcessingLimits } from "./api/backend";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AppSettings } from "./api/backend";
@@ -28,23 +28,31 @@ function App() {
     profiles: [],
     namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
   });
+  const [processingLimits, setProcessingLimits] = useState<ProcessingLimits>();
+  const applySettings = (next: AppSettings) => {
+    setSettings(next);
+    setProcessingLimits((current) => current ? { ...current, concurrency: next.processingConcurrency || current.defaultConcurrency } : current);
+  };
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const [loaded, setLoaded] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   useEffect(() => settingsApi.onChanged?.(() => {
     // Native preference changes must not reset unsaved storage form fields.
-    void settingsApi.loadSettings().then((latest) => setSettings((current) => ({ ...current, mini: latest.mini, closeBehavior: latest.closeBehavior }))).catch(() => {});
+    void Promise.all([settingsApi.loadSettings(), imageApi.processingLimits()]).then(([latest, limits]) => {
+      setSettings((current) => ({ ...current, mini: latest.mini, closeBehavior: latest.closeBehavior, processingConcurrency: latest.processingConcurrency }));
+      setProcessingLimits(limits);
+    }).catch(() => {});
   }), []);
 
   useEffect(() => {
     setSettingsError(null);
     let cancelled = false;
-    settingsApi
-      .loadSettings()
-      .then((loaded) => {
+    Promise.all([settingsApi.loadSettings(), imageApi.processingLimits()])
+      .then(([loaded, limits]) => {
         if (!cancelled) {
           setSettings(loaded);
+          setProcessingLimits(limits);
           if (loaded.features && !loaded.features.compression && loaded.features.s3) {
             setNavigation((current) => ({ ...current, view: "gallery" }));
           }
@@ -100,6 +108,7 @@ function App() {
       )}
       <div hidden={navigation.view !== "optimize"} className="app-panel">
         <OptimizePage
+          processingConcurrency={processingLimits?.concurrency}
           profiles={settings.profiles}
           activeProfile={selectedProfile}
           namingTemplate={settings.namingTemplate}
@@ -118,7 +127,7 @@ function App() {
         />
       )}
       <div hidden={navigation.view !== "settings"} className="app-panel">
-        <SettingsPage settings={settings} onSettingsChange={setSettings} isActive={navigation.view === "settings"} />
+        <SettingsPage settings={settings} processingLimits={processingLimits} onSettingsChange={applySettings} isActive={navigation.view === "settings"} />
       </div>
     </Layout>
   );

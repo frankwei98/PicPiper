@@ -448,5 +448,19 @@
   "Could not check for updates.": "无法检查更新。",
   "Could not save update preferences.": "无法保存更新偏好设置。",
   "Checks periodically for new releases.": "定期检查是否有新版本。",
-  "Downloads available updates automatically.": "自动下载可用更新。"
+  "Downloads available updates automatically.": "自动下载可用更新。",
+  "Compression results": "压缩结果",
+  "Preview compressed images, then copy, save or upload your selection.": "预览压缩后的图片，选择后复制、保存或上传。",
+  "Copy selected images": "复制选中图片",
+  "Save selected images": "保存选中图片",
+  "Save image": "保存图片",
+  "Back to compression": "返回压缩",
+  "Images copied to clipboard": "图片已复制到剪贴板",
+  "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.": "单张复制图片内容；多张复制图片文件，可粘贴到访达或兼容的应用。",
+  "View compression results": "查看压缩结果",
+  "Add images": "添加图片",
+  "Parallel image tasks": "图片处理并发数",
+  "Auto ({{count}} tasks)": "自动（{{count}} 个任务）",
+  "{{count}} tasks": "{{count}} 个任务",
+  "Auto uses 50% of available CPU cores, rounded up.": "自动模式使用可用 CPU 核心数的 50%，并向上取整。"
 }

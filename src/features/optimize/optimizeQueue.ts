@@ -3,7 +3,6 @@ import type { OptimizeItem, WritableImageFormat } from "../../types";
 import { writableImageFormats } from "../../lib/imageFormats";
 
 export const AVAILABLE_OUTPUT_FORMATS = writableImageFormats();
-export const MAX_COMPRESSION_CONCURRENCY = 3;
 
 export type AvailableOutputFormat = (typeof AVAILABLE_OUTPUT_FORMATS)[number];
 
@@ -13,7 +12,7 @@ export function defaultTargetFormat(sourceFormat: OptimizeItem["sourceFormat"]):
 }
 
 export function getCompressionConcurrency(hardwareConcurrency: number | undefined): number {
-  return Math.min(MAX_COMPRESSION_CONCURRENCY, Math.max(1, (hardwareConcurrency ?? 4) - 1));
+  return Math.max(1, Math.ceil((hardwareConcurrency ?? 4) / 2));
 }
 
 export function makeOutputFileName(fileName: string, targetFormat: WritableImageFormat): string {

@@ -177,14 +177,54 @@ describe("OptimizePage", () => {
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
 
-  it("starts empty and asks the user to choose images", () => {
+  it("uses the saved processing budget and drains running work before admitting more after a decrease", async () => {
+    const user = userEvent.setup();
+    mockDialogOpen.mockResolvedValueOnce(Array.from({ length: 6 }, (_, n) => `/tmp/image-${n}.jpg`));
+    inspectImage.mockImplementation(async (...args: unknown[]) => {
+      const { path } = args[0] as { path: string };
+      return { sourcePath: path, fileName: path.split("/").pop()!, sourceFormat: "jpg", originalBytes: 1000 } as Awaited<ReturnType<typeof inspectImage>>;
+    });
+    const finish: Array<() => void> = [];
+    compressImage.mockImplementation((...args: unknown[]) => {
+      const request = args[0] as { sourcePath: string; outputFileName: string };
+      return new Promise((resolve) => finish.push(() => resolve({ sourcePath: request.sourcePath, outputPath: `/tmp/pic-piper/run-1/${request.outputFileName}`, outputFileName: request.outputFileName, originalBytes: 1000, outputBytes: 500, targetFormat: "jpg" })));
+    });
+    const view = render(<OptimizePage namingTemplate="{slug}.{ext}" processingConcurrency={4} />);
+    await user.click(screen.getByRole("button", { name: "Add images" }));
+    await waitFor(() => expect(compressImage).toHaveBeenCalledTimes(4));
+    view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" processingConcurrency={1} />);
+    await act(async () => { finish[0](); finish[1](); finish[2](); });
+    await screen.findByText("3 of 6 ready");
+    expect(compressImage).toHaveBeenCalledTimes(4);
+    await act(async () => finish[3]());
+    await waitFor(() => expect(compressImage).toHaveBeenCalledTimes(5));
+    await act(async () => finish[4]());
+    await waitFor(() => expect(compressImage).toHaveBeenCalledTimes(6));
+    await act(async () => finish[5]());
+    expect(await screen.findByText("6 of 6 ready")).toBeVisible();
+  });
+
+  it("starts empty with an add action and offers clear only after images are added", async () => {
+    const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     expect(screen.getByRole("heading", { name: "Prepare images" })).toBeInTheDocument();
     expect(screen.queryByText("Optimize")).not.toBeInTheDocument();
     expect(screen.getByText(/choose images/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Clear batch" })).not.toBeInTheDocument();
+    const railTools = screen.getByLabelText("Images to compress").querySelector(".rail-tools");
+    expect(Array.from(railTools!.querySelectorAll("button"), (button) => button.getAttribute("aria-label"))).toEqual(["Add images"]);
     expect(screen.queryByText("photo-01.jpg")).not.toBeInTheDocument();
     expect(screen.queryByText("/sample/photo-01.jpg")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add images" }));
+    expect(await screen.findByText("1 of 1 ready")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled();
+    expect(Array.from(railTools!.querySelectorAll("button"), (button) => button.getAttribute("aria-label"))).toEqual(["Clear batch", "Add images"]);
+    await user.click(screen.getByRole("button", { name: "Clear batch" }));
+    expect(screen.queryByRole("button", { name: "Clear batch" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled();
   });
 
   it.each(["webp", "avif", "jxl"])("dispatches a %s encode with the matching output filename", async (format) => {
@@ -491,6 +531,63 @@ describe("OptimizePage", () => {
     expect(within(dialog).getByText("Compressed", { exact: true })).toBeInTheDocument();
   });
 
+  it("updates the quality draft while held and recompresses only after pointer release", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByRole("button", { name: "Add images" }));
+    await screen.findByText("1 of 1 ready");
+    const slider = screen.getByRole("slider", { name: "Quality" });
+    vi.useFakeTimers();
+    try {
+      fireEvent.pointerDown(slider, { pointerId: 1, button: 0 });
+      fireEvent.input(slider, { target: { value: "60" } });
+      expect(screen.getByRole("spinbutton", { name: "Quality:" })).toHaveValue(60);
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      expect(compressImage).toHaveBeenCalledTimes(1);
+      expect(cancelImageTask).not.toHaveBeenCalled();
+      expect(screen.getByText("1 of 1 ready")).toBeVisible();
+      fireEvent.input(slider, { target: { value: "55" } });
+      fireEvent.change(slider);
+      await act(async () => { vi.advanceTimersByTime(401); });
+      expect(compressImage).toHaveBeenCalledTimes(2);
+      expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ quality: 55 }) }));
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("commits keyboard adjustments on key release and number edits on Enter or blur", async () => {
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByRole("button", { name: "Add images" }));
+    await screen.findByText("1 of 1 ready");
+    const slider = screen.getByRole("slider", { name: "Quality" });
+    const number = screen.getByRole("spinbutton", { name: "Quality:" });
+    vi.useFakeTimers();
+    try {
+      fireEvent.keyDown(slider, { key: "ArrowLeft" });
+      fireEvent.change(slider, { target: { value: "84" } });
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      expect(compressImage).toHaveBeenCalledTimes(1);
+      fireEvent.keyUp(slider, { key: "ArrowLeft" });
+      await act(async () => { vi.advanceTimersByTime(401); });
+      expect(compressImage).toHaveBeenCalledTimes(2);
+      fireEvent.blur(slider);
+      fireEvent.change(number, { target: { value: "50" } });
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      expect(compressImage).toHaveBeenCalledTimes(2);
+      fireEvent.keyDown(number, { key: "Enter" });
+      await act(async () => { vi.advanceTimersByTime(401); });
+      expect(compressImage).toHaveBeenCalledTimes(3);
+      fireEvent.blur(number);
+      await act(async () => { vi.advanceTimersByTime(1000); });
+      expect(compressImage).toHaveBeenCalledTimes(3);
+      fireEvent.change(number, { target: { value: "45" } });
+      fireEvent.blur(number);
+      await act(async () => { vi.advanceTimersByTime(401); });
+      expect(compressImage).toHaveBeenCalledTimes(4);
+      expect(compressImage).toHaveBeenLastCalledWith(expect.objectContaining({ settings: expect.objectContaining({ quality: 45 }) }));
+    } finally { vi.useRealTimers(); }
+  });
+
   it("recompresses existing items after global quality changes", async () => {
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
@@ -500,8 +597,10 @@ describe("OptimizePage", () => {
     await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
     compressImage.mockClear();
 
-    // Change quality via slider and wait for debounce (400ms) + scheduler
-    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+    // Release commits the final value and lets the scheduler recompress.
+    fireEvent.pointerDown(screen.getByRole("slider", { name: /quality/i }), { pointerId: 1, button: 0 });
+    fireEvent.input(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }));
 
     await waitFor(() => {
       expect(compressImage).toHaveBeenLastCalledWith(
@@ -536,7 +635,9 @@ describe("OptimizePage", () => {
     await user.click(screen.getByRole("button", { name: /choose images/i }));
     expect(await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+    fireEvent.pointerDown(screen.getByRole("slider", { name: /quality/i }), { pointerId: 1, button: 0 });
+    fireEvent.input(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }));
 
     expect(await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*120 KB/)).toBeInTheDocument();
     expect(within(screen.getByLabelText("Images to compress")).queryByText(/1.2 MB.*240 KB/)).not.toBeInTheDocument();
@@ -721,7 +822,7 @@ describe("OptimizePage", () => {
     );
 
     // Second import: another photo.jpg appended
-    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await user.click(screen.getByRole("button", { name: "Add images" }));
     await waitFor(() => {
       expect(compressImage).toHaveBeenCalledTimes(2);
     });
@@ -746,7 +847,9 @@ describe("OptimizePage", () => {
     await user.click(screen.getByRole("button", { name: /choose images/i }));
     expect(await screen.findByRole("button", { name: "Select real-photo.jpg" })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+    fireEvent.pointerDown(screen.getByRole("slider", { name: /quality/i }), { pointerId: 1, button: 0 });
+    fireEvent.input(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }));
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 450));
     });
@@ -867,7 +970,9 @@ describe("OptimizePage", () => {
     compressImage.mockClear();
 
     // Change quality while compression is in progress
-    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+    fireEvent.pointerDown(screen.getByRole("slider", { name: /quality/i }), { pointerId: 1, button: 0 });
+    fireEvent.input(screen.getByRole("slider", { name: /quality/i }), { target: { value: "60" } });
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }));
 
     // Wait a bit for any potential duplicate dispatch
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -885,7 +990,7 @@ describe("OptimizePage", () => {
       targetFormat: "jpg",
     });
 
-    // After debounce (400ms), the quality change should trigger requeue
+    // The released quality change should trigger requeue
     // and then a new compression should be dispatched
     await waitFor(() => {
       expect(compressImage).toHaveBeenCalledWith(
@@ -1094,9 +1199,11 @@ describe("OptimizePage", () => {
     await user.click(screen.getByRole("button", { name: /choose images/i }));
     await within(screen.getByLabelText("Images to compress")).findByText(/1.2 MB.*240 KB/);
 
-    fireEvent.change(screen.getByRole("slider", { name: /quality/i }), {
+    fireEvent.pointerDown(screen.getByRole("slider", { name: /quality/i }), { pointerId: 1, button: 0 });
+    fireEvent.input(screen.getByRole("slider", { name: /quality/i }), {
       target: { value: "70" },
     });
+    fireEvent.change(screen.getByRole("slider", { name: /quality/i }));
     expect(screen.queryByRole("button", { name: "Upload to S3" })).not.toBeInTheDocument();
     expect(uploadObject).not.toHaveBeenCalled();
 
@@ -1313,7 +1420,7 @@ describe("OptimizePage", () => {
     await user.click(screen.getByRole("button", { name: "Upload to S3" }));
     expect(await screen.findByText(/1 of 1 upload\(s\) failed/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await user.click(screen.getByRole("button", { name: "Add images" }));
     const uploadNew = await screen.findByRole("button", { name: "Upload 1 new image(s) to S3" });
     await user.click(uploadNew);
 

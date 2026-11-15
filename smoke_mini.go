@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -114,6 +115,32 @@ func smokeMini(backend *Backend, dir string, bucket *smokeBucket) (resultErr err
 	}
 	if err := smokeCapture(panel, dir, "mini-image-copied.png"); err != nil {
 		return err
+	}
+	exportDir := filepath.Join(dir, "mini-exports")
+	if err := os.MkdirAll(exportDir, 0700); err != nil {
+		return err
+	}
+	existing := filepath.Join(exportDir, before.OutputName)
+	if err := os.WriteFile(existing, []byte("existing user file"), 0600); err != nil {
+		return err
+	}
+	exported := backend.Call(context.Background(), "mini_export", smokeJSON(map[string]any{"ids": []string{before.ID}, "targetDir": exportDir}))
+	var saved struct {
+		Data  []string `json:"data"`
+		Error any      `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(exported), &saved); err != nil {
+		return err
+	}
+	if saved.Error != nil || len(saved.Data) != 1 || saved.Data[0] == existing {
+		return fmt.Errorf("Mini export failed to preserve existing file: %s", exported)
+	}
+	original, err := os.ReadFile(existing)
+	if err != nil || string(original) != "existing user file" {
+		return fmt.Errorf("Mini export overwrote existing file")
+	}
+	if info, err := os.Stat(saved.Data[0]); err != nil || info.Size() != before.OutputBytes {
+		return fmt.Errorf("Mini saved output size differs")
 	}
 	if err := uploadDialog(before.OutputName); err != nil {
 		return err

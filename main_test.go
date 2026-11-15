@@ -181,3 +181,53 @@ func TestCloudflareReturnLinksOnlyRestoreTheExpectedAppRoute(t *testing.T) {
 		t.Fatal("packaging does not register the return scheme")
 	}
 }
+
+func TestProcessingPreferenceAppliesImmediatelyAndSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	backend := newBackend(dir)
+	defer backend.images.Close()
+	invoke := func(b *Backend, op, payload string) reply {
+		t.Helper()
+		var response reply
+		if err := json.Unmarshal([]byte(b.Call(context.Background(), op, payload)), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Error != nil {
+			t.Fatal(response.Error)
+		}
+		return response
+	}
+	limits := func(b *Backend) imaging.ProcessingLimits {
+		t.Helper()
+		response := invoke(b, "image_processing_limits", `{}`)
+		raw, _ := json.Marshal(response.Data)
+		var value imaging.ProcessingLimits
+		if err := json.Unmarshal(raw, &value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	before := limits(backend)
+	if before.Concurrency != max(1, (before.CPUCount+1)/2) {
+		t.Fatal("auto default is not 50% rounded up", before)
+	}
+	invoke(backend, "save_app_settings", `{"settings":{"profiles":[],"namingTemplate":"{slug}.{ext}","processingConcurrency":1}}`)
+	if limits(backend).Concurrency != 1 {
+		t.Fatal("save did not immediately adjust the processing budget")
+	}
+	restarted := newBackend(dir)
+	defer restarted.images.Close()
+	if limits(restarted).Concurrency != 1 {
+		t.Fatal("restart discarded the configured budget")
+	}
+	response := backend.Call(context.Background(), "save_app_settings", `{"settings":{"profiles":[],"namingTemplate":"{slug}.{ext}","processingConcurrency":-1}}`)
+	var failed reply
+	_ = json.Unmarshal([]byte(response), &failed)
+	if failed.Error == nil || limits(backend).Concurrency != 1 {
+		t.Fatal("invalid save changed live budget")
+	}
+	invoke(backend, "save_app_settings", `{"settings":{"profiles":[],"namingTemplate":"{slug}.{ext}","processingConcurrency":0}}`)
+	if limits(backend).Concurrency != before.DefaultConcurrency {
+		t.Fatal("switching back to auto did not apply")
+	}
+}

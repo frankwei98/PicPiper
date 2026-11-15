@@ -35,7 +35,7 @@ static avifResult picpiper_encode_avif(const uint8_t* pixels, int width, int hei
   encoder->quality = quality;
   encoder->qualityAlpha = 100;
   encoder->speed = 6;
-  // Two isolated workers already bound application-level concurrency.
+  // The shared image budget bounds application-level concurrency.
   encoder->maxThreads = 2;
   // Lossless alpha benefits greatly from more search than speed 6 provides.
   result = avifEncoderSetCodecSpecificOption(encoder, "alpha:cpu-used", "5");

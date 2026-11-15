@@ -16,6 +16,7 @@ const mockApi = vi.hoisted(() => ({
   window: vi.fn(),
   copy: vi.fn(),
   copyAll: vi.fn(),
+  export: vi.fn(),
 }));
 const mockDesktop = vi.hoisted(() => ({
   open: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("@/api/backend", () => ({
     window: mockApi.window,
     copy: mockApi.copy,
     copyAll: mockApi.copyAll,
+    export: mockApi.export,
   },
 }));
 vi.mock("@/platform/desktop", () => ({
@@ -81,8 +83,22 @@ function prepare(settings: AppSettings = defaultSettings, state: MiniState = emp
   mockApi.window.mockResolvedValue(undefined);
   mockApi.copy.mockResolvedValue(undefined);
   mockApi.copyAll.mockResolvedValue(undefined);
+  mockApi.export.mockResolvedValue(["/tmp/result.webp"]);
   mockDesktop.fileDropListener = undefined;
 }
+
+it("saves one result and the selected results to a chosen folder", async () => {
+  const user = userEvent.setup();
+  await renderReady(defaultSettings, { ...resultState, items: [completedItem, { ...completedItem, id: "item-2", outputName: "second.webp" }] });
+  mockDesktop.open.mockResolvedValue("/tmp/images");
+  await user.click(screen.getByRole("button", { name: /Save to local folder: result.webp/ }));
+  await waitFor(() => expect(mockApi.export).toHaveBeenCalledWith(["item-1"], "/tmp/images"));
+  expect(mockDesktop.open).toHaveBeenCalledWith({ directory: true });
+  await selectRows(user, ["result.webp", "second.webp"]);
+  await user.click(screen.getByRole("button", { name: "Save to local folder" }));
+  await waitFor(() => expect(mockApi.export).toHaveBeenLastCalledWith(["item-1", "item-2"], "/tmp/images"));
+  expect(await screen.findByRole("status")).toHaveTextContent("Saved 1 file(s) to /tmp/images");
+});
 
 async function renderReady(settings: AppSettings = defaultSettings, state: MiniState = emptyState, targets: MiniUploadTarget[] = [defaultTarget]) {
   prepare(settings, state, targets);

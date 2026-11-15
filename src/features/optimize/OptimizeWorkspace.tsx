@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizeItemSkeleton } from "./OptimizeItemSkeleton";
 import { t, useLocale, imageCount } from "@/i18n";
 import { useEffect, useState } from "react";
-import { Expand, Image as ImageIcon, ImageUp, Trash2 } from "lucide-react";
+import { Expand, Image as ImageIcon, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -53,12 +53,16 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
   const [qualityDraft, setQualityDraft] = useState(String(props.quality));
   useEffect(() => setQualityDraft(String(props.quality)), [props.quality]);
   const qualityNotApplicable = props.items.length > 0 ? props.items.every((item) => item.settings.targetFormat === "png") : props.batchFormat === "png";
-  const commitQuality = () => {
-    const parsed = Number(qualityDraft);
-    const quality = qualityDraft.trim() && Number.isFinite(parsed) ? Math.max(1, Math.min(100, Math.round(parsed))) : props.quality;
+  const commitQuality = (draft = qualityDraft) => {
+    const parsed = Number(draft);
+    const quality = draft.trim() && Number.isFinite(parsed) ? Math.max(1, Math.min(100, Math.round(parsed))) : props.quality;
     setQualityDraft(String(quality));
     if (quality !== props.quality) props.onQuality(quality);
   };
+  const sliderQuality = (() => {
+    const parsed = Number(qualityDraft);
+    return qualityDraft.trim() && Number.isFinite(parsed) ? Math.max(1, Math.min(100, parsed)) : props.quality;
+  })();
   const selected = props.items.find((item) => item.id === props.selectedId) ?? props.items[0];
   const previewUrl = selected && (preview === "original" ? selected.originalPreviewUrl : selected.compressedPreviewUrl ?? selected.originalPreviewUrl);
   const busy = selected && ["inspecting", "queued", "compressing", "loadingPreview"].includes(selected.status);
@@ -83,21 +87,22 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
           </span>
           <div className="rail-tools">
             {props.items.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                className="rail-choose"
-                aria-label={t("Choose images")}
-                data-testid="image-drop-zone"
-                disabled={props.chooseDisabled}
-                onClick={props.onChooseImages}
-                {...dropHandlers}
-              >
-                <ImageUp className="size-4" aria-hidden="true" />
-              </Button>
+              <Button type="button" variant="ghost" size="icon-xs" aria-label={t("Clear batch")} disabled={props.locked} onClick={props.onClear}><Trash2 className="size-3.5" /></Button>
             )}
-            <Button type="button" variant="ghost" size="icon-xs" aria-label={t("Clear batch")} disabled={!props.items.length || props.locked} onClick={props.onClear}><Trash2 className="size-3.5" /></Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="rail-choose"
+              aria-label={t("Add images")}
+              title={t("Add images")}
+              data-testid="image-drop-zone"
+              disabled={props.chooseDisabled}
+              onClick={props.onChooseImages}
+              {...dropHandlers}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+            </Button>
           </div>
         </div>
         <div className="batch-list" role="list">
@@ -127,13 +132,12 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             <Button
               type="button"
               variant="ghost"
-              data-testid="image-drop-zone"
               disabled={props.chooseDisabled}
               className={cn("stage-drop", props.dragging && "is-dragging")}
               onClick={props.onChooseImages}
               {...dropHandlers}
             >
-              <ImageUp className="drop-mark size-7" aria-hidden="true" />
+              <Plus className="drop-mark size-7" aria-hidden="true" />
               <span className="drop-title">{t("Drop images here")}</span>
               <span className="drop-cta">{t("Choose images")}</span>
               <span className="drop-formats">JPEG, PNG, WebP, AVIF, JPEG XL, HEIC</span>
@@ -184,8 +188,17 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
           </NativeSelect>
         </Label>
         <div className="recipe-field">
-          <div className="recipe-label"><Label htmlFor="output-quality">{t("Quality")}</Label><Input className="quality-input" aria-label={t("Quality:")} type="number" min={1} max={100} value={qualityDraft} disabled={props.locked || qualityNotApplicable} onChange={(event) => setQualityDraft(event.target.value)} onBlur={commitQuality} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitQuality(); } }} /></div>
-          <Slider id="output-quality" aria-label={t("Quality")} value={props.quality} onValueChange={props.onQuality} min={1} max={100} disabled={props.locked || qualityNotApplicable} />
+          <div className="recipe-label"><Label htmlFor="output-quality">{t("Quality")}</Label><Input className="quality-input" aria-label={t("Quality:")} type="number" min={1} max={100} value={qualityDraft} disabled={props.locked || qualityNotApplicable} onChange={(event) => setQualityDraft(event.target.value)} onBlur={() => commitQuality()} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitQuality(); } }} /></div>
+          <Slider
+            id="output-quality"
+            aria-label={t("Quality")}
+            value={sliderQuality}
+            onValueChange={(value) => setQualityDraft(String(value))}
+            onValueCommitted={(value) => commitQuality(String(value))}
+            min={1}
+            max={100}
+            disabled={props.locked || qualityNotApplicable}
+          />
           {qualityNotApplicable && <p className="recipe-note">{t("PNG output is lossless; quality does not apply.")}</p>}
         </div>
         <Label className="recipe-field">

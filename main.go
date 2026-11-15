@@ -28,6 +28,7 @@ type Backend struct {
 	desktop     *desktopController
 	images      *imaging.Service
 	cloud       *cloud.Service
+	settingsMu  sync.Mutex
 	openMu      sync.Mutex
 	openedFiles []string
 	imagesReady bool
@@ -48,9 +49,13 @@ func (b *Backend) TakeOpenedFiles() []string {
 
 func newBackend(dataDir string) *Backend {
 	images := imaging.NewIsolated(dataDir)
-	return &Backend{images: images, cloud: cloud.NewWithThumbnails(dataDir, func(ctx context.Context, path string) (string, error) {
+	backend := &Backend{images: images, cloud: cloud.NewWithThumbnails(dataDir, func(ctx context.Context, path string) (string, error) {
 		return images.ThumbnailDataURL(ctx, path, 384)
 	})}
+	if configured, err := backend.cloud.ProcessingConcurrency(); err == nil {
+		images.SetConcurrency(configured)
+	}
+	return backend
 }
 
 type reply struct {
@@ -76,6 +81,19 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 		err = apperror.New("invalidRequest", "This request is not valid JSON.")
 	} else {
 		switch operation {
+		case "save_app_settings":
+			b.settingsMu.Lock()
+			value, err = b.cloud.Call(ctx, operation, json.RawMessage(payload))
+			if err == nil {
+				var configured int
+				configured, err = b.cloud.ProcessingConcurrency()
+				if err == nil {
+					b.images.SetConcurrency(configured)
+				}
+			}
+			b.settingsMu.Unlock()
+		case "image_processing_limits":
+			value = b.images.ProcessingLimits()
 		case "update_state", "update_check", "update_preferences", "update_locale", "update_activity":
 			if b.updates == nil {
 				err = apperror.New("updatesDisabled", "Updates are unavailable in this build.")
@@ -110,6 +128,36 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 				err = b.mini.Upload(req.IDs, req.ProfileID, req.LinkFormat)
 			}
 			value = b.mini.Snapshot()
+		case "copy_compressed_images":
+			var req struct {
+				OutputPaths []string `json:"outputPaths"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				var paths []string
+				paths, err = b.images.OutputPaths(req.OutputPaths)
+				if err == nil && len(paths) == 0 {
+					err = apperror.New("invalidRequest", "Choose at least one compressed image.")
+				}
+				if err == nil {
+					if len(paths) == 1 {
+						var png []byte
+						png, err = b.images.ClipboardPNG(ctx, paths[0])
+						if err == nil {
+							err = mygo.Clipboard.WriteImage(png)
+						}
+					} else {
+						err = mygo.Clipboard.WriteFiles(paths...)
+					}
+				}
+			}
+		case "mini_export":
+			var req struct {
+				IDs       []string `json:"ids"`
+				TargetDir string   `json:"targetDir"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				value, err = b.mini.Export(ctx, req.IDs, req.TargetDir)
+			}
 		case "mini_copy_image":
 			var req struct {
 				ID string `json:"id"`

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -81,6 +82,23 @@ func TestQueueCopiesDecodedImageWithAlphaAndPreservesSource(t *testing.T) {
 	if len(service.Snapshot().Items) != 1 {
 		t.Fatal("missing result")
 	}
+	if _, err := service.Export(context.Background(), nil, t.TempDir()); err == nil {
+		t.Fatal("empty export selection accepted")
+	}
+	if _, err := service.Export(context.Background(), []string{"missing"}, t.TempDir()); err == nil {
+		t.Fatal("unknown result accepted for export")
+	}
+	target := t.TempDir()
+	saved, err := service.Export(context.Background(), []string{service.Snapshot().Items[0].ID}, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("saved paths: %v", saved)
+	}
+	if _, err := os.Stat(saved[0]); err != nil {
+		t.Fatalf("exported output missing: %v", err)
+	}
 	if err := service.Copy("missing", "url"); err == nil {
 		t.Fatal("arbitrary result ID accepted")
 	}
@@ -154,4 +172,97 @@ func TestDropCapturesSettingsAndQueueIsBounded(t *testing.T) {
 	}
 	// Cancellation releases pending work without depending on a live WebView.
 	service.Stop()
+}
+
+type parallelMiniImages struct {
+	delegate imageCaller
+	entered  chan string
+	release  chan struct{}
+}
+
+func (p *parallelMiniImages) Call(ctx context.Context, op string, raw json.RawMessage) (any, error) {
+	if op == "compress_image" {
+		var req struct {
+			SourcePath string `json:"sourcePath"`
+		}
+		_ = json.Unmarshal(raw, &req)
+		p.entered <- req.SourcePath
+		select {
+		case <-p.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return p.delegate.Call(ctx, op, raw)
+}
+func TestMiniPipelinesImagesUsingConfiguredBudget(t *testing.T) {
+	dir := t.TempDir()
+	images := imaging.New(dir)
+	defer images.Close()
+	images.SetConcurrency(2)
+	if images.ProcessingLimits().Concurrency < 2 {
+		t.Skip("requires two available CPUs")
+	}
+	images.SetConcurrency(1)
+	storage := cloud.New(dir)
+	cfg := cloud.DefaultMiniSettings()
+	cfg.Enabled = true
+	cfg.TargetFormat = "png"
+	if err := storage.SaveMiniSettings(cfg); err != nil {
+		t.Fatal(err)
+	}
+	var fixture bytes.Buffer
+	if err := png.Encode(&fixture, image.NewNRGBA(image.Rect(0, 0, 8, 8))); err != nil {
+		t.Fatal(err)
+	}
+	paths := make([]string, 3)
+	for n := range paths {
+		paths[n] = filepath.Join(dir, fmt.Sprintf("source-%d.png", n))
+		if err := os.WriteFile(paths[n], fixture.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gate := &parallelMiniImages{delegate: images, entered: make(chan string, 3), release: make(chan struct{})}
+	copied := make(chan struct{}, 1)
+	service := New(gate, storage, func([]byte) error { copied <- struct{}{}; return nil }, func(string) error { return nil })
+	defer service.Close()
+	if err := service.Add(paths); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-gate.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Mini did not start")
+	}
+	select {
+	case <-gate.entered:
+		t.Fatal("Mini exceeded the initial budget")
+	case <-time.After(60 * time.Millisecond):
+	}
+	images.SetConcurrency(2)
+	select {
+	case <-gate.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Mini did not apply the increased budget to its running batch")
+	}
+	select {
+	case <-gate.entered:
+		t.Fatal("Mini exceeded processing budget")
+	case <-time.After(60 * time.Millisecond):
+	}
+	close(gate.release)
+	select {
+	case <-copied:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Mini did not finish its batch")
+	}
+	state := miniIdle(t, service)
+	if len(state.Items) != 3 {
+		t.Fatal("lost results", state)
+	}
+	for _, item := range state.Items {
+		if item.Status != "completed" {
+			t.Fatalf("unfinished result: %+v", item)
+		}
+	}
 }
