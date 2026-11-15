@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OptimizeItemSkeleton } from "./OptimizeItemSkeleton";
 import { t, useLocale, imageCount } from "@/i18n";
 import { useEffect, useState } from "react";
-import { Expand, Image as ImageIcon, ImageUp, Trash2 } from "lucide-react";
+import { Expand, Image as ImageIcon, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -82,22 +82,23 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             </span>
           </span>
           <div className="rail-tools">
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="rail-choose"
+              aria-label={t("Add images")}
+              title={t("Add images")}
+              data-testid="image-drop-zone"
+              disabled={props.chooseDisabled}
+              onClick={props.onChooseImages}
+              {...dropHandlers}
+            >
+              <Plus className="size-4" aria-hidden="true" />
+            </Button>
             {props.items.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                className="rail-choose"
-                aria-label={t("Choose images")}
-                data-testid="image-drop-zone"
-                disabled={props.chooseDisabled}
-                onClick={props.onChooseImages}
-                {...dropHandlers}
-              >
-                <ImageUp className="size-4" aria-hidden="true" />
-              </Button>
+              <Button type="button" variant="ghost" size="icon-xs" aria-label={t("Clear batch")} disabled={props.locked} onClick={props.onClear}><Trash2 className="size-3.5" /></Button>
             )}
-            <Button type="button" variant="ghost" size="icon-xs" aria-label={t("Clear batch")} disabled={!props.items.length || props.locked} onClick={props.onClear}><Trash2 className="size-3.5" /></Button>
           </div>
         </div>
         <div className="batch-list" role="list">
@@ -127,13 +128,12 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             <Button
               type="button"
               variant="ghost"
-              data-testid="image-drop-zone"
               disabled={props.chooseDisabled}
               className={cn("stage-drop", props.dragging && "is-dragging")}
               onClick={props.onChooseImages}
               {...dropHandlers}
             >
-              <ImageUp className="drop-mark size-7" aria-hidden="true" />
+              <Plus className="drop-mark size-7" aria-hidden="true" />
               <span className="drop-title">{t("Drop images here")}</span>
               <span className="drop-cta">{t("Choose images")}</span>
               <span className="drop-formats">JPEG, PNG, WebP, AVIF, JPEG XL, HEIC</span>

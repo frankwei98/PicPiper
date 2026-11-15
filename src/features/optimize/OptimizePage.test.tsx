@@ -177,14 +177,24 @@ describe("OptimizePage", () => {
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
 
-  it("starts empty and asks the user to choose images", () => {
+  it("starts empty with an add action and offers clear only after images are added", async () => {
+    const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{yyyy}/{mm}/{slug}-{hash}.{ext}" />);
 
     expect(screen.getByRole("heading", { name: "Prepare images" })).toBeInTheDocument();
     expect(screen.queryByText("Optimize")).not.toBeInTheDocument();
     expect(screen.getByText(/choose images/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Clear batch" })).not.toBeInTheDocument();
     expect(screen.queryByText("photo-01.jpg")).not.toBeInTheDocument();
     expect(screen.queryByText("/sample/photo-01.jpg")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add images" }));
+    expect(await screen.findByText("1 of 1 ready")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Clear batch" }));
+    expect(screen.queryByRole("button", { name: "Clear batch" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled();
   });
 
   it.each(["webp", "avif", "jxl"])("dispatches a %s encode with the matching output filename", async (format) => {
@@ -721,7 +731,7 @@ describe("OptimizePage", () => {
     );
 
     // Second import: another photo.jpg appended
-    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await user.click(screen.getByRole("button", { name: "Add images" }));
     await waitFor(() => {
       expect(compressImage).toHaveBeenCalledTimes(2);
     });
@@ -1313,7 +1323,7 @@ describe("OptimizePage", () => {
     await user.click(screen.getByRole("button", { name: "Upload to S3" }));
     expect(await screen.findByText(/1 of 1 upload\(s\) failed/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /choose images/i }));
+    await user.click(screen.getByRole("button", { name: "Add images" }));
     const uploadNew = await screen.findByRole("button", { name: "Upload 1 new image(s) to S3" });
     await user.click(uploadNew);
 

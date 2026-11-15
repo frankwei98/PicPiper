@@ -457,5 +457,6 @@
   "Back to compression": "圧縮に戻る",
   "Images copied to clipboard": "画像をコピーしました",
   "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.": "1枚は画像内容を、複数枚はFinderなどに貼り付けるファイルとしてコピーします。",
-  "View compression results": "圧縮結果を見る"
+  "View compression results": "圧縮結果を見る",
+  "Add images": "画像を追加"
 }

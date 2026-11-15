@@ -90,6 +90,7 @@ func runSmoke(win *mygo.Window, dir string, backend *Backend) {
 	must(smokeCapture(win, dir, "onboarding-mini-on.png"))
 	must(smokeClick(win, "Complete setup"))
 	must(smokeWait(win, `Boolean(document.querySelector('[role="tab"]'))`, 5*time.Second))
+	must(smokeWait(win, `Boolean(document.querySelector('.rail-tools button[aria-label="Add images"]:not(:disabled)')) && !document.querySelector('.rail-tools button[aria-label="Clear batch"]')`, 5*time.Second))
 	must(smokeCapture(win, dir, "workspace.png"))
 	report.Steps = append(report.Steps, "Packaged frontend and native runtime loaded")
 
@@ -165,7 +166,9 @@ await new Promise(resolve => setTimeout(resolve, 25)); return true;`)
 	}
 	report.Steps = append(report.Steps, "Results opened on request and copied full-resolution pixels to native clipboard")
 	must(smokeClick(win, "Back to compression"))
+	must(smokeWait(win, `Boolean(document.querySelector('.rail-tools button[aria-label="Add images"]:not(:disabled)')) && Boolean(document.querySelector('.rail-tools button[aria-label="Clear batch"]:not(:disabled)'))`, 5*time.Second))
 	must(smokeCapture(win, dir, "compressed.png"))
+	report.Steps = append(report.Steps, "Queue header offers Add images when empty and populated, with Clear batch only for populated queues")
 	report.Steps = append(report.Steps, "Native file-open event received in Settings imported an image and completed compression")
 	galleryFixture := filepath.Join(dir, "Opened from gallery.jpg")
 	must(smokeFixture(galleryFixture))
