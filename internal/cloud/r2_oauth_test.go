@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -196,7 +197,11 @@ func TestR2CreatesScopedProfilesAndPrivateCredentials(t *testing.T) {
 			t.Fatal("secret derivation wrong")
 		}
 		info, err := os.Stat(s.secretPath(profile.ID))
-		if err != nil || info.Mode().Perm() != 0600 {
+		if err != nil {
+			t.Fatalf("credential file missing: %v", err)
+		}
+		// Windows inherits the profile directory ACL; Go file modes cannot express ACLs.
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 			t.Fatal("credential permissions wrong")
 		}
 	}

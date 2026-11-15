@@ -43,6 +43,7 @@ jobs:
     outputs:
       sha: ${{ steps.source.outputs.sha }}
       published: ${{ steps.source.outputs.published }}
+      matrix: ${{ steps.source.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -99,13 +100,21 @@ jobs:
           node scripts/go.mjs test -race ./internal/imaging -run '^TestModernCodecsConcurrentFirstUse$' -count=1
           CGO_ENABLED=0 node scripts/go.mjs test ./internal/...
           node scripts/go.mjs vet ./...
-          test -z "$(gofmt -l main.go main_test.go smoke.go updates.go updates_test.go update_smoke.go internal scripts/icon)"
+          test -z "$(gofmt -l *.go internal scripts/icon)"
 
   package:
-    name: macOS arm64
+    name: ${{ matrix.target }}
     needs: quality
     if: needs.quality.outputs.published != 'true'
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.quality.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: ${{ matrix.cgo }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -123,27 +132,48 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: pnpm install --frozen-lockfile
+      - name: Install Linux build and desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config build-essential nasm libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 xvfb dbus-x11
       - name: Check native bridge and concurrency
         run: |
           node scripts/go.mjs test ./...
-          node scripts/go.mjs test -race ./...
-      - name: Build signed app and disk image
+          if [ "$CGO_ENABLED" = 1 ]; then
+            node scripts/go.mjs test -race ./...
+          fi
+      - name: Build app and installers
         env:
           MYGO_UPDATER_PRIVATE_KEY: ${{ inputs.release_tag && secrets.MYGO_UPDATER_PRIVATE_KEY || '' }}
         run: pnpm build
-      - name: Exercise packaged app
+      - name: Exercise packaged macOS app
+        if: runner.os == 'macOS'
         run: pnpm smoke
+      - name: Exercise packaged Windows app
+        if: runner.os == 'Windows'
+        run: node scripts/package-smoke.mjs
+      - name: Exercise packaged Linux app
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' node scripts/package-smoke.mjs
       - name: Keep desktop artifacts and smoke screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pic-piper-macos-arm64
+          name: pic-piper-${{ matrix.target }}
           path: |
-            build/darwin-arm64/*.dmg
+            build/${{ matrix.target }}/*.dmg
+            build/${{ matrix.target }}/*-setup-*.exe
+            build/${{ matrix.target }}/*.deb
+            build/${{ matrix.target }}/*.rpm
+            build/${{ matrix.target }}/*.tar.gz
             build/smoke-*/report.json
             build/smoke-*/*.png
+            build/package-smoke-*/report.json
+            build/package-smoke-*/*.png
+            build/package-smoke-*/process.log
 
-      - name: Upload release DMG
+      - name: Verify platform release assets
         if: success() && inputs.release_tag != ''
         env:
           AUTOMATION_SHA: ${{ github.workflow_sha }}
@@ -151,22 +181,25 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_SHA: ${{ needs.quality.outputs.sha }}
+          BUILD_TARGET: ${{ matrix.target }}
         run: |
           test -n "$AUTOMATION_SHA"
           mkdir -p "$RUNNER_TEMP/picpiper-release"
           git show "$AUTOMATION_SHA:scripts/release.mjs" > "$RUNNER_TEMP/picpiper-release/release.mjs"
-          node "$RUNNER_TEMP/picpiper-release/release.mjs" artifacts "$RELEASE_TAG" "$RELEASE_SHA"
+          node "$RUNNER_TEMP/picpiper-release/release.mjs" artifacts "$RELEASE_TAG" "$RELEASE_SHA" "$BUILD_TARGET"
       - name: Keep signed release assets
         if: success() && inputs.release_tag != ''
         uses: actions/upload-artifact@v4
         with:
-          name: pic-piper-release-assets
+          name: pic-piper-release-assets-${{ matrix.target }}
           path: |
-            build/darwin-arm64/*.dmg
-            build/darwin-arm64/*.tar.gz
-            build/darwin-arm64/*.delta
-            build/darwin-arm64/update-*.json
-            build/darwin-arm64/SHA256SUMS
+            build/${{ matrix.target }}/*.dmg
+            build/${{ matrix.target }}/*-setup-*.exe
+            build/${{ matrix.target }}/*.deb
+            build/${{ matrix.target }}/*.rpm
+            build/${{ matrix.target }}/*.tar.gz
+            build/${{ matrix.target }}/*.delta
+            build/${{ matrix.target }}/update-*.json
           if-no-files-found: error
 
   publish:
@@ -186,8 +219,9 @@ jobs:
           node-version: lts/*
       - uses: actions/download-artifact@v4
         with:
-          name: pic-piper-release-assets
-          path: build/darwin-arm64
+          pattern: pic-piper-release-assets-*
+          merge-multiple: true
+          path: build/release-assets
       - name: Publish release
         env:
           AUTOMATION_SHA: ${{ github.workflow_sha }}
@@ -195,6 +229,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_SHA: ${{ needs.quality.outputs.sha }}
+          RELEASE_ASSET_DIR: build/release-assets
         run: |
           test -n "$AUTOMATION_SHA"
           mkdir -p "$RUNNER_TEMP/picpiper-release"

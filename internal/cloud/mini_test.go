@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -37,7 +38,11 @@ func TestMiniDefaultsAndMergePreservePrivateStorage(t *testing.T) {
 		t.Fatalf("merge: %+v %v", got, err)
 	}
 	info, statErr := os.Stat(s.settingsPath())
-	if statErr != nil || info.Mode().Perm() != 0600 {
+	if statErr != nil {
+		t.Fatalf("settings file missing: %v", statErr)
+	}
+	// Windows inherits the profile directory ACL; Go file modes cannot express ACLs.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal("settings permissions changed")
 	}
 	cfg.Action = "upload"

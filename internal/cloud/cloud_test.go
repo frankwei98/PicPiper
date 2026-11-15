@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -64,11 +65,16 @@ func TestSettingsAndSecretPersistence(t *testing.T) {
 	if got, e := os.ReadFile(filepath.Join(dir, "credentials", "profile.secret")); e != nil || string(got) != "private-secret" {
 		t.Fatalf("secret not saved: %q %v", got, e)
 	}
-	if st, e := os.Stat(filepath.Join(dir, "credentials")); e != nil || st.Mode().Perm() != 0700 {
-		t.Fatalf("credential directory mode: %v %v", st, e)
+	// Windows inherits the profile directory ACL; Go file modes cannot express ACLs.
+	if st, e := os.Stat(filepath.Join(dir, "credentials")); e != nil {
+		t.Fatalf("credential directory missing: %v", e)
+	} else if runtime.GOOS != "windows" && st.Mode().Perm() != 0700 {
+		t.Fatalf("credential directory mode: %v", st.Mode().Perm())
 	}
-	if st, e := os.Stat(filepath.Join(dir, "credentials", "profile.secret")); e != nil || st.Mode().Perm() != 0600 {
-		t.Fatalf("secret file mode: %v %v", st, e)
+	if st, e := os.Stat(filepath.Join(dir, "credentials", "profile.secret")); e != nil {
+		t.Fatalf("secret file missing: %v", e)
+	} else if runtime.GOOS != "windows" && st.Mode().Perm() != 0600 {
+		t.Fatalf("secret file mode: %v", st.Mode().Perm())
 	}
 }
 

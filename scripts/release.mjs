@@ -29,8 +29,30 @@ const gh = (...args) => run("gh", args);
 const api = (path) => JSON.parse(gh("api", path));
 const digest = (file) => createHash("sha256").update(readFileSync(file)).digest();
 
-export function artifacts(directory, app, repository) {
-  const target = "darwin-arm64";
+const platforms = {
+  "darwin-arm64": { runner: "macos-15", cgo: "1" },
+  "windows-amd64": { runner: "windows-2025", cgo: "0" },
+  "windows-arm64": { runner: "windows-11-arm", cgo: "0" },
+  "linux-amd64": { runner: "ubuntu-24.04", cgo: "1" },
+  "linux-arm64": { runner: "ubuntu-24.04-arm", cgo: "1" },
+};
+
+// Read the release source's inventory, so recovery of an older macOS-only tag
+// does not require packages that were never part of that version.
+export function configuredTargets(directory = ".") {
+  const file = resolve(directory, ".release-targets.json");
+  const targets = existsSync(file) ? readJSON(file) : ["darwin-arm64"];
+  assert(Array.isArray(targets) && targets.length > 0 && new Set(targets).size === targets.length, "Invalid release target inventory");
+  assert(targets.every((target) => Object.hasOwn(platforms, target)), "Unsupported release target");
+  return targets;
+}
+
+export function buildMatrix(targets) {
+  return { include: targets.map((target) => ({ target, ...platforms[target] })) };
+}
+
+function targetArtifacts(directory, app, repository, target) {
+  assert(Object.hasOwn(platforms, target), "Unsupported release target");
   const manifestPath = resolve(directory, `update-${target}.json`);
   const manifest = readJSON(manifestPath);
   assert(manifest.version === app.version, "Update manifest version differs from app version");
@@ -41,23 +63,40 @@ export function artifacts(directory, app, repository) {
   for (const entry of [manifest, ...(manifest.deltas ?? [])]) {
     assert(typeof entry.url === "string" && entry.url.startsWith(prefix), "Update URL is outside this version's release");
     const name = entry.url.slice(prefix.length);
-    assert(name === basename(name) && !name.includes("%") && !name.includes("?"), "Invalid update asset name");
+    assert(name === basename(name) && !/[\\%?#]/.test(name), "Invalid update asset name");
+    assert(name.endsWith(`-${target}${entry === manifest ? ".tar.gz" : ".delta"}`), "Update asset belongs to another target");
     const path = resolve(directory, name);
     assert(readFileSync(path).length === entry.size, `Wrong size for ${name}`);
     assert(verify(null, digest(path), key, Buffer.from(entry.signature, "base64")), `Invalid signature for ${name}`);
     files.push(path);
   }
   assert(basename(files[1]) === `${app.slug}-${app.version}-${target}.tar.gz`, "Wrong full update archive");
-  const dmg = resolve(directory, `${app.slug}-${app.version}-arm64.dmg`);
-  assert(existsSync(dmg), "Missing DMG");
-  files.push(dmg);
+  const [system, arch] = target.split("-");
+  const installers = system === "darwin" ? [`${app.slug}-${app.version}-${arch}.dmg`]
+    : system === "windows" ? [`${app.slug}-setup-${app.version}-${arch}.exe`]
+    : [`${app.slug}_${app.version}_${arch}.deb`, `${app.slug}-${app.version}-1.${arch === "amd64" ? "x86_64" : "aarch64"}.rpm`];
+  for (const name of installers) {
+    const installer = resolve(directory, name);
+    assert(existsSync(installer), `Missing installer: ${name}`);
+    files.push(installer);
+  }
+  return files;
+}
+
+export function releaseArtifacts(directory, app, repository, targets) {
+  const files = targets.flatMap((target) => targetArtifacts(directory, app, repository, target));
+  assert(new Set(files.map((file) => basename(file))).size === files.length, "Release assets have conflicting names");
   const sums = resolve(directory, "SHA256SUMS");
   writeFileSync(sums, files.map((file) => `${digest(file).toString("hex")}  ${basename(file)}\n`).join(""));
   return [...files, sums];
 }
 
+export function artifacts(directory, app, repository, target = "darwin-arm64") {
+  return releaseArtifacts(directory, app, repository, [target]);
+}
+
 async function main() {
-  const [operation, tag, expectedSHA] = process.argv.slice(2);
+  const [operation, tag, expectedSHA, target = "darwin-arm64"] = process.argv.slice(2);
   const app = readJSON("mygo.json");
   const pkg = readJSON("package.json");
   const ledger = readJSON(".release-please-manifest.json");
@@ -65,6 +104,8 @@ async function main() {
   assert(pkg.version === app.version && ledger["."] === app.version, "Application versions are out of sync");
   const notes = releaseNotes(readFileSync("CHANGELOG.md", "utf8"), app.version);
   assert(notes, "Empty release notes");
+  const targets = configuredTargets();
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify(buildMatrix(targets))}\n`);
   if (operation === "metadata") return;
   assert(tag === `v${app.version}`, "Release tag differs from app version");
   const sha = run("git", ["rev-parse", "HEAD"]);
@@ -86,9 +127,14 @@ async function main() {
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `sha=${sha}\npublished=${published}\n`);
     return;
   }
-  const files = artifacts(resolve("build/darwin-arm64"), app, repository);
-  if (operation === "artifacts") return;
+  if (operation === "artifacts") {
+    assert(targets.includes(target), "Target is not part of this release");
+    artifacts(resolve("build", target), app, repository, target);
+    return;
+  }
   assert(operation === "publish", "Unknown release command");
+  const directory = process.env.RELEASE_ASSET_DIR || (existsSync(".release-targets.json") ? "build/release-assets" : "build/darwin-arm64");
+  const files = releaseArtifacts(resolve(directory), app, repository, targets);
   // This job alone has write access and can enumerate private drafts. Use
   // the release ID for refreshes rather than the published-only tag route.
   const all = api(`repos/${repository}/releases?per_page=100`);
