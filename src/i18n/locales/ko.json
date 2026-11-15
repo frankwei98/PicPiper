@@ -458,5 +458,9 @@
   "Images copied to clipboard": "이미지가 복사되었습니다",
   "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.": "한 장은 픽셀을, 여러 장은 Finder 또는 호환 앱에 붙여넣을 파일로 복사합니다。",
   "View compression results": "압축 결과 보기",
-  "Add images": "이미지 추가"
+  "Add images": "이미지 추가",
+  "Parallel image tasks": "병렬 이미지 작업 수",
+  "Auto ({{count}} tasks)": "자동 ({{count}}개 작업)",
+  "{{count}} tasks": "{{count}}개 작업",
+  "Auto uses 50% of available CPU cores, rounded up.": "자동 모드는 사용 가능한 CPU 코어 수의 50%를 올림하여 사용합니다."
 }

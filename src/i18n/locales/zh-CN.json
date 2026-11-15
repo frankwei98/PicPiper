@@ -458,5 +458,9 @@
   "Images copied to clipboard": "图片已复制到剪贴板",
   "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.": "单张复制图片内容；多张复制图片文件，可粘贴到访达或兼容的应用。",
   "View compression results": "查看压缩结果",
-  "Add images": "添加图片"
+  "Add images": "添加图片",
+  "Parallel image tasks": "图片处理并发数",
+  "Auto ({{count}} tasks)": "自动（{{count}} 个任务）",
+  "{{count}} tasks": "{{count}} 个任务",
+  "Auto uses 50% of available CPU cores, rounded up.": "自动模式使用可用 CPU 核心数的 50%，并向上取整。"
 }

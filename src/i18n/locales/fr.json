@@ -458,5 +458,9 @@
   "Images copied to clipboard": "Images copiées",
   "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.": "Une image copie les pixels ; plusieurs copient les fichiers à coller dans le Finder ou une app compatible.",
   "View compression results": "Voir les résultats",
-  "Add images": "Ajouter des images"
+  "Add images": "Ajouter des images",
+  "Parallel image tasks": "Tâches d’image en parallèle",
+  "Auto ({{count}} tasks)": "Auto ({{count}} tâches)",
+  "{{count}} tasks": "{{count}} tâches",
+  "Auto uses 50% of available CPU cores, rounded up.": "Le mode auto utilise 50 % des cœurs CPU disponibles, arrondis à l’entier supérieur."
 }

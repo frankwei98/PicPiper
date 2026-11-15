@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -65,14 +66,15 @@ type features struct {
 	S3          bool `json:"s3"`
 }
 type settings struct {
-	CloseBehavior       CloseBehavior `json:"closeBehavior"`
-	Mini                *MiniSettings `json:"mini,omitempty"`
-	OnboardingCompleted bool          `json:"onboardingCompleted,omitempty"`
-	Features            *features     `json:"features,omitempty"`
-	Profiles            []profile     `json:"profiles"`
-	NamingTemplate      string        `json:"namingTemplate"`
-	DefaultOutputDir    *string       `json:"defaultOutputDir"`
-	DefaultProfileID    *string       `json:"defaultProfileId"`
+	ProcessingConcurrency int           `json:"processingConcurrency"`
+	CloseBehavior         CloseBehavior `json:"closeBehavior"`
+	Mini                  *MiniSettings `json:"mini,omitempty"`
+	OnboardingCompleted   bool          `json:"onboardingCompleted,omitempty"`
+	Features              *features     `json:"features,omitempty"`
+	Profiles              []profile     `json:"profiles"`
+	NamingTemplate        string        `json:"namingTemplate"`
+	DefaultOutputDir      *string       `json:"defaultOutputDir"`
+	DefaultProfileID      *string       `json:"defaultProfileId"`
 }
 type galleryObject struct {
 	FileName            string  `json:"fileName,omitempty"`
@@ -393,6 +395,7 @@ func (s *Service) loadSettingsLocked() (settings, error) {
 	}
 	v.Mini = clipboardMiniSettings(v.Mini)
 	v.CloseBehavior = normalizedCloseBehavior(v.CloseBehavior)
+	v.ProcessingConcurrency = max(0, min(v.ProcessingConcurrency, runtime.NumCPU()))
 	return v, nil
 }
 func (s *Service) saveSettings(v settings) error {
@@ -469,6 +472,9 @@ func (s *Service) getSecret(p profile, draft *string) (string, error) {
 	return string(b), nil
 }
 func validateSettings(v settings) error {
+	if v.ProcessingConcurrency < 0 || v.ProcessingConcurrency > runtime.NumCPU() {
+		return appErr("invalidSettings", "Choose an image processing concurrency between 1 and the available CPU count, or Auto.")
+	}
 	if v.CloseBehavior != "" && v.CloseBehavior != CloseQuit && v.CloseBehavior != CloseBackground {
 		return appErr("invalidSettings", "Choose a supported close-window behavior.")
 	}

@@ -4,7 +4,8 @@ import { vi } from "vitest";
 import App from "@/App";
 import { settingsApi, type AppSettings } from "@/api/backend";
 
-vi.mock("@/api/backend", () => ({ settingsApi: { loadSettings: vi.fn(), saveSettings: vi.fn() }, defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" } }));
+vi.mock("@/api/backend", () => ({ imageApi: { processingLimits: vi.fn(async () => ({ cpuCount: 4, defaultConcurrency: 2, concurrency: 2 })) },
+  settingsApi: { loadSettings: vi.fn(), saveSettings: vi.fn() }, defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" } }));
 vi.mock("@/features/optimize/OptimizePage", () => ({ OptimizePage: () => <p>Compression workspace</p> }));
 vi.mock("@/features/gallery/S3GalleryPage", () => ({ S3GalleryPage: () => <p>Storage workspace</p> }));
 vi.mock("@/features/settings/SettingsPage", () => ({ SettingsPage: () => <p>Settings workspace</p> }));

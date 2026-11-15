@@ -22,7 +22,7 @@ vi.mock("@/platform/desktop", () => ({ open: mocks.open, onFileDrop: mocks.onFil
 vi.mock("./api/backend", () => ({
   defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
   settingsApi: { loadSettings: mocks.load, saveSettings: vi.fn(), saveS3Secret: vi.fn() },
-  imageApi: {
+  imageApi: { processingLimits: vi.fn(async () => ({ cpuCount: 4, defaultConcurrency: 2, concurrency: 2 })),
     cancelImageTask: vi.fn(async () => {}),
     inspectImage: vi.fn(async ({ path }: { path: string }) => ({ fileName: path.split("/").pop(), originalBytes: 1000, sourceFormat: "jpg" })),
     createOptimizerRun: vi.fn(async () => ({ runId: "r", outputDir: "/cache/r" })),

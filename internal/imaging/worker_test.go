@@ -150,7 +150,7 @@ func workerPID(t *testing.T, service *Service) int {
 func TestCancelledCodecProcessIsTerminatedAndRemovesPartialOutput(t *testing.T) {
 	service := NewIsolated(t.TempDir())
 	t.Cleanup(service.Close)
-	service.workers = make(chan struct{}, 1)
+	service.SetConcurrency(1)
 	run := call(t, service, "create_optimizer_run", request{}).(map[string]string)
 	runDir := run["outputDir"]
 	payload, _ := json.Marshal(request{TaskID: "old", SourcePath: "blocked-test-codec", OutputDir: runDir, OutputFileName: "photo.png", Settings: settings{TargetFormat: "png"}})
@@ -251,7 +251,7 @@ func TestComparisonCancellationReleasesBothWorkerSlots(t *testing.T) {
 			t.Fatal("closed comparison kept a worker occupied")
 		}
 	}
-	if len(service.workers) != 0 {
+	if service.workers.active != 0 {
 		t.Fatal("comparison did not release both slots")
 	}
 	// Late bridge dispatch must not resurrect a closed comparison.

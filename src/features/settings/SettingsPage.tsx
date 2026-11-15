@@ -4,7 +4,7 @@ import { ArrowUpRight, Cloud, Database, FileOutput, KeyRound, Settings2 } from "
 import { Tabs } from "@base-ui/react/tabs";
 import { useEffect, useRef, useState } from "react";
 import { settingsApi } from "../../api/backend";
-import { defaultMiniSettings, type AppSettings, type MiniSettings } from "../../api/backend";
+import { defaultMiniSettings, type AppSettings, type MiniSettings, type ProcessingLimits } from "../../api/backend";
 import type { S3Profile } from "../../types";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -22,6 +22,7 @@ interface SettingsPageProps {
   settings: AppSettings;
   onSettingsChange: (settings: AppSettings) => void;
   isActive?: boolean;
+  processingLimits?: ProcessingLimits;
 }
 
 type SettingsSection = "general" | "storage" | "oauth" | "publishing";
@@ -59,11 +60,14 @@ function httpUrlError(value: string, label: string): string | undefined {
   }
 }
 
-export function SettingsPage({ settings, onSettingsChange, isActive = true }: SettingsPageProps) {
+export function SettingsPage({ settings, onSettingsChange, isActive = true, processingLimits }: SettingsPageProps) {
   useLocale();
   const [section, setSection] = useState<SettingsSection>("general");
   const [mini, setMini] = useState<MiniSettings>({ ...(settings.mini ?? defaultMiniSettings), action: "clipboard" });
   const [closeBehavior, setCloseBehavior] = useState<AppSettings["closeBehavior"]>(settings.closeBehavior ?? "quit");
+  const [processingConcurrency, setProcessingConcurrency] = useState(settings.processingConcurrency ?? 0);
+  const cpuCount = Math.max(1, processingLimits?.cpuCount ?? navigator.hardwareConcurrency ?? 4);
+  const defaultConcurrency = Math.min(cpuCount, Math.max(1, processingLimits?.defaultConcurrency ?? Math.ceil(cpuCount * 0.5)));
   const [generalSaving, setGeneralSaving] = useState(false);
   const [generalMessage, setGeneralMessage] = useState<string | null>(null);
   const [generalError, setGeneralError] = useState<string | null>(null);
@@ -78,6 +82,9 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
   useEffect(() => {
     setCloseBehavior(settings.closeBehavior ?? "quit");
   }, [settings.closeBehavior]);
+  useEffect(() => {
+    setProcessingConcurrency(settings.processingConcurrency ?? 0);
+  }, [settings.processingConcurrency]);
 
   const profile = creatingNew ? undefined : settings.profiles.find((p) => p.id === editingProfileId);
 
@@ -167,7 +174,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
       return;
     }
     setGeneralSaving(true);
-    const nextSettings = { ...settings, mini, closeBehavior };
+    const nextSettings = { ...settings, mini, closeBehavior, processingConcurrency };
     try {
       await settingsApi.saveSettings(nextSettings);
       onSettingsChange(nextSettings);
@@ -366,6 +373,12 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true }: Se
                 <NativeSelect id="settings-close-behavior" aria-label={t("Close window behavior")} aria-describedby={mini.enabled ? "close-behavior-reason" : undefined} value={mini.enabled ? "background" : closeBehavior} disabled={mini.enabled} onChange={(event) => { setCloseBehavior(event.target.value as AppSettings["closeBehavior"]); setGeneralMessage(null); setGeneralError(null); }}>
                   <NativeSelectOption value="quit">{t("Quit application")}</NativeSelectOption>
                   <NativeSelectOption value="background">{t("Close window and run in background")}</NativeSelectOption>
+                </NativeSelect>
+              </PreferenceRow>
+              <PreferenceRow label={t("Parallel image tasks")} htmlFor="settings-processing-concurrency" description={t("Auto uses 50% of available CPU cores, rounded up.")} descriptionId="processing-concurrency-description">
+                <NativeSelect id="settings-processing-concurrency" aria-label={t("Parallel image tasks")} aria-describedby="processing-concurrency-description" value={processingConcurrency} onChange={(event) => { setProcessingConcurrency(Number(event.target.value)); setGeneralMessage(null); setGeneralError(null); }}>
+                  <NativeSelectOption value={0}>{t("Auto ({{count}} tasks)", { count: defaultConcurrency })}</NativeSelectOption>
+                  {Array.from({ length: cpuCount }, (_, index) => index + 1).map((count) => <NativeSelectOption key={count} value={count}>{t("{{count}} tasks", { count })}</NativeSelectOption>)}
                 </NativeSelect>
               </PreferenceRow>
             </section>

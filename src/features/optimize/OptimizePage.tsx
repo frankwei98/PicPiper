@@ -55,6 +55,7 @@ function cancelBackendTask(item: OptimizeItem) {
 }
 
 interface OptimizePageProps {
+  processingConcurrency?: number;
   isActive?: boolean;
   onOpenGallery?: () => void;
   onUploadedToS3?: (focus: GalleryFocus) => void;
@@ -63,7 +64,7 @@ interface OptimizePageProps {
   namingTemplate: string;
 }
 
-export function OptimizePage({ activeProfile, profiles, namingTemplate, onUploadedToS3, isActive = true, onOpenGallery }: OptimizePageProps) {
+export function OptimizePage({ processingConcurrency, activeProfile, profiles, namingTemplate, onUploadedToS3, isActive = true, onOpenGallery }: OptimizePageProps) {
   useLocale();
   const [uploadProfileId, setUploadProfileId] = useState<string | null>(null);
   const availableProfiles = profiles ?? (activeProfile ? [activeProfile] : []);
@@ -97,8 +98,6 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
   // This matches the key space that makeUniqueOutputFileNames expects.
   const preferredNameCounts = useRef(new Map<string, number>());
   const optimizerRun = useRef<Promise<{ runId: string; outputDir: string }> | null>(null);
-  const debounceRef = useRef<number | undefined>(undefined);
-  const pendingQualityRef = useRef<number | undefined>(undefined);
   const qualityRef = useRef(quality);
   const uploads = useOptimizeUploads({
     activeProfile: uploadProfile,
@@ -116,7 +115,6 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
 
   useEffect(() => {
     return () => {
-      window.clearTimeout(debounceRef.current);
       itemsRef.current.forEach(cancelBackendTask);
     };
   }, []);
@@ -395,7 +393,7 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
   }, []);
 
   useEffect(() => {
-    const concurrency = getCompressionConcurrency(navigator.hardwareConcurrency);
+    const concurrency = processingConcurrency ?? getCompressionConcurrency(navigator.hardwareConcurrency);
     const availableSlots = concurrency - activeTasks.current.size;
     if (availableSlots <= 0) return;
 
@@ -426,14 +424,13 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
       activeTasks.current.add(item.id);
       void runCompressionTask(item, outputNames[item.id]);
     }
-  }, [items, runCompressionTask]);
+  }, [items, processingConcurrency, runCompressionTask]);
 
-  // --- Global settings requeue with debounce ---
+  // --- Global settings requeue ---
   const applyGlobalRequeue = useCallback((nextQuality: number, format?: WritableImageFormat | "original") => {
     if (!canMutateQueue()) return false;
 
     setUploadedFocus(null);
-    pendingQualityRef.current = undefined;
     optimizerRun.current = null;
     preferredNameCounts.current.clear();
     uploads.reset();
@@ -469,37 +466,12 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
     return true;
   }, [canMutateQueue, uploads.reset]);
 
-  const scheduleGlobalRequeue = (nextQuality: number) => {
-    pendingQualityRef.current = nextQuality;
-    window.clearTimeout(debounceRef.current);
-    debounceRef.current = window.setTimeout(() => {
-      if (!canMutateQueue()) return;
-
-      applyGlobalRequeue(nextQuality);
-    }, 400);
-  };
-
-  useEffect(() => {
-    if (uploads.isUploading) {
-      window.clearTimeout(debounceRef.current);
-      return;
-    }
-
-    const pendingQuality = pendingQualityRef.current;
-    if (pendingQuality !== undefined) {
-      window.clearTimeout(debounceRef.current);
-      debounceRef.current = window.setTimeout(() => {
-        applyGlobalRequeue(pendingQuality);
-      }, 400);
-    }
-  }, [applyGlobalRequeue, uploads.isUploading]);
-
   const handleQualityChange = (nextQuality: number) => {
     if (!canMutateQueue()) return;
     qualityRef.current = nextQuality;
     setQuality(nextQuality);
     setPreset("custom");
-    scheduleGlobalRequeue(nextQuality);
+    applyGlobalRequeue(nextQuality);
   };
 
   const applyPreset = (next: Exclude<CompressionPreset, "custom">) => {
@@ -510,8 +482,6 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
       small: { quality: 55, format: "avif" as const },
       lossless: { quality: 100, format: "jxl" as const },
     }[next];
-    window.clearTimeout(debounceRef.current);
-    pendingQualityRef.current = undefined;
     defaultFormat.current = settings.format;
     setBatchFormat(settings.format);
     if (next === "lossless") {
@@ -526,8 +496,6 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
 
   const changeBatchFormat = (format: WritableImageFormat | "original") => {
     if (!canMutateQueue()) return;
-    window.clearTimeout(debounceRef.current);
-    pendingQualityRef.current = undefined;
     defaultFormat.current = format;
     setBatchFormat(format);
     setPreset("custom");
@@ -536,8 +504,6 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
 
   const changeMaxDimension = (value: number) => {
     if (!canMutateQueue()) return;
-    window.clearTimeout(debounceRef.current);
-    pendingQualityRef.current = undefined;
     maxDimensionRef.current = value;
     setMaxDimension(value);
     setPreset("custom");
@@ -546,8 +512,6 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
 
   const clearBatch = () => {
     if (!canMutateQueue()) return;
-    window.clearTimeout(debounceRef.current);
-    pendingQualityRef.current = undefined;
     importGeneration.current += 1;
     importedPaths.current.clear();
     itemsRef.current.forEach(cancelBackendTask);

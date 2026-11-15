@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,7 @@ const maxPixels = 40_000_000
 type Service struct {
 	dataDir       string
 	cacheDir      string
-	workers       chan struct{}
+	workers       *operationLimit
 	jobs          imageJobs
 	workerMu      sync.Mutex
 	idleWorkers   []*imageWorker
@@ -41,20 +42,16 @@ type Service struct {
 
 func New(dataDir string) *Service {
 	lifetime, stop := context.WithCancel(context.Background())
-	return &Service{dataDir: dataDir, cacheDir: filepath.Join(dataDir, "optimizer-cache"), workers: make(chan struct{}, 2), lifetime: lifetime, stop: stop}
+	return &Service{dataDir: dataDir, cacheDir: filepath.Join(dataDir, "optimizer-cache"), workers: newOperationLimit(defaultConcurrency(runtime.NumCPU())), lifetime: lifetime, stop: stop}
 }
 
 func (s *Service) Close() {
 	s.closeOnce.Do(func() {
 		s.stop()
-		// Reap child processes before the application exits.
-		for range cap(s.workers) {
-			s.workers <- struct{}{}
-		}
+		s.workers.close()
+		// Reap child processes after cancellation has released all image slots.
+		s.workers.wait()
 		s.closeIdleWorkers()
-		for range cap(s.workers) {
-			<-s.workers
-		}
 	})
 }
 
@@ -129,17 +126,17 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 		defer finish()
 	}
 	switch operation {
+	case "image_processing_limits":
+		return s.ProcessingLimits(), nil
 	case "create_optimizer_run":
 		return s.createRun()
 	case "copy_outputs_to_dir":
 		return s.copyOutputs(ctx, req)
 	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image":
-		select {
-		case s.workers <- struct{}{}:
-			defer func() { <-s.workers }()
-		case <-ctx.Done():
-			return nil, apperror.New("cancelled", "Image processing was cancelled.")
+		if err := s.workers.acquire(ctx); err != nil {
+			return nil, err
 		}
+		defer s.workers.release()
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}

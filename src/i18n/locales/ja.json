@@ -458,5 +458,9 @@
   "Images copied to clipboard": "画像をコピーしました",
   "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.": "1枚は画像内容を、複数枚はFinderなどに貼り付けるファイルとしてコピーします。",
   "View compression results": "圧縮結果を見る",
-  "Add images": "画像を追加"
+  "Add images": "画像を追加",
+  "Parallel image tasks": "画像処理の並列数",
+  "Auto ({{count}} tasks)": "自動（{{count}} タスク）",
+  "{{count}} tasks": "{{count}} タスク",
+  "Auto uses 50% of available CPU cores, rounded up.": "自動では利用可能な CPU コア数の 50% を切り上げて使用します。"
 }

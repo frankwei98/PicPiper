@@ -28,6 +28,7 @@ type Backend struct {
 	desktop     *desktopController
 	images      *imaging.Service
 	cloud       *cloud.Service
+	settingsMu  sync.Mutex
 	openMu      sync.Mutex
 	openedFiles []string
 	imagesReady bool
@@ -48,9 +49,13 @@ func (b *Backend) TakeOpenedFiles() []string {
 
 func newBackend(dataDir string) *Backend {
 	images := imaging.NewIsolated(dataDir)
-	return &Backend{images: images, cloud: cloud.NewWithThumbnails(dataDir, func(ctx context.Context, path string) (string, error) {
+	backend := &Backend{images: images, cloud: cloud.NewWithThumbnails(dataDir, func(ctx context.Context, path string) (string, error) {
 		return images.ThumbnailDataURL(ctx, path, 384)
 	})}
+	if configured, err := backend.cloud.ProcessingConcurrency(); err == nil {
+		images.SetConcurrency(configured)
+	}
+	return backend
 }
 
 type reply struct {
@@ -76,6 +81,19 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 		err = apperror.New("invalidRequest", "This request is not valid JSON.")
 	} else {
 		switch operation {
+		case "save_app_settings":
+			b.settingsMu.Lock()
+			value, err = b.cloud.Call(ctx, operation, json.RawMessage(payload))
+			if err == nil {
+				var configured int
+				configured, err = b.cloud.ProcessingConcurrency()
+				if err == nil {
+					b.images.SetConcurrency(configured)
+				}
+			}
+			b.settingsMu.Unlock()
+		case "image_processing_limits":
+			value = b.images.ProcessingLimits()
 		case "update_state", "update_check", "update_preferences", "update_locale", "update_activity":
 			if b.updates == nil {
 				err = apperror.New("updatesDisabled", "Updates are unavailable in this build.")

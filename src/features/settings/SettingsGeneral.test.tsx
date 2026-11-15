@@ -30,6 +30,42 @@ describe("General settings", () => {
     expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ closeBehavior: "background" }));
   });
 
+  it.each([[12, 6], [10, 5], [11, 6]])("shows the 50%% automatic task count for %i CPU cores", (cpuCount, automaticCount) => {
+    render(<SettingsPage settings={baseSettings} onSettingsChange={() => {}} processingLimits={{ cpuCount, defaultConcurrency: automaticCount, concurrency: automaticCount }} />);
+    const concurrency = screen.getByRole("combobox", { name: "Parallel image tasks" });
+    expect(concurrency).toHaveValue("0");
+    expect(screen.getByRole("option", { name: `Auto (${automaticCount} tasks)` })).toBeInTheDocument();
+  });
+
+  it("saves a manually selected processing concurrency", async () => {
+    const user = userEvent.setup();
+    const onSettingsChange = vi.fn();
+    render(<SettingsPage settings={baseSettings} onSettingsChange={onSettingsChange} processingLimits={{ cpuCount: 12, defaultConcurrency: 6, concurrency: 6 }} />);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Parallel image tasks" }), "4");
+    await user.click(screen.getByRole("button", { name: "Save general settings" }));
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({ processingConcurrency: 4 }));
+    expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({ processingConcurrency: 4 }));
+  });
+
+  it("fills in and follows an existing processing concurrency setting", () => {
+    const view = render(<SettingsPage settings={{ ...baseSettings, processingConcurrency: 5 }} onSettingsChange={() => {}} processingLimits={{ cpuCount: 12, defaultConcurrency: 6, concurrency: 5 }} />);
+    const concurrency = screen.getByRole("combobox", { name: "Parallel image tasks" });
+    expect(concurrency).toHaveValue("5");
+    view.rerender(<SettingsPage settings={{ ...baseSettings, processingConcurrency: 3 }} onSettingsChange={() => {}} processingLimits={{ cpuCount: 12, defaultConcurrency: 6, concurrency: 3 }} />);
+    expect(concurrency).toHaveValue("3");
+  });
+
+  it("keeps the concurrency draft when saving fails", async () => {
+    const user = userEvent.setup();
+    saveSettings.mockRejectedValueOnce(new Error("disk unavailable"));
+    render(<SettingsPage settings={baseSettings} onSettingsChange={() => {}} processingLimits={{ cpuCount: 12, defaultConcurrency: 6, concurrency: 6 }} />);
+    const concurrency = screen.getByRole("combobox", { name: "Parallel image tasks" });
+    await user.selectOptions(concurrency, "4");
+    await user.click(screen.getByRole("button", { name: "Save general settings" }));
+    expect(await screen.findByText("disk unavailable")).toBeInTheDocument();
+    expect(concurrency).toHaveValue("4");
+  });
+
   it.each(["quit", "background"] as const)("locks the effective choice and restores the saved %s preference when disabling the icon", async (preference) => {
     const user = userEvent.setup();
     const onSettingsChange = vi.fn();

@@ -6,7 +6,7 @@ vi.mock("@/platform/desktop", () => ({ open: vi.fn(), openUrl: vi.fn(), writeCli
 vi.mock("./api/backend", () => ({
   defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
   settingsApi: { loadSettings: vi.fn(async () => ({ profiles: [], onboardingCompleted: true, namingTemplate: "{slug}.{ext}" })) },
-  imageApi: {}, galleryApi: {}, uploadApi: {}, namingApi: {},
+  imageApi: { processingLimits: vi.fn(async () => ({ cpuCount: 4, defaultConcurrency: 2, concurrency: 2 })),}, galleryApi: {}, uploadApi: {}, namingApi: {},
 }));
 
 describe("App", () => {
