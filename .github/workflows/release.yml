@@ -48,6 +48,14 @@ jobs:
         with:
           ref: ${{ inputs.release_sha || (inputs.release_tag && format('refs/tags/{0}', inputs.release_tag)) || github.sha }}
           fetch-depth: 0
+      - name: Load release automation from the workflow revision
+        env:
+          AUTOMATION_SHA: ${{ github.workflow_sha }}
+        run: |
+          test -n "$AUTOMATION_SHA"
+          mkdir -p "$RUNNER_TEMP/picpiper-release"
+          git show "$AUTOMATION_SHA:scripts/release.mjs" > "$RUNNER_TEMP/picpiper-release/release.mjs"
+          git show "$AUTOMATION_SHA:scripts/release-checks.mjs" > "$RUNNER_TEMP/picpiper-release/release-checks.mjs"
       - uses: pnpm/action-setup@v4
         with:
           version: 11.20.0
@@ -68,9 +76,9 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_SHA: ${{ inputs.release_sha }}
         run: |
-          node scripts/release.mjs metadata
+          node "$RUNNER_TEMP/picpiper-release/release.mjs" metadata
           if [ -n "$RELEASE_TAG" ]; then
-            node scripts/release.mjs source "$RELEASE_TAG" "$RELEASE_SHA"
+            node "$RUNNER_TEMP/picpiper-release/release.mjs" source "$RELEASE_TAG" "$RELEASE_SHA"
           else
             echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
@@ -85,7 +93,7 @@ jobs:
         run: |
           pnpm test
           pnpm build:web
-          node --test scripts/release-checks.mjs
+          node --test "$RUNNER_TEMP/picpiper-release/release-checks.mjs"
           node scripts/go.mjs test ./internal/...
           node scripts/go.mjs test -race ./internal/...
           node scripts/go.mjs test -race ./internal/imaging -run '^TestModernCodecsConcurrentFirstUse$' -count=1
@@ -138,11 +146,16 @@ jobs:
       - name: Upload release DMG
         if: success() && inputs.release_tag != ''
         env:
+          AUTOMATION_SHA: ${{ github.workflow_sha }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_SHA: ${{ needs.quality.outputs.sha }}
-        run: node scripts/release.mjs artifacts "$RELEASE_TAG" "$RELEASE_SHA"
+        run: |
+          test -n "$AUTOMATION_SHA"
+          mkdir -p "$RUNNER_TEMP/picpiper-release"
+          git show "$AUTOMATION_SHA:scripts/release.mjs" > "$RUNNER_TEMP/picpiper-release/release.mjs"
+          node "$RUNNER_TEMP/picpiper-release/release.mjs" artifacts "$RELEASE_TAG" "$RELEASE_SHA"
       - name: Keep signed release assets
         if: success() && inputs.release_tag != ''
         uses: actions/upload-artifact@v4
@@ -177,8 +190,13 @@ jobs:
           path: build/darwin-arm64
       - name: Publish release
         env:
+          AUTOMATION_SHA: ${{ github.workflow_sha }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_SHA: ${{ needs.quality.outputs.sha }}
-        run: node scripts/release.mjs publish "$RELEASE_TAG" "$RELEASE_SHA"
+        run: |
+          test -n "$AUTOMATION_SHA"
+          mkdir -p "$RUNNER_TEMP/picpiper-release"
+          git show "$AUTOMATION_SHA:scripts/release.mjs" > "$RUNNER_TEMP/picpiper-release/release.mjs"
+          node "$RUNNER_TEMP/picpiper-release/release.mjs" publish "$RELEASE_TAG" "$RELEASE_SHA"

@@ -72,15 +72,29 @@ async function main() {
   if (expectedSHA) assert(sha === expectedSHA, "Release source changed");
   const repository = process.env.GH_REPO || process.env.GITHUB_REPOSITORY;
   assert(repository === app.updates.github, "Release repository differs from the embedded update feed");
-  const release = api(`repos/${repository}/releases/tags/${tag}`);
-  assert(!release.prerelease, "Stable pipeline cannot publish a prerelease");
   if (operation === "source") {
-    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `sha=${sha}\npublished=${!release.draft}\n`);
+    // The tag endpoint only exposes published releases. A draft is expected
+    // to return 404 to this read-only job; validate its git identity above.
+    let published = false;
+    try {
+      const release = api(`repos/${repository}/releases/tags/${tag}`);
+      assert(!release.prerelease, "Stable pipeline cannot publish a prerelease");
+      published = !release.draft;
+    } catch (error) {
+      if (!String(error.stderr).includes("HTTP 404")) throw error;
+    }
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `sha=${sha}\npublished=${published}\n`);
     return;
   }
   const files = artifacts(resolve("build/darwin-arm64"), app, repository);
   if (operation === "artifacts") return;
   assert(operation === "publish", "Unknown release command");
+  // This job alone has write access and can enumerate private drafts. Use
+  // the release ID for refreshes rather than the published-only tag route.
+  const all = api(`repos/${repository}/releases?per_page=100`);
+  const release = all.find((item) => item.tag_name === tag);
+  assert(release, `Missing release draft for ${tag}`);
+  assert(!release.prerelease, "Stable pipeline cannot publish a prerelease");
   // Published releases are immutable. A retry verifies their required asset
   // inventory but never uploads replacement files or changes latest.
   if (!release.draft) {
@@ -89,13 +103,12 @@ async function main() {
     console.log(`${tag} is already published; left unchanged.`);
     return;
   }
-  const all = api(`repos/${repository}/releases?per_page=100`);
   const olderDraft = all.find((item) => item.draft && item.tag_name !== tag && /^v\d+\.\d+\.\d+$/.test(item.tag_name) && compare(item.tag_name.slice(1), app.version) < 0 && !item.name?.startsWith("[abandoned]"));
   assert(!olderDraft, `Resolve the older draft ${olderDraft?.tag_name} before publishing`);
   const stable = all.filter((item) => !item.draft && !item.prerelease && /^v\d+\.\d+\.\d+$/.test(item.tag_name));
   assert(stable.every((item) => compare(app.version, item.tag_name.slice(1)) > 0), "A newer or equal stable release already exists");
   gh("release", "upload", tag, ...files, "--clobber", "--repo", repository);
-  const uploaded = api(`repos/${repository}/releases/tags/${tag}`);
+  const uploaded = api(`repos/${repository}/releases/${release.id}`);
   assert(uploaded.draft, "Release was published concurrently; stopped before further mutation");
   for (const file of files) {
     const asset = uploaded.assets.find((entry) => entry.name === basename(file));
