@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/frankwei98/PicPiper/compare/v1.1.0...v1.2.0) (2026-11-15)
+
+
+### Features
+
+* add compression result actions and configurable image concurrency ([#11](https://github.com/frankwei98/PicPiper/issues/11)) ([da8d659](https://github.com/frankwei98/PicPiper/commit/da8d659d9b77692b7273543b0fb44c34c3b68657))
+
 ## [1.1.0](https://github.com/frankwei98/PicPiper/compare/v1.0.0...v1.1.0) (2026-11-14)
 
 
