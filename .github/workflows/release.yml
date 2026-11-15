@@ -52,6 +52,7 @@ jobs:
         env:
           AUTOMATION_SHA: ${{ github.workflow_sha }}
         run: |
+          test -n "$AUTOMATION_SHA"
           mkdir -p "$RUNNER_TEMP/picpiper-release"
           git show "$AUTOMATION_SHA:scripts/release.mjs" > "$RUNNER_TEMP/picpiper-release/release.mjs"
           git show "$AUTOMATION_SHA:scripts/release-checks.mjs" > "$RUNNER_TEMP/picpiper-release/release-checks.mjs"
@@ -145,13 +146,15 @@ jobs:
       - name: Upload release DMG
         if: success() && inputs.release_tag != ''
         env:
+          AUTOMATION_SHA: ${{ github.workflow_sha }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_SHA: ${{ needs.quality.outputs.sha }}
         run: |
+          test -n "$AUTOMATION_SHA"
           mkdir -p "$RUNNER_TEMP/picpiper-release"
-          git show "$GITHUB_WORKFLOW_SHA:scripts/release.mjs" > "$RUNNER_TEMP/picpiper-release/release.mjs"
+          git show "$AUTOMATION_SHA:scripts/release.mjs" > "$RUNNER_TEMP/picpiper-release/release.mjs"
           node "$RUNNER_TEMP/picpiper-release/release.mjs" artifacts "$RELEASE_TAG" "$RELEASE_SHA"
       - name: Keep signed release assets
         if: success() && inputs.release_tag != ''
@@ -187,11 +190,13 @@ jobs:
           path: build/darwin-arm64
       - name: Publish release
         env:
+          AUTOMATION_SHA: ${{ github.workflow_sha }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           RELEASE_SHA: ${{ needs.quality.outputs.sha }}
         run: |
+          test -n "$AUTOMATION_SHA"
           mkdir -p "$RUNNER_TEMP/picpiper-release"
-          git show "$GITHUB_WORKFLOW_SHA:scripts/release.mjs" > "$RUNNER_TEMP/picpiper-release/release.mjs"
+          git show "$AUTOMATION_SHA:scripts/release.mjs" > "$RUNNER_TEMP/picpiper-release/release.mjs"
           node "$RUNNER_TEMP/picpiper-release/release.mjs" publish "$RELEASE_TAG" "$RELEASE_SHA"
