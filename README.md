@@ -1,6 +1,6 @@
 # Pic Piper
 
-Pic Piper is a small desktop image workbench built with Go, [MyGo](https://mygo.egoist.dev/docs), and React, with batch compression, full-resolution comparisons, and S3-compatible storage. The first target is macOS on Apple Silicon.
+Pic Piper is a small desktop image workbench built with Go, [MyGo](https://mygo.egoist.dev/docs), and React, with batch compression, full-resolution comparisons, and S3-compatible storage. The current public release targets macOS on Apple Silicon. A five-target build matrix is planned for releases after `v1.2.0`.
 
 ## What the MVP does
 
@@ -27,7 +27,7 @@ PNG ignores quality and uses fast lossless compression, which can produce larger
 
 Animated WebP output retains frames, timing, loop count and transparency, including when resized; quality 100 uses lossless WebP. Batch presets keep WebP animations in WebP. Choose a static format to explicitly confirm **Export first frame**, or use the selected image's **Animation** control; the original animation stays untouched. Detected APNG/AVIF sequences offer first-frame extraction. APNG extraction distinguishes the actual animation frame from a separate default poster and retains its canvas offset. Previews show the first frame. Preserved WebP animations are limited to 120 frames and 40 million total frame pixels.
 
-On macOS, embedded RGB ICC profiles in JPEG/PNG/WebP and supported HEIF/AVIF color properties are normalized to sRGB with CoreGraphics before profile removal. Display P3 color conversion and alpha are regression-tested at 8 and 16 bits. PQ/HLG HDR declared by PNG cICP or HEIF/AVIF nclx is automatically tone-mapped to SDR/sRGB, with the same mapping in previews, comparisons and exports. HDR mapping supports BT.2020, Display P3 and BT.709 primaries, retains alpha and uses 16-bit intermediate pixels; the original HDR file is preserved. Unreadable profiles and unrecognized HDR primaries return an explanation. HEIF support remains limited to the HEVC still-image variants handled by the bundled decoder.
+On macOS, embedded RGB ICC profiles in JPEG/PNG/WebP and supported HEIF/AVIF color properties are normalized to sRGB with CoreGraphics before profile removal. Display P3 color conversion and alpha are regression-tested at 8 and 16 bits. PQ/HLG HDR declared by PNG cICP or HEIF/AVIF nclx is automatically tone-mapped to SDR/sRGB, with the same mapping in previews, comparisons and exports. HDR mapping supports BT.2020, Display P3 and BT.709 primaries, retains alpha and uses 16-bit intermediate pixels; the original HDR file is preserved. Unreadable profiles and unrecognized HDR primaries return an explanation. ICC-profile conversion to sRGB currently requires macOS; other systems do not support it and explicitly reject conversion. HEIF support remains limited to the HEVC still-image variants handled by the bundled decoder.
 
 Still-image WebP and AVIF encoding use pinned, statically linked libraries on native macOS/Linux builds: libwebp 1.6.0 and libavif 1.4.2/libaom 3.14.1. AVIF keeps 8-bit 4:4:4 color and the requested quality, uses speed 6 for better compression, and preserves lossless alpha with extra search on the alpha plane. Each native AVIF encoder uses at most two threads. Other modern codec operations use the pinned Go modules and bundled implementations; the package scripts retain `nodynamic` so installed shared codec libraries do not change behavior. `CGO_ENABLED=0`, cross targets selected through GOOS/GOARCH and other platforms use bundled encoders. Portable AVIF also uses speed 6 but is slower and retains the wrapper's alpha conversion. No runtime Homebrew codec libraries, external encoders, or Rust toolchain are required. Codec license notices are collected into `resources/codec-notices.txt` during packaging. See [AVIF tuning](docs/avif-performance.md) for measurements, [codec validation](docs/mygo-codec-results.md) for earlier checks, and [codec selection](docs/mygo-codec-selection.md) for the original decisions.
 
@@ -52,10 +52,10 @@ On an Apple Silicon Mac, the packaged artifacts are:
 
 ```text
 build/darwin-arm64/Pic Piper.app
-build/darwin-arm64/pic-piper-1.0.0-arm64.dmg
+build/darwin-arm64/pic-piper-1.2.0-arm64.dmg
 ```
 
-Open the app directly, or open the DMG and copy the app into Applications. macOS 13 or later is required by the Go 1.27 runtime. The current package is ad-hoc signed for local evaluation; it is not notarized for public distribution. Other operating systems and Intel Macs have not been validated for this MVP.
+Open the app directly, or open the DMG and copy the app into Applications. macOS 13 or later is required by the Go 1.27 runtime. The current package is ad-hoc signed for local evaluation; it is not notarized for public distribution. Windows and Linux build targets are planned for releases after `v1.2.0` and have not yet been validated. Linux runtime packages require GTK3, WebKitGTK 4.1, and appindicator; Windows requires WebView2. Windows packages will not have Authenticode signing configured initially. The status-bar icon's native file drag-and-drop remains macOS-only; other systems do not support that interaction.
 
 ## Updates and releases
 
@@ -66,10 +66,11 @@ An update waits for active compression, upload and Mini tasks before quitting.
 Development builds and read-only installation locations cannot update in place.
 
 Versions and changelogs are maintained by Release Please. Merge its release PR
-to publish the accumulated changes after automated tests, packaging and GUI
-smoke pass. See [release operations](docs/releasing.md) for version rules, signed
-assets, key backup and failed-release recovery. Users of releases without an
-updater need to install the first update-enabled version manually.
+to publish the accumulated changes after automated tests, packaging and
+platform-appropriate smoke checks pass. See [release operations](docs/releasing.md)
+for version rules, signed assets, key backup and failed-release recovery. Users
+of releases without an updater need to install the first update-enabled version
+manually.
 
 ## Language
 

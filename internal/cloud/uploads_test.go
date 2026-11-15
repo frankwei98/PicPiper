@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -139,7 +140,11 @@ func TestGalleryOnlyListsLocalUploadsAndSortsBeforePagination(t *testing.T) {
 		}
 	}
 	info, err := os.Stat(s.uploadRecordsPath(p))
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil {
+		t.Fatalf("upload records missing: %v", err)
+	}
+	// Windows inherits the profile directory ACL; Go file modes cannot express ACLs.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal("upload records are not private")
 	}
 	data, _ := os.ReadFile(s.uploadRecordsPath(p))

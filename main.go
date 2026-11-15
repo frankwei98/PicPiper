@@ -267,7 +267,8 @@ func main() {
 		log.Fatal("Could not locate the app's private data folder.")
 	}
 	var smokeDir string
-	if len(os.Args) == 3 && os.Args[1] == "--smoke-test" {
+	packageSmoke := len(os.Args) == 3 && os.Args[1] == "--package-smoke"
+	if len(os.Args) == 3 && (os.Args[1] == "--smoke-test" || packageSmoke) {
 		smokeDir, err = filepath.Abs(os.Args[2])
 		if err != nil {
 			log.Fatal(err)
@@ -313,7 +314,15 @@ func main() {
 		win.OnClose(backend.desktop.closeMain)
 		if smokeDir != "" {
 			var start sync.Once
-			win.Page().OnDOMReady(func() { start.Do(func() { go runSmoke(win, smokeDir, backend) }) })
+			win.Page().OnDOMReady(func() {
+				start.Do(func() {
+					if packageSmoke {
+						go runPackageSmoke(win, smokeDir)
+					} else {
+						go runSmoke(win, smokeDir, backend)
+					}
+				})
+			})
 		}
 	})
 	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {

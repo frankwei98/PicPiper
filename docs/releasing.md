@@ -25,15 +25,24 @@ No personal access token or separate hosted service is needed.
 ## Publishing and recovery
 
 Merging the release PR creates a fixed `vX.Y.Z` tag and draft Release. The same
-workflow invokes the build pipeline with the exact SHA. Tests, native build,
-race checks and packaged GUI smoke must succeed. The pipeline verifies update
-signatures, versions, release URLs and uploaded asset digests before making the
-release public and setting latest. Normal PR/main builds do not get the update
-private key.
+workflow invokes the build pipeline with the exact SHA. Publication waits for
+all targets in the source's `.release-targets.json`: `darwin-arm64`,
+`windows-amd64`, `windows-arm64`, `linux-amd64` and `linux-arm64`. Older tags
+without that inventory retain their macOS-only matrix. macOS runs the full `pnpm smoke`; each new
+Windows/Linux target runs an isolated package smoke for launch, frontend bridge,
+codec and safe export. That package smoke does not establish full GUI usability.
+Tests and native builds must also succeed; macOS/Linux additionally run race checks.
+The pipeline verifies
+update signatures, versions, release URLs and asset digests, combines the
+artifacts' SHA-256 entries into `SHA256SUMS`, and uploads checksums and artifacts
+to the same Release before making it public and setting latest. A public version
+is immutable and cannot be overwritten. Normal PR/main builds do not get the
+update private key.
 
 To recover a failed release, run **Build and release** with the existing
 `release_tag`; `release_sha` can also pin the expected commit. Continue the
-existing draft. Do not move the tag. Once public, a retry leaves it unchanged.
+existing draft. Do not move the tag. Once public, a retry leaves it unchanged;
+publish a higher version for changes.
 The release helpers are loaded from the workflow's own commit, while application
 source remains pinned to the release tag/SHA. Fixes to release automation can
 therefore recover an unchanged app release without moving its tag. If a change
@@ -46,10 +55,18 @@ as an unpublished draft, after independently verifying the git tag and version.
 Only the publication job, with Contents write access, enumerates drafts and
 refreshes their assets by release ID. Ordinary build jobs keep read-only access.
 
-Artifacts include a DMG, `pic-piper-X.Y.Z-darwin-arm64.tar.gz`,
-`update-darwin-arm64.json`, `SHA256SUMS` and any useful delta files. Current
-public releases target macOS arm64. Retain earlier archives for delta history.
-The first update-enabled release may have no deltas.
+The current public release `v1.2.0` contains only macOS artifacts. Do not add
+files to that existing Release; the five-target matrix applies to later
+versions. Planned artifacts are a macOS DMG and
+`pic-piper-X.Y.Z-darwin-arm64.tar.gz` with `update-darwin-arm64.json`; Windows
+NSIS setup executables and `.tar.gz` update archives with
+`update-windows-amd64.json` and `update-windows-arm64.json`; and Linux `.deb`,
+`.rpm` and `.tar.gz` update archives with `update-linux-amd64.json` and
+`update-linux-arm64.json`. All target artifacts and the combined `SHA256SUMS`
+are published to the same Release. Retain earlier archives for delta history;
+the first update-enabled release may have no deltas. macOS remains ad-hoc
+signed, and Windows Authenticode signing is not configured. Linux runtime
+dependencies are GTK3, WebKitGTK 4.1 and appindicator; Windows requires WebView2.
 
 ## Keys and signing
 
@@ -77,7 +94,8 @@ manually install the first update-enabled release. Later releases can update
 in place. User storage profiles and credentials stay in their existing private
 data directory.
 
-For publication checks run the repository's full test/build/smoke suite and
+For publication checks run the repository's full test/build suite, macOS
+`pnpm smoke`, the isolated package smoke on each Windows/Linux target, and
 `node --test scripts/release-checks.mjs`. The packaged app also supports an
 isolated `--update-smoke <temporary-directory>` diagnostic: the app itself must
 be a disposable copy inside that directory under the OS temporary directory.
