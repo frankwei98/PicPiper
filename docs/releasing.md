@@ -34,9 +34,17 @@ private key.
 To recover a failed release, run **Build and release** with the existing
 `release_tag`; `release_sha` can also pin the expected commit. Continue the
 existing draft. Do not move the tag. Once public, a retry leaves it unchanged.
-If a source change is necessary, publish a higher version instead. An older
+The release helpers are loaded from the workflow's own commit, while application
+source remains pinned to the release tag/SHA. Fixes to release automation can
+therefore recover an unchanged app release without moving its tag. If a change
+to the application source is necessary, publish a higher version instead. An older
 unresolved draft blocks a later release; explicitly mark its title with
 `[abandoned]` only when that version has been intentionally cancelled.
+
+The read-only source check treats a 404 from the published-release tag endpoint
+as an unpublished draft, after independently verifying the git tag and version.
+Only the publication job, with Contents write access, enumerates drafts and
+refreshes their assets by release ID. Ordinary build jobs keep read-only access.
 
 Artifacts include a DMG, `pic-piper-X.Y.Z-darwin-arm64.tar.gz`,
 `update-darwin-arm64.json`, `SHA256SUMS` and any useful delta files. Current
