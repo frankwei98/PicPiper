@@ -656,7 +656,6 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
   };
 
   const readyItems = items.filter((item) => isCurrentCompressionOutput(item, quality));
-  const resultKey = readyItems.map((item) => item.id).join("|");
   const copyImages = async (ids: string[]) => {
     if (!canMutateQueue()) return;
     const paths = readyItems.filter((item) => ids.includes(item.id)).map((item) => item.outputPath!);
@@ -797,7 +796,7 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
 
       {resultsOpen && readyItems.length > 0 && <CompressionResults
         open={!compareItem && isActive}
-        key={resultKey} items={readyItems} locked={saving || copying || uploads.isUploading}
+        items={readyItems} locked={saving || copying || uploads.isUploading}
         profiles={availableProfiles} profileId={uploadProfile?.id}
         onProfile={(id) => { setUploadProfileId(id); setUploadedFocus(null); }}
         onClose={() => setResultsOpen(false)} onSave={(ids) => void handleSaveToLocal(ids)}

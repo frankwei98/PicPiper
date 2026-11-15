@@ -8,7 +8,7 @@ Pic Piper is a small desktop image workbench built with Go, [MyGo](https://mygo.
 - Use a compact batch list with a selected-image preview, output controls, and persistent save/upload actions.
 - Convert to JPEG, PNG, WebP, AVIF, or JPEG XL; choose original-format, balanced WebP, smaller AVIF, or automatic lossless presets. Lossless uses JPEG XL for ordinary stills, PNG for high-bit-depth pixels, and WebP for WebP animations.
 - Resize by longest edge without cropping or enlarging small images, adjust quality, and compare full-resolution images with Fit and 100% views.
-- Skip duplicate paths, stop a batch, retry unfinished images, or clear it and start again. Image jobs reuse up to two of the app's own child processes; cancel, clear, removal and superseding settings terminate old work and clean incomplete output.
+- Skip duplicate paths, stop a batch, retry unfinished images, or clear it and start again. Image jobs reuse the app's own child processes within the configurable shared image processing budget; cancel, clear, removal and superseding settings terminate old work and clean incomplete output.
 - Apply EXIF orientation and strip metadata, including location data. Transparent images exported as JPEG use a white background.
 - Save results to a chosen folder without overwriting existing files.
 - Test an S3-compatible connection before saving, then upload, browse, download, copy public URLs, and delete objects.

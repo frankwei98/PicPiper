@@ -2,6 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { OptimizePage } from "./OptimizePage";
+import { imageApi, type CompressImageRequest, type CompressImageResult } from "../../api/backend";
 const mocks = vi.hoisted(() => ({
   onFileDrop: vi.fn(),
   open: vi.fn(), copyImages: vi.fn(), copyOutputsToDir: vi.fn(), uploadObject: vi.fn(),
@@ -67,6 +68,47 @@ it("saves only the current image and uploads only selected images", async () => 
   await waitFor(() => expect(mocks.uploadObject).toHaveBeenCalledTimes(1));
   expect(mocks.uploadObject).toHaveBeenCalledWith(expect.objectContaining({ sourcePath: "/cache/run/two.png" }));
 });
+it("preserves selection and preview when another image finishes, and only acts on selected results", async () => {
+  const user = userEvent.setup();
+  mocks.open.mockResolvedValueOnce(["/one.png", "/two.png", "/three.png"]);
+  const result = ({ sourcePath, outputFileName, settings }: CompressImageRequest): CompressImageResult => ({
+    sourcePath, outputPath: `/cache/run/${outputFileName}`, outputFileName,
+    originalBytes: 1000, outputBytes: 500, targetFormat: settings.targetFormat,
+  });
+  let finishCompression: (() => void) | undefined;
+  vi.mocked(imageApi.compressImage)
+    .mockImplementationOnce(async (request) => result(request))
+    .mockImplementationOnce(async (request) => result(request))
+    .mockImplementationOnce((request) => new Promise((resolve) => { finishCompression = () => resolve(result(request)); }));
+  render(<OptimizePage namingTemplate="{slug}.{ext}" activeProfile={profile} processingConcurrency={3} />);
+  await user.click(screen.getByRole("button", { name: "Add images" }));
+  await screen.findByText("2 of 3 ready");
+  await waitFor(() => expect(finishCompression).toBeTypeOf("function"));
+  await user.click(screen.getByRole("button", { name: "View compression results" }));
+  let dialog = within(await screen.findByRole("dialog", { name: "Compression results" }));
+  await user.click(dialog.getByRole("checkbox", { name: "Select one.png" }));
+  await user.click(dialog.getByRole("button", { name: "two.png" }));
+
+  await act(async () => { finishCompression?.(); });
+  dialog = within(await screen.findByRole("dialog", { name: "Compression results" }));
+  expect(dialog.getByRole("checkbox", { name: "Select one.png" })).not.toBeChecked();
+  expect(dialog.getByRole("checkbox", { name: "Select two.png" })).toBeChecked();
+  expect(dialog.getByRole("checkbox", { name: "Select three.png" })).not.toBeChecked();
+  expect(dialog.getByRole("checkbox", { name: "Select all recent results" })).toBePartiallyChecked();
+  expect(dialog.getByRole("button", { name: "two.png" })).toHaveAttribute("aria-pressed", "true");
+
+  await user.click(dialog.getByRole("button", { name: "Copy selected images" }));
+  await waitFor(() => expect(mocks.copyImages).toHaveBeenCalledWith(["/cache/run/two.png"]));
+  await user.click(dialog.getByRole("button", { name: "Save selected images" }));
+  await waitFor(() => expect(mocks.copyOutputsToDir).toHaveBeenCalledWith({ outputPaths: ["/cache/run/two.png"], targetDir: "/saved" }));
+  await user.click(dialog.getByRole("button", { name: "Upload selected" }));
+  await waitFor(() => expect(mocks.uploadObject).toHaveBeenCalledTimes(1));
+  expect(mocks.uploadObject).toHaveBeenCalledWith(expect.objectContaining({ sourcePath: "/cache/run/two.png" }));
+
+  await user.click(dialog.getByRole("checkbox", { name: "Select all recent results" }));
+  expect(dialog.getByRole("checkbox", { name: "Select three.png" })).toBeChecked();
+});
+
 it("shows copy errors, allows retry, and reopens results after returning", async () => {
   const { user, dialog } = await start();
   mocks.copyImages.mockRejectedValueOnce(new Error("Clipboard unavailable"));
