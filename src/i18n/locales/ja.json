@@ -448,5 +448,14 @@
   "Could not check for updates.": "アップデートを確認できませんでした。",
   "Could not save update preferences.": "アップデート設定を保存できませんでした。",
   "Checks periodically for new releases.": "新しいリリースがないか定期的に確認します。",
-  "Downloads available updates automatically.": "利用可能なアップデートを自動的にダウンロードします。"
+  "Downloads available updates automatically.": "利用可能なアップデートを自動的にダウンロードします。",
+  "Compression results": "圧縮結果",
+  "Preview compressed images, then copy, save or upload your selection.": "圧縮画像を確認し、選択した画像をコピー、保存、アップロードします。",
+  "Copy selected images": "選択画像をコピー",
+  "Save selected images": "選択画像を保存",
+  "Save image": "画像を保存",
+  "Back to compression": "圧縮に戻る",
+  "Images copied to clipboard": "画像をコピーしました",
+  "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.": "1枚は画像内容を、複数枚はFinderなどに貼り付けるファイルとしてコピーします。",
+  "View compression results": "圧縮結果を見る"
 }

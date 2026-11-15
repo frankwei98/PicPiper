@@ -29,6 +29,7 @@ import {
   trackDispatchedNames,
   shouldRequeueForGlobalSettings,
 } from "./optimizeQueue";
+import { CompressionResults } from "./CompressionResults";
 import { ImageComparison } from "./ImageComparison";
 import { useOptimizeUploads } from "./useOptimizeUploads";
 import { useUpdateActivity } from "@/api/updates";
@@ -86,6 +87,8 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
   const defaultFormat = useRef<WritableImageFormat | "original">("original");
   const [batchFormat, setBatchFormat] = useState<WritableImageFormat | "original">("original");
   const [saving, setSaving] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [resultsOpen, setResultsOpen] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const activeTasks = useRef(new Set<string>());
@@ -108,8 +111,8 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
     },
   });
 
-  const canMutateQueue = useCallback(() => !saving && uploads.canMutateQueue(), [saving, uploads.canMutateQueue]);
-  useUpdateActivity("optimize", importing || saving || uploads.isUploading || items.some((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)));
+  const canMutateQueue = useCallback(() => !saving && !copying && uploads.canMutateQueue(), [saving, copying, uploads.canMutateQueue]);
+  useUpdateActivity("optimize", importing || saving || copying || uploads.isUploading || items.some((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)));
 
   useEffect(() => {
     return () => {
@@ -657,7 +660,8 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
-  const handleSaveToLocal = async () => {
+  const handleSaveToLocal = async (ids?: string[]) => {
+    if (!canMutateQueue()) return;
     setSaveError(null);
     setSaveSuccess(null);
     setSaving(true);
@@ -669,8 +673,8 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
       }
 
       const outputPaths = items
-        .filter((item) => isCurrentCompressionOutput(item, quality))
-        .map((item) => item.outputPath);
+        .filter((item) => isCurrentCompressionOutput(item, quality) && (!ids || ids.includes(item.id)))
+        .map((item) => item.outputPath!);
 
       if (outputPaths.length === 0) {
         setSaveError(t("No compressed outputs to save."));
@@ -688,6 +692,16 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
   };
 
   const readyItems = items.filter((item) => isCurrentCompressionOutput(item, quality));
+  const resultKey = readyItems.map((item) => item.id).join("|");
+  const copyImages = async (ids: string[]) => {
+    if (!canMutateQueue()) return;
+    const paths = readyItems.filter((item) => ids.includes(item.id)).map((item) => item.outputPath!);
+    if (!paths.length) return;
+    setCopying(true); setSaveError(null); setSaveSuccess(null);
+    try { await imageApi.copyImages(paths); setSaveSuccess(t(paths.length === 1 ? "Image copied to clipboard" : "Images copied to clipboard")); }
+    catch (cause) { setSaveError(errorMessage(cause, t("Could not copy the result."))); }
+    finally { setCopying(false); }
+  };
   const readyOriginalBytes = readyItems.reduce((sum, item) => sum + item.originalBytes, 0);
   const readyOutputBytes = readyItems.reduce((sum, item) => sum + (item.outputBytes ?? 0), 0);
   const failedItemCount = items.filter((item) => item.status === "failed").length;
@@ -724,7 +738,7 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
         preset={preset}
         onPreset={applyPreset}
         onQuality={handleQualityChange}
-        locked={saving || uploads.isUploading}
+        locked={saving || copying || uploads.isUploading}
         onClear={clearBatch}
         onCancel={cancelItem}
         onCompare={(id) => { setSelectedItemId(id); setCompareItemId(id); }}
@@ -738,7 +752,7 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
         uploadFailure={uploads.failureMessageFor}
         isUploading={uploads.isItemUploading}
         onChooseImages={handleChooseImages}
-        chooseDisabled={importing || saving || uploads.isUploading}
+        chooseDisabled={importing || saving || copying || uploads.isUploading}
         dragging={dragging}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -772,14 +786,15 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
               {items.some((item) => item.status === "failed" || item.status === "cancelled") && <Button type="button" size="sm" variant="ghost" disabled={saving || uploads.isUploading} onClick={() => items.filter((item) => item.status === "failed" || item.status === "cancelled").forEach((item) => retryItem(item.id))}>{t("Retry unfinished")}</Button>}
               {items.some((item) => isCurrentCompressionOutput(item, quality)) && (
                 <>
-                  <Button type="button" variant="outline" onClick={handleSaveToLocal} disabled={saving || uploads.isUploading}>{t("Save to local folder")}</Button>
+                  <Button type="button" variant="outline" onClick={() => setResultsOpen(true)}>{t("View compression results")}</Button>
+                  <Button type="button" variant="outline" onClick={() => void handleSaveToLocal()} disabled={saving || uploads.isUploading}>{t("Save to local folder")}</Button>
                   {uploads.failedUploadCount > 0 && (
                     <Button type="button" variant="outline" onClick={uploads.retryUploads} disabled={saving || uploads.isUploading}>
                       {uploads.hasCollisionFailure ? t("Retry {{count}} failed upload(s) with new key", { count: uploads.failedUploadCount }) : t("Retry {{count}} failed upload(s)", { count: uploads.failedUploadCount })}
                     </Button>
                   )}
                   {uploads.newUploadItemCount > 0 && (
-                    <Button type="button" onClick={uploads.uploadToS3} disabled={saving || uploads.isUploading}>
+                    <Button type="button" onClick={() => void uploads.uploadToS3()} disabled={saving || uploads.isUploading}>
                       {uploads.failedUploadCount > 0
                         ? t("Upload {{value0}} new image(s) to S3", { value0: uploads.newUploadItemCount })
                         : t("Upload to S3")}
@@ -815,6 +830,16 @@ export function OptimizePage({ activeProfile, profiles, namingTemplate, onUpload
           )}
         </section>
       )}
+
+      {resultsOpen && readyItems.length > 0 && <CompressionResults
+        open={!compareItem && isActive}
+        key={resultKey} items={readyItems} locked={saving || copying || uploads.isUploading}
+        profiles={availableProfiles} profileId={uploadProfile?.id}
+        onProfile={(id) => { setUploadProfileId(id); setUploadedFocus(null); }}
+        onClose={() => setResultsOpen(false)} onSave={(ids) => void handleSaveToLocal(ids)}
+        onCopy={(ids) => void copyImages(ids)} onUpload={(ids) => { setSaveSuccess(null); setSaveError(null); setUploadedFocus(null); void uploads.uploadToS3(ids); }}
+        onCompare={setCompareItemId} message={saveSuccess ?? (uploadedFocus ? t("Uploaded {{count}} image(s) to {{destination}}. Local results retained.", { count: uploadedFocus.highlightedKeys.length, destination: uploadedFocus.destination }) : null)} error={saveError ?? uploads.uploadError}
+      />}
 
       {firstFrameRequest && isActive && (
         <Dialog open onOpenChange={(open) => { if (!open) setFirstFrameRequest(null); }}>

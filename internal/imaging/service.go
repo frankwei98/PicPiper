@@ -545,17 +545,9 @@ func resize(src image.Image, width, height int) *image.NRGBA {
 }
 
 func (s *Service) copyOutputs(ctx context.Context, req request) ([]string, error) {
-	paths := make([]string, 0, len(req.OutputPaths))
-	for _, path := range req.OutputPaths {
-		resolved, err := under(s.cacheDir, path)
-		if err != nil {
-			return nil, err
-		}
-		info, err := os.Stat(resolved)
-		if err != nil || !info.Mode().IsRegular() {
-			return nil, apperror.New("invalidOutputPath", "Only generated image files can be exported.")
-		}
-		paths = append(paths, resolved)
+	paths, err := s.OutputPaths(req.OutputPaths)
+	if err != nil {
+		return nil, err
 	}
 	if len(paths) == 0 {
 		return []string{}, nil
@@ -606,4 +598,49 @@ func (s *Service) ThumbnailDataURL(ctx context.Context, path string, maxSize int
 		return "", err
 	}
 	return result.DataURL, nil
+}
+
+// OutputPaths validates generated files before native clipboard or export access.
+func (s *Service) OutputPaths(outputPaths []string) ([]string, error) {
+	paths := make([]string, 0, len(outputPaths))
+	for _, path := range outputPaths {
+		resolved, err := under(s.cacheDir, path)
+		if err != nil {
+			return nil, err
+		}
+		info, err := os.Stat(resolved)
+		if err != nil || !info.Mode().IsRegular() {
+			return nil, apperror.New("invalidOutputPath", "Only generated image files can be exported.")
+		}
+		paths = append(paths, resolved)
+	}
+	return paths, nil
+}
+
+// ClipboardPNG uses the same bounded decoding and color handling as comparison.
+func (s *Service) ClipboardPNG(ctx context.Context, path string) ([]byte, error) {
+	paths, err := s.OutputPaths([]string{path})
+	if err != nil {
+		return nil, err
+	}
+	payload, _ := json.Marshal(request{Path: paths[0]})
+	result, err := s.Call(ctx, "read_comparison_image", payload)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return nil, err
+	}
+	var preview struct {
+		DataURL string `json:"dataUrl"`
+	}
+	if err = json.Unmarshal(raw, &preview); err != nil {
+		return nil, err
+	}
+	encoded, ok := strings.CutPrefix(preview.DataURL, "data:image/png;base64,")
+	if !ok {
+		return nil, apperror.New("clipboardFailed", "Could not prepare the clipboard image.")
+	}
+	return base64.StdEncoding.DecodeString(encoded)
 }

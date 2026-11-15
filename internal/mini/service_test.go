@@ -81,6 +81,23 @@ func TestQueueCopiesDecodedImageWithAlphaAndPreservesSource(t *testing.T) {
 	if len(service.Snapshot().Items) != 1 {
 		t.Fatal("missing result")
 	}
+	if _, err := service.Export(context.Background(), nil, t.TempDir()); err == nil {
+		t.Fatal("empty export selection accepted")
+	}
+	if _, err := service.Export(context.Background(), []string{"missing"}, t.TempDir()); err == nil {
+		t.Fatal("unknown result accepted for export")
+	}
+	target := t.TempDir()
+	saved, err := service.Export(context.Background(), []string{service.Snapshot().Items[0].ID}, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("saved paths: %v", saved)
+	}
+	if _, err := os.Stat(saved[0]); err != nil {
+		t.Fatalf("exported output missing: %v", err)
+	}
 	if err := service.Copy("missing", "url"); err == nil {
 		t.Fatal("arbitrary result ID accepted")
 	}

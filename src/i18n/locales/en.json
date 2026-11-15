@@ -448,5 +448,14 @@
   "Could not check for updates.": "Could not check for updates.",
   "Could not save update preferences.": "Could not save update preferences.",
   "Checks periodically for new releases.": "Checks periodically for new releases.",
-  "Downloads available updates automatically.": "Downloads available updates automatically."
+  "Downloads available updates automatically.": "Downloads available updates automatically.",
+  "Compression results": "Compression results",
+  "Preview compressed images, then copy, save or upload your selection.": "Preview compressed images, then copy, save or upload your selection.",
+  "Copy selected images": "Copy selected images",
+  "Save selected images": "Save selected images",
+  "Save image": "Save image",
+  "Back to compression": "Back to compression",
+  "Images copied to clipboard": "Images copied to clipboard",
+  "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.": "One image copies pixels; multiple images copy files for pasting into Finder or compatible apps.",
+  "View compression results": "View compression results"
 }

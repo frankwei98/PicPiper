@@ -110,6 +110,36 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 				err = b.mini.Upload(req.IDs, req.ProfileID, req.LinkFormat)
 			}
 			value = b.mini.Snapshot()
+		case "copy_compressed_images":
+			var req struct {
+				OutputPaths []string `json:"outputPaths"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				var paths []string
+				paths, err = b.images.OutputPaths(req.OutputPaths)
+				if err == nil && len(paths) == 0 {
+					err = apperror.New("invalidRequest", "Choose at least one compressed image.")
+				}
+				if err == nil {
+					if len(paths) == 1 {
+						var png []byte
+						png, err = b.images.ClipboardPNG(ctx, paths[0])
+						if err == nil {
+							err = mygo.Clipboard.WriteImage(png)
+						}
+					} else {
+						err = mygo.Clipboard.WriteFiles(paths...)
+					}
+				}
+			}
+		case "mini_export":
+			var req struct {
+				IDs       []string `json:"ids"`
+				TargetDir string   `json:"targetDir"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				value, err = b.mini.Export(ctx, req.IDs, req.TargetDir)
+			}
 		case "mini_copy_image":
 			var req struct {
 				ID string `json:"id"`

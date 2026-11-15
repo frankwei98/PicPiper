@@ -29,7 +29,7 @@ export function MiniPage() {
   const [copying, setCopying] = useState<string>();
   const [clearing, setClearing] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [toast, setToast] = useState<{ message: MessageKey; undo?: boolean }>();
+  const [toast, setToast] = useState<{ message: MessageKey; values?: Record<string, string | number>; undo?: boolean }>();
   const alive = useRef(true);
   const stateVersion = useRef(0);
 
@@ -102,6 +102,17 @@ export function MiniPage() {
     } catch (cause) { if (alive.current) setError(errorMessage(cause, t("Could not copy the result."))); }
     finally { if (alive.current) setCopying(undefined); }
   };
+  const exportImages = async (ids: string[]) => {
+    if (!ids.length) return;
+    setSaving(true); setError(""); setToast(undefined);
+    try {
+      const targetDir = await open({ directory: true });
+      if (!targetDir) return;
+      const copied = await miniApi.export(ids, String(targetDir));
+      if (alive.current) setToast({ message: "Saved {{value0}} file(s) to {{value1}}", values: { value0: copied.length, value1: String(targetDir) } });
+    } catch (cause) { if (alive.current) setError(errorMessage(cause, t("Failed to save files"))); }
+    finally { if (alive.current) setSaving(false); }
+  };
   const clear = async () => {
     setClearing(true); setError("");
     try { await update(() => miniApi.clear()); if (alive.current) { setSelected(new Set()); setToast({ message: "List cleared", undo: true }); } }
@@ -134,7 +145,7 @@ export function MiniPage() {
       <div className="mini-results-head">
         <input type="checkbox" aria-label={t("Select all recent results")} checked={available.length > 0 && selected.size === available.length} disabled={!available.length} ref={(node) => { if (node) node.indeterminate = selected.size > 0 && selected.size < available.length; }} onChange={(event) => setSelected(event.target.checked ? new Set(available.map((item) => item.id)) : new Set())} />
         <strong>{t("Recent results")}</strong><span>{selected.size ? t("Selected {{count}}", { count: selected.size }) : state.items.length}</span>
-        <div className="mini-list-actions">{selected.size > 0 && <button className="mini-selected-upload" aria-label={t("Upload selected")} disabled={state.busy} onClick={() => openUpload([...selected])}><CloudUpload />{t("Upload")}</button>}<button className="mini-clear" disabled={!state.items.length || clearing} title={t("Only hides Mini records. Images and S3 history are kept.")} onClick={() => void clear()}>{t("Clear list")}</button></div>
+        <div className="mini-list-actions">{selected.size > 0 && <><button className="mini-selected-upload" aria-label={t("Save to local folder")} title={t("Save selected images")} disabled={saving} onClick={() => void exportImages([...selected])}><ImageDown /></button><button className="mini-selected-upload" aria-label={t("Upload selected")} disabled={state.busy} onClick={() => openUpload([...selected])}><CloudUpload />{t("Upload")}</button></>}<button className="mini-clear" disabled={!state.items.length || clearing} title={t("Only hides Mini records. Images and S3 history are kept.")} onClick={() => void clear()}>{t("Clear list")}</button></div>
       </div>
       <div className="mini-results-scroll" data-testid="mini-results-scroll">
         {!state.items.length && <div className="mini-empty"><Images /><strong>{t("No recent images")}</strong><span>{t("Drop images to compress and copy")}</span></div>}
@@ -147,6 +158,7 @@ export function MiniPage() {
             <div className="mini-item-info"><strong title={item.outputName || item.name}>{item.outputName || item.name}</strong><span>{pending ? t("Uploading...") : item.status === "completed" ? `${bytes(item.originalBytes)} → ${bytes(item.outputBytes)}` : t(statusLabels[item.status] ?? "Processing images...")}</span>{item.error && <p className="mini-item-error">{item.error}</p>}{item.uploadError && <p className="mini-item-error">{item.uploadError}</p>}{item.warning && <p className="mini-item-warning">{item.warning}</p>}</div>
             {item.status === "completed" ? <div className="mini-item-actions">
               <button aria-label={t("Copy image {{name}}", { name: item.outputName })} title={t("Copy image")} disabled={Boolean(copying)} onClick={() => void copy(item, true)}>{copying === `image-${item.id}` ? <LoaderCircle className="mini-spin" /> : <Copy />}</button>
+              <button aria-label={`${t("Save to local folder")}: ${item.outputName}`} title={t("Save to local folder")} disabled={saving || !ready(item)} onClick={() => void exportImages([item.id])}><ImageDown /></button>
               {item.url && <button aria-label={t("Copy link {{name}}", { name: item.outputName })} title={t("Copy link")} disabled={Boolean(copying)} onClick={() => void copy(item, false)}><Link /></button>}
               <button className={uploaded ? "mini-uploaded" : undefined} aria-label={t("Upload {{name}} to S3", { name: item.outputName })} title={uploaded ? t("Uploaded before; choose another bucket") : t("S3 upload")} disabled={state.busy || pending} onClick={() => openUpload([item.id])}>{pending ? <LoaderCircle className="mini-spin" /> : <span className="mini-upload-icon"><CloudUpload />{uploaded && <span className="mini-upload-refresh"><RefreshCw /></span>}</span>}</button>
             </div> : item.status !== "failed" && <LoaderCircle className="mini-spin" />}
@@ -156,7 +168,7 @@ export function MiniPage() {
       </div>
     </section>
     <footer className="mini-retention" title={t("Only hides Mini records. Images and S3 history are kept.")}><Clock3 />{t("Completed results hide automatically after 12 hours")}</footer>
-    {toast && <div className="mini-toast" role="status"><CheckCircle2 /><span>{t(toast.message)}</span>{toast.undo && state.canUndoClear && <button disabled={clearing} onClick={() => void restore()}>{t("Undo")}</button>}</div>}
+    {toast && <div className="mini-toast" role="status"><CheckCircle2 /><span>{t(toast.message, toast.values)}</span>{toast.undo && state.canUndoClear && <button disabled={clearing} onClick={() => void restore()}>{t("Undo")}</button>}</div>}
     {uploadIds && <MiniUploadDialog items={uploadItems} initialProfileId={config.profileId} initialLinkFormat={config.linkFormat} onClose={() => setUploadIds(null)} onUpload={upload} />}
     <Dialog open={compressionOpen} onOpenChange={(next) => { if (!saving) setCompressionOpen(next); }}><DialogContent className="mini-dialog mini-compression-dialog"><DialogTitle>{t("Compression settings")}</DialogTitle><DialogDescription className="sr-only">{t("Adjust compression settings")}</DialogDescription><div className="mini-compression-fields"><label className="mini-dialog-field"><span>{t("Image format")}</span><select aria-label={t("Image format")} value={draft.targetFormat} disabled={saving} onChange={(event) => setDraft((current) => ({ ...current, targetFormat: event.target.value as MiniSettings["targetFormat"] }))}>{formats.map((format) => <option key={format} value={format}>{format.toUpperCase()}</option>)}</select></label><label className="mini-dialog-field"><span>{t("Quality")}</span><input aria-label={t("Quality")} type="number" min={1} max={100} value={draft.quality} disabled={saving} onChange={(event) => setDraft((current) => ({ ...current, quality: Math.max(1, Math.min(100, Math.round(Number(event.target.value) || 90))) }))} /></label></div>{error && <p className="mini-item-error" role="alert">{error}</p>}<div className="mini-dialog-actions"><button disabled={saving} onClick={() => setCompressionOpen(false)}>{t("Cancel")}</button><button className="mini-primary" disabled={saving} onClick={() => void saveCompression()}>{t("Save Mini settings")}</button></div></DialogContent></Dialog>
   </main>;
