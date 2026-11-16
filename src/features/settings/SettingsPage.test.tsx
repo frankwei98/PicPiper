@@ -1,14 +1,15 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AppSettings } from "../../api/backend";
 
-const { saveSettings, saveS3Secret, testS3Connection } = vi.hoisted(() => ({
+const { saveSettings, saveS3Secret, testS3Connection, deleteProfile } = vi.hoisted(() => ({
   saveSettings: vi.fn(async (_settings?: AppSettings) => {}),
   saveS3Secret: vi.fn(async () => ({
     credentialRef: "s3:personal",
   })),
   testS3Connection: vi.fn(async () => {}),
+  deleteProfile: vi.fn(async (_profileId: string): Promise<AppSettings> => ({ profiles: [], namingTemplate: "{slug}.{ext}" })),
 }));
 
 vi.mock("../../api/backend", async () => ({
@@ -16,6 +17,7 @@ vi.mock("../../api/backend", async () => ({
     saveSettings,
     saveS3Secret,
     testS3Connection,
+    deleteProfile,
   },
   defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
 }));
@@ -34,6 +36,8 @@ describe("SettingsPage", () => {
     saveS3Secret.mockResolvedValue({ credentialRef: "s3:personal" });
     testS3Connection.mockReset();
     testS3Connection.mockResolvedValue(undefined);
+    deleteProfile.mockReset();
+    deleteProfile.mockResolvedValue({ profiles: [], namingTemplate: "{slug}.{ext}" });
   });
 
   it("starts on General and renders its save action", () => {
@@ -139,6 +143,90 @@ describe("SettingsPage", () => {
 
     expect(screen.queryByText(/presets/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /add preset/i })).not.toBeInTheDocument();
+  });
+
+  it("requires confirmation before deleting a profile and its local credentials", async () => {
+    const user = userEvent.setup();
+    const existing = { id: "personal", name: "Personal R2", endpoint: "https://s3.example.com", region: "auto", bucket: "images", accessKeyId: "key", credentialRef: "s3:personal", pathStyle: true, defaultPrefix: "images" };
+    render(<SettingsPage settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+    await goToSection(user, "S3 profiles");
+
+    await user.click(screen.getByRole("button", { name: "Delete profile" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Personal R2");
+    expect(dialog).toHaveTextContent("saved credentials from this device");
+    expect(dialog).toHaveTextContent("Objects in this bucket will remain in S3.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(deleteProfile).not.toHaveBeenCalled();
+  });
+
+  it("applies returned settings after deletion and selects a remaining profile", async () => {
+    const user = userEvent.setup();
+    const first = { id: "first", name: "Personal R2", endpoint: "https://s3.example.com", region: "auto", bucket: "images", accessKeyId: "key", credentialRef: "s3:first", pathStyle: true, defaultPrefix: "images" };
+    const second = { id: "second", name: "Work S3", endpoint: "https://s3.example.com", region: "auto", bucket: "work", accessKeyId: "work-key", credentialRef: "s3:second", pathStyle: true, defaultPrefix: "work" };
+    const nextSettings: AppSettings = { profiles: [second], namingTemplate: "{slug}.{ext}" };
+    deleteProfile.mockResolvedValueOnce(nextSettings);
+    const onSettingsChange = vi.fn();
+    render(<SettingsPage settings={{ profiles: [first, second], namingTemplate: "{slug}.{ext}", defaultProfileId: "first" }} onSettingsChange={onSettingsChange} />);
+    await goToSection(user, "S3 profiles");
+    await user.click(screen.getByRole("button", { name: "Delete profile" }));
+    const dialog = screen.getByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete profile" }));
+
+    expect(deleteProfile).toHaveBeenCalledWith("first");
+    expect(onSettingsChange).toHaveBeenCalledWith(nextSettings);
+    expect(screen.getByLabelText("Profile name")).toHaveValue("Work S3");
+    expect(await screen.findByText("Profile deleted.")).toBeInTheDocument();
+  });
+
+  it("keeps profile deletion, connection tests, and saving mutually exclusive", async () => {
+    const user = userEvent.setup();
+    const existing = { id: "personal", name: "Personal R2", endpoint: "https://s3.example.com", region: "auto", bucket: "images", accessKeyId: "key", credentialRef: "s3:personal", pathStyle: true, defaultPrefix: "images" };
+    let resolveTest!: () => void;
+    testS3Connection.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveTest = resolve; }));
+    render(<SettingsPage settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+    await goToSection(user, "S3 profiles");
+
+    const deleteButton = screen.getByRole("button", { name: "Delete profile" });
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(deleteButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save profile" })).toBeDisabled();
+    resolveTest();
+    await screen.findByText("Connection successful. Bucket listing works.");
+
+    await user.click(deleteButton);
+    const dialog = screen.getByRole("alertdialog");
+    let resolveDelete!: (settings: AppSettings) => void;
+    deleteProfile.mockImplementationOnce(() => new Promise<AppSettings>((resolve) => { resolveDelete = resolve; }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete profile" }));
+    const buttons = Array.from(document.querySelectorAll("button"));
+    expect(buttons.find((button) => button.textContent?.trim() === "Test connection")).toBeDisabled();
+    expect(buttons.find((button) => button.textContent?.trim() === "Save profile")).toBeDisabled();
+    resolveDelete({ profiles: [], namingTemplate: "{slug}.{ext}" });
+    await screen.findByText("Profile deleted.");
+  });
+
+  it("enters new-profile mode after deleting the last profile and reports failures", async () => {
+    const user = userEvent.setup();
+    const existing = { id: "personal", name: "Personal R2", endpoint: "https://s3.example.com", region: "auto", bucket: "images", accessKeyId: "key", credentialRef: "s3:personal", pathStyle: true, defaultPrefix: "images" };
+    const onSettingsChange = vi.fn();
+    render(<SettingsPage settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }} onSettingsChange={onSettingsChange} />);
+    await goToSection(user, "S3 profiles");
+    deleteProfile.mockRejectedValueOnce(new Error("Credential file could not be removed"));
+    await user.click(screen.getByRole("button", { name: "Delete profile" }));
+    let dialog = screen.getByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete profile" }));
+    expect(await screen.findByText("Credential file could not be removed")).toBeInTheDocument();
+    expect(onSettingsChange).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    deleteProfile.mockResolvedValueOnce({ profiles: [], namingTemplate: "{slug}.{ext}" });
+    await user.click(screen.getByRole("button", { name: "Delete profile" }));
+    dialog = screen.getByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete profile" }));
+    expect(screen.getByLabelText("Profile name")).toHaveValue("");
+    expect(onSettingsChange).toHaveBeenCalledWith({ profiles: [], namingTemplate: "{slug}.{ext}" });
   });
 
   it("rejects saving a new profile when secret access key is empty", async () => {
