@@ -55,6 +55,17 @@ func runSmoke(win *mygo.Window, dir string, backend *Backend) {
 		fmt.Println(string(encoded))
 		mygo.App.Quit()
 	}()
+	// Copy checks replace the developer's clipboard. Snapshot every
+	// representation first and restore it before the report is written.
+	clipboardSnapshot, clipboardErr := mygo.Clipboard.Read()
+	if clipboardErr != nil {
+		report.Steps = append(report.Steps, "Clipboard snapshot unavailable; copy checks replaced its contents")
+	}
+	defer func() {
+		if clipboardErr == nil && len(clipboardSnapshot.Items()) > 0 {
+			_ = mygo.Clipboard.Write(clipboardSnapshot)
+		}
+	}()
 	must := func(err error) {
 		if err != nil {
 			panic(err)
