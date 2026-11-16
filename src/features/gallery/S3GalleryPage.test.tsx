@@ -1015,6 +1015,7 @@ describe("S3GalleryPage", () => {
       expect.objectContaining({
         sourcePath: "/tmp/new-photo.jpg",
         outputFileName: "new-photo.jpg",
+        prefix: "2026/06",
         namingTemplate: "{yyyy}/{mm}/{slug}-{hash}.{ext}",
       }),
     );
@@ -1027,6 +1028,24 @@ describe("S3GalleryPage", () => {
     expect(listObjects).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("images/2026/06/new-photo.jpg")).toBeInTheDocument();
     expect(screen.getByText("images/photo.webp")).toBeInTheDocument();
+  });
+
+  it("keeps an empty profile upload prefix instead of using the gallery filter", async () => {
+    mockDialogOpen.mockResolvedValueOnce(["/tmp/new-photo.jpg"] as unknown as string);
+    const user = userEvent.setup();
+    render(
+      <S3GalleryPage
+        galleryFocus={{ prefix: "images", highlightedKeys: [] }}
+        profiles={[{ ...profile, defaultPrefix: "" }]}
+      />,
+    );
+
+    await screen.findByText("images/photo.webp");
+    await user.click(screen.getByRole("button", { name: /upload local images/i }));
+
+    await waitFor(() => expect(generateObjectKey).toHaveBeenCalledWith(
+      expect.objectContaining({ prefix: "" }),
+    ));
   });
 
   it("reports partial success without discarding the loaded pages", async () => {
