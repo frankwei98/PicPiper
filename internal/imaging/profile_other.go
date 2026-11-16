@@ -3,12 +3,18 @@
 package imaging
 
 import (
-	"fmt"
+	"context"
+	_ "embed"
 	"image"
+
+	"github.com/frankwei98/PicPiper/internal/imaging/icc"
 )
 
-func displayP3Profile() []byte { return nil }
+//go:embed testdata/display-p3.icc
+var portableDisplayP3 []byte
+
+func displayP3Profile() []byte { return portableDisplayP3 }
 
 func normalizeProfile(src image.Image, profile []byte) (image.Image, error) {
-	return nil, fmt.Errorf("embedded color profile conversion requires the macOS build")
+	return icc.Normalize(context.Background(), src, profile, highBitDepth(src))
 }
