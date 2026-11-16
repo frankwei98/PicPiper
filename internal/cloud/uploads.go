@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,21 +46,122 @@ func (s *Service) uploadRecordsPath(p profile) string {
 	return filepath.Join(s.dataDir, "uploads", uploadBucketID(p)+".json")
 }
 func (s *Service) loadUploadRecordsLocked(p profile) (map[string]uploadedImage, error) {
-	records := map[string]uploadedImage{}
-	data, err := os.ReadFile(s.uploadRecordsPath(p))
+	path := s.uploadRecordsPath(p)
+	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return records, nil
+		return map[string]uploadedImage{}, nil
 	}
-	if err != nil || json.Unmarshal(data, &records) != nil || records == nil {
+	if err != nil {
 		return nil, appErr("uploadHistoryReadFailed", "Could not read local upload records.")
 	}
-	for key, record := range records {
-		_, dateErr := time.Parse(time.RFC3339Nano, record.UploadedAt)
-		if dateErr != nil || record.Size < 0 || key != record.Key || validateKey(key) != nil || record.FileName == "" || record.UploadID == "" {
-			return nil, appErr("uploadHistoryReadFailed", "Local upload records are invalid.")
+	var rawRecords map[string]json.RawMessage
+	if json.Unmarshal(data, &rawRecords) != nil || rawRecords == nil {
+		return nil, appErr("uploadHistoryReadFailed", "Could not read local upload records.")
+	}
+	records := make(map[string]uploadedImage, len(rawRecords))
+	invalid := make([]uploadRecoveryRecord, 0)
+	for key, raw := range rawRecords {
+		var record uploadedImage
+		if decodeErr := json.Unmarshal(raw, &record); decodeErr != nil {
+			invalid = append(invalid, uploadRecoveryRecord{Key: key, Error: decodeErr.Error(), Record: raw})
+			continue
+		}
+		if reason := validateUploadedImage(key, record); reason != "" {
+			invalid = append(invalid, uploadRecoveryRecord{Key: key, Error: reason, Record: raw})
+			continue
+		}
+		records[key] = record
+	}
+	if len(invalid) != 0 {
+		backup, marshalErr := json.Marshal(uploadRecoveryBackup{Records: invalid})
+		if marshalErr != nil {
+			return nil, appErr("uploadHistoryRecoveryFailed", marshalErr.Error())
+		}
+		if err := writeUploadRecoveryBackup(path, backup); err != nil {
+			return nil, appErr("uploadHistoryRecoveryFailed", err.Error())
+		}
+		clean, marshalErr := json.Marshal(records)
+		if marshalErr != nil {
+			return nil, appErr("uploadHistoryRecoveryFailed", marshalErr.Error())
+		}
+		if err := atomicWrite(path, clean, 0600, "uploadHistoryRecoveryFailed"); err != nil {
+			return nil, err
 		}
 	}
 	return records, nil
+}
+
+func validateUploadedImage(key string, record uploadedImage) string {
+	if _, err := time.Parse(time.RFC3339Nano, record.UploadedAt); err != nil {
+		return "invalid uploadedAt: " + err.Error()
+	}
+	if record.Size < 0 {
+		return "size must not be negative"
+	}
+	if key != record.Key {
+		return "record key does not match map key"
+	}
+	if err := validateKey(key); err != nil {
+		return "invalid key: " + err.Error()
+	}
+	if record.FileName == "" {
+		return "fileName is empty"
+	}
+	if record.UploadID == "" {
+		return "uploadId is empty"
+	}
+	return ""
+}
+
+type uploadRecoveryRecord struct {
+	Key    string          `json:"key"`
+	Error  string          `json:"error"`
+	Record json.RawMessage `json:"record"`
+}
+
+type uploadRecoveryBackup struct {
+	Records []uploadRecoveryRecord `json:"invalidRecords"`
+}
+
+func writeUploadRecoveryBackup(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		return err
+	}
+	base := path + ".corrupt-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+	for attempt := 0; attempt < 100; attempt++ {
+		backup := base + ".json"
+		if attempt != 0 {
+			backup = base + "-" + strconv.Itoa(attempt) + ".json"
+		}
+		file, err := os.OpenFile(backup, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if os.IsExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		written, writeErr := file.Write(data)
+		if writeErr == nil && written != len(data) {
+			writeErr = io.ErrShortWrite
+		}
+		if writeErr == nil {
+			writeErr = file.Sync()
+		}
+		closeErr := file.Close()
+		if writeErr == nil {
+			writeErr = closeErr
+		}
+		if writeErr != nil {
+			_ = os.Remove(backup)
+			return writeErr
+		}
+		return nil
+	}
+	return errors.New("could not reserve a unique upload recovery backup name")
 }
 func (s *Service) recordUpload(p profile, record uploadedImage) error {
 	s.mu.Lock()
