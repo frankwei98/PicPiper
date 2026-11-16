@@ -259,7 +259,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       if (!selected) return;
 
       const paths = Array.isArray(selected) ? selected : [selected];
-      const currentPrefix = prefix || selectedProfile.defaultPrefix || "images";
+      const currentPrefix = selectedProfile.defaultPrefix;
       const newKeys: string[] = [];
       const newObjects: GalleryObject[] = [];
       const failures: string[] = [];
