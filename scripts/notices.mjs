@@ -29,6 +29,7 @@ if (native) {
     }
   }
 }
+sections.push(`\n${"=".repeat(72)}\nLittleCMS 2.20 (portable ICC engine)\nhttps://github.com/mm2/Little-CMS\n${readFileSync("internal/imaging/icc/LICENSE", "utf8")}\n`);
 for (const row of modules.trim().split("\n")) {
   const [name, version, directory] = row.split("\t");
   sections.push(`\n${"=".repeat(72)}\n${name} ${version}\nhttps://${name}\n`);
