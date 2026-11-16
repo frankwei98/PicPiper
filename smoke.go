@@ -605,6 +605,7 @@ return saved.length === 1;`)
 	report.Steps = append(report.Steps, "Long compression batch mounted only nearby cards and retained scroll placeholders")
 
 	must(smokeMini(backend, dir, bucket))
+	report.Steps = append(report.Steps, "Mini received a main-window format change while editing quality and saved both without replacing other Mini preferences")
 	report.Steps = append(report.Steps, "Mini supports selection, on-demand upload sheets, same-bucket skips, four clipboard link formats, clear/undo without changing gallery objects, and fixed controls in all six languages")
 	report.Steps = append(report.Steps, "Mini: native status icon drop adapter installed; persistent flyout, background image clipboard, S3 upload, four link formats and reopen verified")
 	must(smokeWindowCloseBehavior(win, backend))

@@ -87,6 +87,9 @@ func smokeMini(backend *Backend, dir string, bucket *smokeBucket) (resultErr err
 	if err := smokeCapture(panel, dir, "mini-idle.png"); err != nil {
 		return err
 	}
+	if err := smokeMiniCompressionSync(panel, backend, dir); err != nil {
+		return err
+	}
 	mygo.RunOnMain(func() { backend.desktop.main.Focus() })
 	if !panel.IsVisible() {
 		return fmt.Errorf("Mini disappeared when returning to Finder")

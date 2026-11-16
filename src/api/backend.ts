@@ -178,6 +178,8 @@ export const defaultMiniSettings: MiniSettings = {
   enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url",
 };
 
+export type MiniCompressionChanges = Partial<Pick<MiniSettings, "targetFormat" | "quality">>;
+
 export interface MiniItem {
   id: string; name: string; status: "queued" | "compressing" | "uploading" | "completed" | "failed";
   outputName: string; originalBytes: number; outputBytes: number; thumbnail: string;
@@ -198,7 +200,7 @@ export const miniApi = {
   copyImage: (id: string) => invoke<void>("mini_copy_image", { request: { id } }),
   copy: (id: string, linkFormat: MiniSettings["linkFormat"]) => invoke<void>("mini_copy", { request: { id, linkFormat } }),
   copyAll: (linkFormat: MiniSettings["linkFormat"]) => invoke<void>("mini_copy_all", { request: { linkFormat } }),
-  save: (settings: MiniSettings) => invoke<void>("save_mini_settings", { request: { settings } }),
+  saveCompression: (settings: MiniCompressionChanges) => invoke<MiniSettings>("save_mini_compression_settings", { request: { settings } }),
   window: (action: "main" | "close" | "open") => Backend.miniWindow(action),
 };
 

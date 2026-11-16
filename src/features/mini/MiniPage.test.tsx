@@ -1,10 +1,11 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { AppSettings, MiniItem, MiniSettings, MiniState, MiniUploadTarget } from "@/api/backend";
+import type { AppSettings, MiniCompressionChanges, MiniItem, MiniSettings, MiniState, MiniUploadTarget } from "@/api/backend";
 
 const mockApi = vi.hoisted(() => ({
   loadSettings: vi.fn(),
+  onChanged: vi.fn(),
   state: vi.fn(),
   add: vi.fn(),
   upload: vi.fn(),
@@ -25,7 +26,7 @@ const mockDesktop = vi.hoisted(() => ({
 
 vi.mock("@/api/backend", () => ({
   defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
-  settingsApi: { loadSettings: mockApi.loadSettings },
+  settingsApi: { loadSettings: mockApi.loadSettings, onChanged: mockApi.onChanged },
   miniApi: {
     state: mockApi.state,
     add: mockApi.add,
@@ -34,7 +35,7 @@ vi.mock("@/api/backend", () => ({
     clear: mockApi.clear,
     restore: mockApi.restore,
     copyImage: mockApi.copyImage,
-    save: mockApi.save,
+    saveCompression: mockApi.save,
     window: mockApi.window,
     copy: mockApi.copy,
     copyAll: mockApi.copyAll,
@@ -79,7 +80,8 @@ function prepare(settings: AppSettings = defaultSettings, state: MiniState = emp
   mockApi.clear.mockResolvedValue({ ...emptyState, canUndoClear: true });
   mockApi.restore.mockResolvedValue({ ...state, canUndoClear: false });
   mockApi.copyImage.mockResolvedValue(undefined);
-  mockApi.save.mockResolvedValue(undefined);
+  mockApi.save.mockImplementation(async (changes: MiniCompressionChanges) => ({ ...settings.mini!, ...changes }));
+  mockApi.onChanged.mockReturnValue(vi.fn());
   mockApi.window.mockResolvedValue(undefined);
   mockApi.copy.mockResolvedValue(undefined);
   mockApi.copyAll.mockResolvedValue(undefined);
@@ -277,4 +279,57 @@ it("uses a result's saved link format when copying its link", async () => {
   await user.click(screen.getByRole("button", { name: "Copy link result.webp" }));
 
   await waitFor(() => expect(mockApi.copy).toHaveBeenCalledWith(savedFormat.id, "html"));
+});
+
+it("preserves newer Mini preferences when a stale panel edits only quality", async () => {
+  const user = userEvent.setup();
+  await renderReady();
+  let stored: MiniSettings = { ...defaultSettings.mini!, targetFormat: "avif", enabled: false, profileId: "latest-profile", linkFormat: "markdown" };
+  mockApi.save.mockImplementation(async (changes: MiniCompressionChanges) => { stored = { ...stored, ...changes }; return stored; });
+  await user.click(screen.getByRole("button", { name: "Adjust compression settings" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  fireEvent.change(dialog.getByRole("spinbutton", { name: "Quality" }), { target: { value: "85" } });
+  await user.click(dialog.getByRole("button", { name: "Save Mini settings" }));
+  await waitFor(() => expect(mockApi.save).toHaveBeenCalledWith({ quality: 85 }));
+  expect(stored).toMatchObject({ targetFormat: "avif", quality: 85, enabled: false, profileId: "latest-profile", linkFormat: "markdown" });
+  expect(screen.getByRole("button", { name: "Adjust compression settings" })).toHaveTextContent("AVIF");
+});
+
+it("refreshes saved settings and preserves a quality change made while its dialog is open", async () => {
+  let changed: (() => void) | undefined;
+  mockApi.onChanged.mockImplementation((listener: () => void) => { changed = listener; return vi.fn(); });
+  let stored: MiniSettings = { ...defaultSettings.mini! };
+  mockApi.loadSettings.mockImplementation(async () => ({ ...defaultSettings, mini: { ...stored } }));
+  mockApi.state.mockResolvedValue(emptyState);
+  mockApi.save.mockImplementation(async (changes: MiniCompressionChanges) => { stored = { ...stored, ...changes }; return stored; });
+  const user = userEvent.setup();
+  render(<MiniPage />);
+  const header = await screen.findByRole("button", { name: "Adjust compression settings" });
+  await waitFor(() => expect(header).toBeEnabled());
+  await user.click(header);
+  const dialog = within(await screen.findByRole("dialog"));
+  fireEvent.change(dialog.getByRole("combobox", { name: "Image format" }), { target: { value: "png" } });
+  stored = { ...stored, quality: 77 };
+  await act(async () => changed?.());
+  await waitFor(() => expect(header).toHaveTextContent("77%"));
+  await user.click(dialog.getByRole("button", { name: "Save Mini settings" }));
+  await waitFor(() => expect(mockApi.save).toHaveBeenCalledWith({ targetFormat: "png" }));
+  expect(stored).toMatchObject({ targetFormat: "png", quality: 77 });
+});
+
+it("ignores older settings replies and unsubscribes when the panel closes", async () => {
+  let changed: (() => void) | undefined;
+  const unsubscribe = vi.fn();
+  mockApi.onChanged.mockImplementation((listener: () => void) => { changed = listener; return unsubscribe; });
+  let resolveOld: ((settings: AppSettings) => void) | undefined;
+  mockApi.loadSettings.mockImplementationOnce(() => new Promise<AppSettings>((resolve) => { resolveOld = resolve; }));
+  mockApi.loadSettings.mockResolvedValue({ ...defaultSettings, mini: { ...defaultSettings.mini!, targetFormat: "avif" } });
+  const view = render(<MiniPage />);
+  await act(async () => changed?.());
+  const header = screen.getByRole("button", { name: "Adjust compression settings" });
+  await waitFor(() => expect(header).toHaveTextContent("AVIF"));
+  await act(async () => resolveOld?.(defaultSettings));
+  expect(header).toHaveTextContent("AVIF");
+  view.unmount();
+  expect(unsubscribe).toHaveBeenCalledOnce();
 });

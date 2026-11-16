@@ -180,6 +180,13 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 			if err = json.Unmarshal([]byte(payload), &req); err == nil {
 				err = b.mini.CopyAll(req.LinkFormat)
 			}
+		case "save_mini_compression_settings":
+			var req struct {
+				Settings cloud.MiniCompressionSettings `json:"settings"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				value, err = b.cloud.SaveMiniCompressionSettings(req.Settings)
+			}
 		case "save_mini_settings":
 			var req struct {
 				Settings cloud.MiniSettings `json:"settings"`
@@ -192,7 +199,7 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 		default:
 			value, err = b.cloud.Call(ctx, operation, json.RawMessage(payload))
 		}
-		if err == nil && (operation == "save_app_settings" || operation == "save_mini_settings" || operation == "delete_s3_profile") && b.desktop != nil {
+		if err == nil && (operation == "save_app_settings" || operation == "save_mini_settings" || operation == "save_mini_compression_settings" || operation == "delete_s3_profile") && b.desktop != nil {
 			mygo.RunOnMain(b.desktop.refresh)
 			SettingsChanged.Broadcast(true)
 		}

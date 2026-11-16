@@ -156,7 +156,8 @@ func (s *Service) MiniUploadTargets() ([]MiniUploadTarget, error) {
 	return targets, nil
 }
 
-// SaveMiniSettings merges only Mini fields into the latest settings under lock.
+// SaveMiniSettings replaces Mini preferences while preserving other app settings.
+// The panel uses SaveMiniCompressionSettings to merge its individual edits.
 func (s *Service) SaveMiniSettings(cfg MiniSettings) error {
 	cfg.Action = "clipboard"
 	s.mu.Lock()
@@ -170,6 +171,40 @@ func (s *Service) SaveMiniSettings(cfg MiniSettings) error {
 	}
 	v.Mini = &cfg
 	return s.saveSettingsLocked(v)
+}
+
+// MiniCompressionSettings contains only controls edited by the Mini panel.
+// Omitted fields retain the latest saved value, even if another window changed
+// them after the panel or its dialog was opened.
+type MiniCompressionSettings struct {
+	TargetFormat *string `json:"targetFormat,omitempty"`
+	Quality      *int    `json:"quality,omitempty"`
+}
+
+func (s *Service) SaveMiniCompressionSettings(changes MiniCompressionSettings) (MiniSettings, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, err := s.loadSettingsLocked()
+	if err != nil {
+		return MiniSettings{}, err
+	}
+	cfg := *clipboardMiniSettings(v.Mini)
+	if changes.TargetFormat != nil {
+		cfg.TargetFormat = *changes.TargetFormat
+	}
+	if changes.Quality != nil {
+		cfg.Quality = *changes.Quality
+	}
+	if err = validateMini(cfg, v.Profiles); err != nil {
+		return MiniSettings{}, err
+	}
+	if changes.TargetFormat != nil || changes.Quality != nil {
+		v.Mini = &cfg
+		if err = s.saveSettingsLocked(v); err != nil {
+			return MiniSettings{}, err
+		}
+	}
+	return cfg, nil
 }
 
 func (s *Service) UploadMini(ctx context.Context, plan MiniPlan, path, name string) (string, error) {
