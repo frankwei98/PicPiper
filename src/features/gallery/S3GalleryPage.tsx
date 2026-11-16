@@ -300,10 +300,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       }
 
       if (newKeys.length > 0 && isCurrentScope(uploadScope)) {
-        setLocalHighlights({ ...uploadScope, keys: newKeys });
+        const visibleNewObjects = newObjects.filter((object) => object.key.startsWith(uploadScope.prefix));
+        setLocalHighlights({ ...uploadScope, keys: visibleNewObjects.map((object) => object.key) });
         const newKeySet = new Set(newKeys);
         setObjects((current) => sortGalleryObjects([
-          ...newObjects,
+          ...visibleNewObjects,
           ...current.filter((object) => !newKeySet.has(object.key)),
         ], sortOrder));
       }
