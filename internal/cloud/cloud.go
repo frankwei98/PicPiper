@@ -27,14 +27,16 @@ import (
 )
 
 type Service struct {
-	renderThumbnail func(context.Context, string) (string, error)
-	thumbnailSlot   chan struct{}
-	dataDir         string
-	oauthMu         sync.Mutex
-	oauth           *r2Session
-	mu              sync.Mutex
-	client          *http.Client
-	now             func() time.Time
+	renderThumbnail  func(context.Context, string) (string, error)
+	thumbnailSlot    chan struct{}
+	thumbnailCacheMu sync.Mutex
+	thumbnailEpoch   uint64
+	dataDir          string
+	oauthMu          sync.Mutex
+	oauth            *r2Session
+	mu               sync.Mutex
+	client           *http.Client
+	now              func() time.Time
 }
 
 func New(dataDir string) *Service {

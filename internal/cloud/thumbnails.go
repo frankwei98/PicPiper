@@ -23,6 +23,7 @@ const thumbnailCacheBytes int64 = 128 << 20
 func NewWithThumbnails(dataDir string, render func(context.Context, string) (string, error)) *Service {
 	s := New(dataDir)
 	s.renderThumbnail = render
+	s.pruneThumbnails(filepath.Join(dataDir, "gallery-thumbnails"), thumbnailCacheBytes)
 	return s
 }
 
@@ -45,6 +46,9 @@ func validThumbnail(data []byte) bool {
 }
 
 func (s *Service) readGalleryThumbnail(ctx context.Context, p thumbnailRequest) (any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := validateProfile(p.Profile); err != nil {
 		return nil, err
 	}
@@ -54,7 +58,15 @@ func (s *Service) readGalleryThumbnail(ctx context.Context, p thumbnailRequest) 
 	if !isImage(p.Key) {
 		return nil, appErr("thumbnailUnavailable", "This object is not an image.")
 	}
-	// One miss at a time bounds network buffers and deduplicates concurrent reads.
+	version, _ := json.Marshal([]any{"v1-384", p.ETag, p.Size, p.LastModified})
+	hash := sha256.Sum256(version)
+	dir := filepath.Join(s.dataDir, "gallery-thumbnails")
+	cachePath := filepath.Join(dir, thumbnailIdentity(p.Profile, p.Key)+"-"+hex.EncodeToString(hash[:])+".thumb")
+	if data, ok := s.cachedThumbnail(cachePath); ok {
+		return map[string]string{"dataUrl": data}, nil
+	}
+	// Only misses need the bounded renderer slot. Recheck after acquiring it
+	// so concurrent requests for the same object share the completed cache.
 	select {
 	case s.thumbnailSlot <- struct{}{}:
 		defer func() { <-s.thumbnailSlot }()
@@ -66,19 +78,12 @@ func (s *Service) readGalleryThumbnail(ctx context.Context, p thumbnailRequest) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	version, _ := json.Marshal([]any{"v1-384", p.ETag, p.Size, p.LastModified})
-	hash := sha256.Sum256(version)
-	dir := filepath.Join(s.dataDir, "gallery-thumbnails")
-	cachePath := filepath.Join(dir, thumbnailIdentity(p.Profile, p.Key)+"-"+hex.EncodeToString(hash[:])+".thumb")
-	if file, err := os.Open(cachePath); err == nil {
-		data, readErr := io.ReadAll(io.LimitReader(file, maxThumbnailBytes+1))
-		file.Close()
-		if readErr == nil && validThumbnail(data) {
-			_ = os.Chtimes(cachePath, s.now(), s.now())
-			return map[string]string{"dataUrl": string(data)}, nil
-		}
-		_ = os.Remove(cachePath)
+	if data, ok := s.cachedThumbnail(cachePath); ok {
+		return map[string]string{"dataUrl": data}, nil
 	}
+	s.thumbnailCacheMu.Lock()
+	epoch := s.thumbnailEpoch
+	s.thumbnailCacheMu.Unlock()
 	if s.renderThumbnail == nil {
 		return nil, appErr("thumbnailUnavailable", "Image preview is unavailable.")
 	}
@@ -120,10 +125,19 @@ func (s *Service) readGalleryThumbnail(ctx context.Context, p thumbnailRequest) 
 	if !validThumbnail([]byte(dataURL)) {
 		return nil, appErr("thumbnailUnavailable", "Could not generate the image thumbnail.")
 	}
-	if err = atomicWrite(cachePath, []byte(dataURL), 0600, "thumbnailCacheFailed"); err != nil {
+	s.thumbnailCacheMu.Lock()
+	// Deletion never waits for network/rendering. A deletion during this miss
+	// invalidates its publication, so an in-flight renderer cannot undo it.
+	if epoch == s.thumbnailEpoch {
+		err = atomicWrite(cachePath, []byte(dataURL), 0600, "thumbnailCacheFailed")
+		if err == nil {
+			s.pruneThumbnails(dir, thumbnailCacheBytes)
+		}
+	}
+	s.thumbnailCacheMu.Unlock()
+	if err != nil {
 		return nil, err
 	}
-	s.pruneThumbnails(dir, thumbnailCacheBytes)
 	return map[string]string{"dataUrl": dataURL}, nil
 }
 
@@ -137,6 +151,12 @@ func (s *Service) pruneThumbnails(dir string, budget int64) {
 	files := []cached{}
 	var total int64
 	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "source-") {
+			if info, err := entry.Info(); err == nil && info.Mode().IsRegular() && s.now().Sub(info.ModTime()) > time.Hour {
+				_ = os.Remove(filepath.Join(dir, entry.Name()))
+			}
+			continue
+		}
 		if !strings.HasSuffix(entry.Name(), ".thumb") {
 			continue
 		}
@@ -159,12 +179,9 @@ func (s *Service) pruneThumbnails(dir string, budget int64) {
 }
 
 func (s *Service) removeGalleryThumbnails(ctx context.Context, p profile, key string) {
-	select {
-	case s.thumbnailSlot <- struct{}{}:
-		defer func() { <-s.thumbnailSlot }()
-	case <-ctx.Done():
-		return
-	}
+	s.thumbnailCacheMu.Lock()
+	defer s.thumbnailCacheMu.Unlock()
+	s.thumbnailEpoch++
 	dir := filepath.Join(s.dataDir, "gallery-thumbnails")
 	entries, _ := os.ReadDir(dir)
 	prefix := thumbnailIdentity(p, key) + "-"
@@ -173,4 +190,21 @@ func (s *Service) removeGalleryThumbnails(ctx context.Context, p profile, key st
 			_ = os.Remove(filepath.Join(dir, entry.Name()))
 		}
 	}
+}
+
+func (s *Service) cachedThumbnail(path string) (string, bool) {
+	s.thumbnailCacheMu.Lock()
+	defer s.thumbnailCacheMu.Unlock()
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, maxThumbnailBytes+1))
+	file.Close()
+	if readErr == nil && validThumbnail(data) {
+		_ = os.Chtimes(path, s.now(), s.now())
+		return string(data), true
+	}
+	_ = os.Remove(path)
+	return "", false
 }
