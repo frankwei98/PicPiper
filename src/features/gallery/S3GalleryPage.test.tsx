@@ -1092,6 +1092,18 @@ describe("S3GalleryPage", () => {
     ));
   });
 
+  it("keeps uploads outside the current gallery prefix out of the visible results", async () => {
+    mockDialogOpen.mockResolvedValueOnce(["/tmp/new-photo.jpg"] as unknown as string);
+    generateObjectKey.mockResolvedValueOnce({ objectKey: "2026/06/outside.webp" });
+    uploadObject.mockResolvedValueOnce({ key: "2026/06/outside.webp", size: 12, isImage: true, publicUrl: "https://cdn.example.test/2026/06/outside.webp" });
+    render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+    await screen.findByText("images/photo.webp");
+    await userEvent.setup().click(screen.getByRole("button", { name: /upload local images/i }));
+    await screen.findByText("Uploaded 1 image(s).");
+    expect(screen.queryByText("2026/06/outside.webp")).not.toBeInTheDocument();
+    expect(screen.getByText("images/photo.webp")).toBeInTheDocument();
+  });
+
   it("reports partial success without discarding the loaded pages", async () => {
     mockDialogOpen.mockResolvedValueOnce([
       "/tmp/first-photo.jpg",
