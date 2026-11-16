@@ -241,7 +241,10 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		defer resp.Body.Close()
 		path, err := saveUnique(p.OutputDir, name, resp.Body)
 		if err != nil {
-			return nil, appErr("downloadWriteFailed", err.Error())
+			if cause := requestContextError(err); cause != nil {
+				return nil, cause
+			}
+			return nil, appErr("downloadWriteFailed", "Could not save the downloaded image. Check folder permissions and disk space.")
 		}
 		return path, nil
 	case "upload_gallery_object":
@@ -820,7 +823,23 @@ func (s *Service) doList(ctx context.Context, p profile, secret string, q url.Va
 	}
 	return resp, nil
 }
-func s3error(code string, e error) error { return appErr(code, e.Error()) }
+func requestContextError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	var timeout net.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func s3error(code string, err error) error {
+	if cause := requestContextError(err); cause != nil {
+		return cause
+	}
+	return appErr(code, safeR2ProbeError(err).Error())
+}
 func makeObject(p profile, key string, size int64, lm *string) galleryObject {
 	o := galleryObject{Key: key, Size: size, LastModified: lm, IsImage: isImage(key)}
 	if p.PublicBaseURL != nil {
