@@ -242,8 +242,11 @@ func (s *Service) verifyUpload(ctx context.Context, p profile, secret string, re
 		return false, err
 	}
 	defer resp.Body.Close()
-	return resp.Header.Get("X-Amz-Meta-Picpiper-Upload-Id") == record.UploadID &&
-		(record.ETag == "" || resp.Header.Get("ETag") == record.ETag), nil
+	uploadID, etag := resp.Header.Get("X-Amz-Meta-Picpiper-Upload-Id"), resp.Header.Get("ETag")
+	if uploadID == "" || (uploadID == record.UploadID && record.ETag != "" && etag == "") {
+		return false, appErr("s3ObjectUnverified", "The provider did not return enough metadata to verify this upload.")
+	}
+	return uploadID == record.UploadID && (record.ETag == "" || etag == record.ETag), nil
 }
 
 func compareUpload(a, b uploadedImage, order string) int {
@@ -340,6 +343,9 @@ func (s *Service) listUploads(ctx context.Context, request galleryRequest, secre
 			})
 		}
 		workers.Wait()
+		if err := ctx.Err(); err != nil {
+			return listResponse{}, err
+		}
 		for offset, check := range checks {
 			if check.err == nil && !check.valid {
 				invalid = append(invalid, batch[offset])
@@ -349,7 +355,8 @@ func (s *Service) listUploads(ctx context.Context, request galleryRequest, secre
 		// The next batch fills gaps left by deleted or replaced objects.
 		for offset, check := range checks {
 			if check.err != nil {
-				return listResponse{}, appErr("s3ListFailed", "Could not check uploaded images in this bucket.")
+				out.UnverifiedCount++
+				continue
 			}
 			if !check.valid {
 				continue

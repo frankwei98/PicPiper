@@ -41,6 +41,8 @@
   "Downloading": "Descargando",
   "No loaded objects match this search.": "Ningún objeto cargado coincide con esta búsqueda.",
   "No objects found.": "No se encontraron objetos.",
+  "Unverified objects hidden: {{count}}.": "Objetos no verificados ocultos: {{count}}.",
+  "Refresh to retry": "Actualizar para reintentar",
   "Search only covers loaded objects. Load more to continue searching.": "La búsqueda solo incluye los objetos cargados. Carga más para seguir buscando.",
   "Search only covers loaded objects in this prefix.": "La búsqueda solo incluye los objetos cargados de este prefijo.",
   "Upload images or adjust the current prefix.": "Sube imágenes o cambia el prefijo actual.",

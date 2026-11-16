@@ -126,6 +126,7 @@ describe("S3GalleryPage", () => {
 
     expect(await screen.findByText("images/photo.webp")).toBeInTheDocument();
     expect(listObjects).toHaveBeenCalledWith({ profile, prefix: "images" });
+    expect(screen.queryByText(/Unverified objects hidden:/)).not.toBeInTheDocument();
   });
 
   it("reloads the full scope with the selected order and carries it into pagination", async () => {
@@ -221,6 +222,49 @@ describe("S3GalleryPage", () => {
     });
     expect(screen.getByText("images/page-one.webp")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("accumulates unverified counts across pages and refresh resets the warning", async () => {
+    listObjects
+      .mockResolvedValueOnce({ objects: [{ key: "page-one.png", size: 1, isImage: true }], nextContinuationToken: "next", unverifiedCount: 2 })
+      .mockResolvedValueOnce({ objects: [{ key: "page-two.png", size: 1, isImage: true }], nextContinuationToken: null, unverifiedCount: 3 })
+      .mockResolvedValueOnce({ objects: [{ key: "page-one.png", size: 1, isImage: true }], nextContinuationToken: null, unverifiedCount: 1 });
+    const user = userEvent.setup();
+    render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+
+    await screen.findByText("page-one.png");
+    expect(await screen.findByText("Unverified objects hidden: 2.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    await screen.findByText("page-two.png");
+    expect(screen.getByText("Unverified objects hidden: 5.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Refresh to retry" }));
+    await waitFor(() => expect(listObjects).toHaveBeenCalledTimes(3));
+    expect(await screen.findByText("Unverified objects hidden: 1.")).toBeInTheDocument();
+  });
+
+  it("shows an unverified warning even when the page has no verified objects", async () => {
+    listObjects.mockResolvedValueOnce({ objects: [], nextContinuationToken: null, unverifiedCount: 4 });
+    render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+
+    expect(await screen.findByText("No objects found.")).toBeInTheDocument();
+    expect(screen.getByText("Unverified objects hidden: 4.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh to retry" })).toBeInTheDocument();
+  });
+
+  it("does not let an old scope response replace the current unverified count", async () => {
+    const profile2 = { ...profile, id: "p2", name: "Work S3", defaultPrefix: "work/images" };
+    const requests: Array<{ resolve: (value: unknown) => void }> = [];
+    listObjects.mockImplementation(() => new Promise((resolve) => { requests.push({ resolve }); }));
+    const user = userEvent.setup();
+    render(<S3GalleryPage galleryFocus={{ profileId: "p1", prefix: "images", highlightedKeys: [] }} profiles={[profile, profile2]} />);
+    await waitFor(() => expect(requests).toHaveLength(1));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Profile" }), "p2");
+    await waitFor(() => expect(requests).toHaveLength(2));
+    await act(async () => requests[1]!.resolve({ objects: [{ key: "work/images/current.png", size: 1, isImage: true }], unverifiedCount: 1 }));
+    await screen.findByText("work/images/current.png");
+    await act(async () => requests[0]!.resolve({ objects: [], unverifiedCount: 9 }));
+    expect(screen.getByText("Unverified objects hidden: 1.")).toBeInTheDocument();
+    expect(screen.queryByText("Unverified objects hidden: 9.")).not.toBeInTheDocument();
   });
 
   it("shows skeleton cards during pagination while keeping the loaded page", async () => {

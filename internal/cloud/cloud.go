@@ -90,6 +90,7 @@ type galleryObject struct {
 	IsImage             bool    `json:"isImage"`
 }
 type listResponse struct {
+	UnverifiedCount       int             `json:"unverifiedCount,omitempty"`
 	Objects               []galleryObject `json:"objects"`
 	NextContinuationToken *string         `json:"nextContinuationToken"`
 }

@@ -41,6 +41,8 @@
   "Downloading": "正在下载",
   "No loaded objects match this search.": "已加载的对象中没有符合此搜索条件的内容。",
   "No objects found.": "未找到对象。",
+  "Unverified objects hidden: {{count}}.": "有 {{count}} 个对象因未能验证而暂不显示。",
+  "Refresh to retry": "刷新重试",
   "Search only covers loaded objects. Load more to continue searching.": "搜索范围仅包括已加载的对象。加载更多内容以继续搜索。",
   "Search only covers loaded objects in this prefix.": "搜索范围仅包括此此前缀下已加载的对象。",
   "Upload images or adjust the current prefix.": "上传图片或调整当前前缀。",
