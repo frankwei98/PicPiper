@@ -27,6 +27,54 @@ type exportReaderFunc func([]byte) (int, error)
 
 func (read exportReaderFunc) Read(buffer []byte) (int, error) { return read(buffer) }
 
+func TestExportFallsBackWhenHardLinksAreUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "staged")
+	if err := os.WriteFile(source, []byte("complete image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(dir, "photo.png")
+	unsupported := func(string, string) error { return errors.New("operation not supported") }
+	if err := publishExportWith(unsupported, source, destination); err != nil {
+		t.Fatalf("fallback copy failed: %v", err)
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil || string(data) != "complete image" {
+		t.Fatalf("fallback content = %q, %v", data, err)
+	}
+}
+
+func TestExportFallbackNeverReplacesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "staged")
+	destination := filepath.Join(dir, "photo.png")
+	if err := os.WriteFile(source, []byte("new image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("user file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	unsupported := func(string, string) error { return errors.New("operation not supported") }
+	if err := publishExportWith(unsupported, source, destination); !os.IsExist(err) {
+		t.Fatalf("expected an exclusive-create conflict, got %v", err)
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil || string(data) != "user file" {
+		t.Fatalf("existing file changed: %q %v", data, err)
+	}
+}
+
+func TestExportFallbackRemovesIncompleteCopy(t *testing.T) {
+	source := t.TempDir()
+	destination := filepath.Join(t.TempDir(), "photo.png")
+	if err := copyExclusive(source, destination); err == nil {
+		t.Fatal("expected a copy failure")
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatalf("partial export left behind: %v", err)
+	}
+}
+
 func TestExportPreservesFilesCreatedDuringCopy(t *testing.T) {
 	for _, outcome := range []string{"failure", "cancellation", "success"} {
 		t.Run(outcome, func(t *testing.T) {
