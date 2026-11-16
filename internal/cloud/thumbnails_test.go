@@ -155,3 +155,87 @@ func TestThumbnailCacheEvictsOldestAndDeletionClearsVersions(t *testing.T) {
 		t.Fatal("deleted object left cached thumbnails")
 	}
 }
+
+func TestCachedThumbnailsAndDeletionDoNotWaitForRendering(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	s := NewWithThumbnails(t.TempDir(), func(ctx context.Context, path string) (string, error) {
+		data, _ := os.ReadFile(path)
+		if string(data) == "blocked" {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		return "data:image/png;base64,c3ludGhldGlj", nil
+	})
+	p := testProfile("https://s3.example.test")
+	if _, err := s.saveSecret(p.ID, "fake-secret"); err != nil {
+		t.Fatal(err)
+	}
+	s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodDelete {
+			return r2Response(204, ""), nil
+		}
+		if strings.HasSuffix(r.URL.Path, "blocked.png") {
+			return r2Response(200, "blocked"), nil
+		}
+		return r2Response(200, "cached"), nil
+	})
+	cached := thumbnailRequest{Profile: p, Key: "cached.png", ETag: "v1"}
+	if _, err := s.readGalleryThumbnail(context.Background(), cached); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := s.readGalleryThumbnail(context.Background(), thumbnailRequest{Profile: p, Key: "blocked.png"})
+		done <- err
+	}()
+	defer func() {
+		releaseOnce()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+		files, _ := filepath.Glob(filepath.Join(s.dataDir, "gallery-thumbnails", thumbnailIdentity(p, "blocked.png")+"-*.thumb"))
+		if len(files) != 0 {
+			t.Error("in-flight rendering republished deleted thumbnail")
+		}
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("render did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := s.readGalleryThumbnail(ctx, cached); err != nil {
+		t.Fatalf("cache hit waited for renderer: %v", err)
+	}
+	deleted := make(chan struct{})
+	go func() { s.removeGalleryThumbnails(context.Background(), p, "blocked.png"); close(deleted) }()
+	select {
+	case <-deleted:
+	case <-time.After(time.Second):
+		t.Fatal("cache deletion waited for renderer")
+	}
+}
+
+func TestThumbnailStartupRemovesOnlyStaleSources(t *testing.T) {
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "gallery-thumbnails")
+	os.MkdirAll(cache, 0700)
+	old, fresh := filepath.Join(cache, "source-stale"), filepath.Join(cache, "source-active")
+	os.WriteFile(old, []byte("old"), 0600)
+	os.WriteFile(fresh, []byte("new"), 0600)
+	past := time.Now().Add(-2 * time.Hour)
+	os.Chtimes(old, past, past)
+	NewWithThumbnails(dir, nil)
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatal("stale source remained")
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatal("active source removed")
+	}
+}
