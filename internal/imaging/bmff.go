@@ -54,8 +54,11 @@ func scanItemColorProperties(file *os.File, end int64, result *sourceProperties)
 					continue
 				}
 				property := properties[index-1]
-				if property.kind == "colr" {
+				switch property.kind {
+				case "colr":
 					readItemColor(file, property, result)
+				case "irot":
+					readItemRotation(file, property, result)
 				}
 			}
 		}
@@ -149,6 +152,15 @@ func primaryAssociations(data []byte, primary uint32) []uint16 {
 		}
 	}
 	return indices
+}
+
+// readItemRotation records the primary item's irot angle. The AVIF decoder
+// applies 90/270-degree rotations to pixels, so inspection must report the
+// same exchanged dimensions.
+func readItemRotation(file *os.File, box itemBox, result *sourceProperties) {
+	if data := itemBoxData(file, box, 4); len(data) > 0 {
+		result.rotation = int(data[0] & 0x03)
+	}
 }
 
 func readItemColor(file *os.File, box itemBox, result *sourceProperties) {

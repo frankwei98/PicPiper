@@ -178,8 +178,9 @@ func inspect(path string) (Inspection, error) {
 	if cfg.Width < 1 || cfg.Height < 1 || cfg.Width > maxPixels || cfg.Height > maxPixels || int64(cfg.Width)*int64(cfg.Height) > maxPixels {
 		return Inspection{}, apperror.New("imageTooLarge", "Images must contain at most 40 million pixels.")
 	}
+	metadata := properties(file)
 	width, height := cfg.Width, cfg.Height
-	if orientationFromFile(file) >= 5 {
+	if orientationFromFile(file) >= 5 || (format == "avif" && metadata.rotation%2 == 1) {
 		width, height = height, width
 	}
 	switch format {
@@ -188,7 +189,6 @@ func inspect(path string) (Inspection, error) {
 	case "heic":
 		format = "heif"
 	}
-	metadata := properties(file)
 	if err := validateColorProperties(metadata); err != nil {
 		return Inspection{}, err
 	}
