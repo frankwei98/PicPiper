@@ -3,6 +3,7 @@ package main
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestPreparedUpdateWaitsForTasks(t *testing.T) {
@@ -15,11 +16,11 @@ func TestPreparedUpdateWaitsForTasks(t *testing.T) {
 		t.Fatal("quit interrupted active request")
 	}
 	done()
-	u.queues = map[string]bool{"optimize": true}
+	u.queues = map[string]time.Time{"optimize": time.Now().Add(activityLeaseDuration)}
 	if u.prepareQuit(false, false) {
 		t.Fatal("quit interrupted batch between requests")
 	}
-	u.queues["optimize"] = false
+	delete(u.queues, "optimize")
 	if u.prepareQuit(true, false) {
 		t.Fatal("quit interrupted Mini")
 	}
@@ -82,5 +83,42 @@ func TestUploadLeasesSurviveNavigationAndIndependentBatches(t *testing.T) {
 	}
 	if _, err := u.call("update_activity", []byte(`{"scope":"gallery","id":"third","busy":true}`)); err == nil {
 		t.Fatal("batch started during quit")
+	}
+}
+
+func TestExpiredActivityLeaseDoesNotBlockRestart(t *testing.T) {
+	now := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	u := &updateController{installed: true, now: func() time.Time { return now }}
+	if _, err := u.call("update_activity", []byte(`{"scope":"gallery","id":"old-page","busy":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(activityLeaseDuration + time.Second)
+	if !u.prepareQuit(false, false) {
+		t.Fatal("expired page lease permanently blocked restart")
+	}
+}
+
+func TestActivityHeartbeatAndRunningRequestsKeepRestartDeferred(t *testing.T) {
+	now := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	u := &updateController{installed: true, now: func() time.Time { return now }}
+	payload := []byte(`{"scope":"gallery","id":"live-page","busy":true}`)
+	u.call("update_activity", payload)
+	now = now.Add(activityLeaseDuration / 2)
+	u.call("update_activity", payload)
+	now = now.Add(activityLeaseDuration/2 + time.Second)
+	if u.prepareQuit(false, false) {
+		t.Fatal("renewed lease allowed restart")
+	}
+	done, err := u.begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(activityLeaseDuration + time.Second)
+	if u.prepareQuit(false, false) {
+		t.Fatal("long running request was interrupted after lease expiry")
+	}
+	done()
+	if !u.prepareQuit(false, false) {
+		t.Fatal("completed request left restart blocked")
 	}
 }

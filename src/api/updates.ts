@@ -38,6 +38,9 @@ export function useUpdateActivity(scope: "optimize" | "gallery", busy: boolean) 
   useEffect(() => {
     if (!isMyGo()) return;
     activity(scope, busy);
+    if (!busy) return;
+    const heartbeat = setInterval(() => activity(scope, true), 15_000);
+    return () => clearInterval(heartbeat);
   }, [scope, busy]);
   useEffect(() => () => { if (isMyGo()) activity(scope, false); }, [scope]);
 }
@@ -48,5 +51,19 @@ export async function beginUpdateActivity(scope: "gallery"): Promise<() => Promi
   if (!isMyGo()) return async () => {};
   const id = crypto.randomUUID();
   await call<void>("update_activity", { scope, id, busy: true });
-  return () => call<void>("update_activity", { scope, id, busy: false }).catch(() => {});
+  let writes = Promise.resolve();
+  let ended = false;
+  const heartbeat = setInterval(() => {
+    writes = writes.then(async () => {
+      if (!ended) await call<void>("update_activity", { scope, id, busy: true });
+    }).catch(() => {});
+  }, 15_000);
+  return async () => {
+    if (ended) return;
+    ended = true;
+    clearInterval(heartbeat);
+    // A late renewal must not resurrect a lease that was already released.
+    await writes;
+    await call<void>("update_activity", { scope, id, busy: false }).catch(() => {});
+  };
 }
