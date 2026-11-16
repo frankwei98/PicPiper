@@ -3,17 +3,22 @@ package mini
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/frankwei98/PicPiper/internal/apperror"
 	"github.com/frankwei98/PicPiper/internal/cloud"
 	"github.com/frankwei98/PicPiper/internal/imaging"
 )
@@ -45,6 +50,78 @@ func TestMiniOutputFileNameSanitizesWindowsInvalidStems(t *testing.T) {
 			t.Errorf("miniOutputFileName(%q) = %q, want %q", test.input, got, test.want)
 		}
 	}
+}
+
+func TestMiniAPNGErrorGuidesUserToMainWindow(t *testing.T) {
+	dir := t.TempDir()
+	images := imaging.New(dir)
+	defer images.Close()
+	storage := cloud.New(dir)
+	settings := cloud.DefaultMiniSettings()
+	settings.Enabled = true
+	settings.TargetFormat = "webp"
+	if err := storage.SaveMiniSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	path := writeMiniAPNG(t, dir)
+	service := New(images, storage, func([]byte) error { return nil }, func(string) error { return nil })
+	defer service.Close()
+	if err := service.Add([]string{path}); err != nil {
+		t.Fatal(err)
+	}
+	state := miniIdle(t, service)
+	if len(state.Items) != 1 || state.Items[0].Status != "failed" {
+		t.Fatalf("APNG did not fail in Mini as expected: %+v", state.Items)
+	}
+	message := state.Items[0].Error
+	if !strings.Contains(message, "main window") || strings.Contains(message, "First frame only") {
+		t.Fatalf("Mini gave an unavailable action instead of a usable direction: %q", message)
+	}
+}
+
+func TestMiniImageErrorMapsAnimationSettingsFailures(t *testing.T) {
+	for _, code := range []string{"animationUnsupported", "animationNeedsTarget"} {
+		var mapped *apperror.Error
+		if err := miniImageError(apperror.New(code, "source error")); !errors.As(err, &mapped) {
+			t.Fatalf("%s error was not mapped to an app error: %v", code, err)
+		}
+		if mapped.Code != "miniAnimationUnsupported" || !strings.Contains(mapped.Message, "main window") {
+			t.Fatalf("%s error mapping was not Mini-specific: %+v", code, mapped)
+		}
+	}
+}
+
+func writeMiniAPNG(t *testing.T, dir string) string {
+	t.Helper()
+	var plain bytes.Buffer
+	if err := png.Encode(&plain, image.NewNRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	base := plain.Bytes()
+	data := append([]byte{}, base[:33]...)
+	data = append(data, miniPNGChunk("acTL", binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, 1), 0))...)
+	frame := make([]byte, 26)
+	binary.BigEndian.PutUint32(frame[4:8], 2)
+	binary.BigEndian.PutUint32(frame[8:12], 2)
+	binary.BigEndian.PutUint16(frame[20:22], 1)
+	binary.BigEndian.PutUint16(frame[22:24], 10)
+	data = append(data, miniPNGChunk("fcTL", frame)...)
+	data = append(data, base[33:]...)
+	path := filepath.Join(dir, "animated.apng")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func miniPNGChunk(kind string, payload []byte) []byte {
+	chunk := make([]byte, 12+len(payload))
+	binary.BigEndian.PutUint32(chunk[:4], uint32(len(payload)))
+	copy(chunk[4:8], kind)
+	copy(chunk[8:], payload)
+	checksum := crc32.ChecksumIEEE(chunk[4 : 8+len(payload)])
+	binary.BigEndian.PutUint32(chunk[8+len(payload):], checksum)
+	return chunk
 }
 
 func TestQueueCopiesDecodedImageWithAlphaAndPreservesSource(t *testing.T) {
