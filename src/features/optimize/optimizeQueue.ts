@@ -17,7 +17,12 @@ export function getCompressionConcurrency(hardwareConcurrency: number | undefine
 
 export function makeOutputFileName(fileName: string, targetFormat: WritableImageFormat): string {
   const base = fileName.replace(/\.[^.]+$/, "");
-  const stem = base || fileName || "image";
+  let stem = base.replace(/[<>:"/\\|?*\u0000-\u001f\u007f-\u009f]/g, "_").replace(/[. ]+$/g, "");
+  if (!stem) stem = "image";
+  const firstComponent = stem.split(".", 1)[0];
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(firstComponent)) {
+    stem = `${firstComponent}-image${stem.slice(firstComponent.length)}`;
+  }
   return `${stem}.${targetFormat}`;
 }
 
