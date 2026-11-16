@@ -128,6 +128,14 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		}
 		return s.r2Call(ctx, operation, p)
 
+	case "delete_s3_profile":
+		var p struct {
+			ProfileID string `json:"profileId"`
+		}
+		if err := decode("profileId", &p); err != nil {
+			return nil, err
+		}
+		return s.deleteProfile(p.ProfileID)
 	case "load_app_settings":
 		return s.loadSettings()
 	case "save_app_settings":

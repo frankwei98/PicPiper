@@ -17,6 +17,16 @@ import { errorMessage } from "../../lib/error";
 import { MiniPreferences, miniSettingsValid } from "@/features/mini/MiniPreferences";
 import { PreferenceRow } from "@/components/ui/preference-row";
 import { UpdatePreferences } from "./UpdatePreferences";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface SettingsPageProps {
   settings: AppSettings;
@@ -154,6 +164,10 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
   const [saving, setSaving] = useState(false);
   const [providerBusy, setProviderBusy] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<S3Profile | null>(null);
+  const [deletingProfile, setDeletingProfile] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const connectionGenerationRef = useRef(0);
@@ -229,6 +243,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
   });
 
   const handleTestConnection = async () => {
+    if (saving || deletingProfile || testingConnection) return;
     const generation = ++connectionGenerationRef.current;
     setConnectionMessage(null);
     setConnectionError(null);
@@ -258,6 +273,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
 
   const handleSaveProfile = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (saving || deletingProfile || testingConnection) return;
     setSaveError(null);
     setSaveMessage(null);
     const errors = validateProfileFields(t("Secret access key is required for a new profile."));
@@ -326,6 +342,30 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
     }
   };
 
+  const handleDeleteProfile = async () => {
+    if (!deleteTarget || deletingProfile || saving || testingConnection) return;
+    setDeleteError(null);
+    setDeleteMessage(null);
+    setSaveMessage(null);
+    setSaveError(null);
+    setConnectionMessage(null);
+    setDeletingProfile(true);
+    try {
+      const nextSettings = await settingsApi.deleteProfile(deleteTarget.id);
+      onSettingsChange(nextSettings);
+      const nextProfile = nextSettings.profiles.find((entry) => entry.id === nextSettings.defaultProfileId) ?? nextSettings.profiles[0];
+      setCreatingNew(!nextProfile);
+      setEditingProfileId(nextProfile?.id ?? "");
+      setSecretAccessKey("");
+      setDeleteTarget(null);
+      setDeleteMessage(t("Profile deleted."));
+    } catch (error) {
+      setDeleteError(errorMessage(error, t("Failed to delete profile.")));
+    } finally {
+      setDeletingProfile(false);
+    }
+  };
+
   const fieldProps = (field: ProfileField) => ({
     ref: (element: HTMLInputElement | null) => { if (element) fieldRefs.current[field] = element; },
     "aria-invalid": Boolean(fieldErrors[field]),
@@ -351,7 +391,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
         <Tabs.List className="settings-navigation" aria-label={t("Settings categories")} activateOnFocus>
           {SECTION_GROUPS.map((group) => <div key={group.label} className="settings-nav-group">
             <h3>{t(group.label)}</h3>
-            {group.items.map(({ id, label, icon: Icon }) => <Tabs.Tab key={id} value={id} id={`settings-tab-${id}`} className={cn(buttonVariants({ variant: "ghost" }))} disabled={saving || testingConnection || generalSaving}>
+            {group.items.map(({ id, label, icon: Icon }) => <Tabs.Tab key={id} value={id} id={`settings-tab-${id}`} className={cn(buttonVariants({ variant: "ghost" }))} disabled={saving || testingConnection || deletingProfile || generalSaving}>
               <Icon className="size-4" aria-hidden="true" />{t(label)}
             </Tabs.Tab>)}
           </div>)}
@@ -399,7 +439,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
           {section === "oauth" && isActive && <R2Connect onConnected={onSettingsChange} onBusyChange={setProviderBusy} disabled={saving || testingConnection} />}
         </Tabs.Panel>
         <Tabs.Panel value={section === "publishing" ? "publishing" : "storage"} id="settings-section-profile" keepMounted render={<form className="settings-sheet" onSubmit={handleSaveProfile} />}>
-          <fieldset className="settings-fields" disabled={saving || providerBusy}>
+          <fieldset className="settings-fields" disabled={saving || providerBusy || deletingProfile}>
             <header className="settings-heading">
               <h2 className="settings-title">{t(section === "publishing" ? "Links and naming" : "S3 profiles")}</h2>
               <Button variant="outline" type="button" aria-label={t("Add profile")} onClick={() => { setCreatingNew(true); changeSection("storage"); }}>{t("Add manually")}</Button>
@@ -453,12 +493,14 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
               </section>
             </div>
             <footer className="settings-actions">
-              {section === "storage" && <Button variant="outline" type="button" onClick={handleTestConnection} disabled={testingConnection || saving}>{testingConnection ? t("Testing...") : t("Test connection")}</Button>}
-              <Button type="submit" disabled={saving || testingConnection}>{t("Save profile")}</Button>
+              {section === "storage" && <Button variant="outline" type="button" onClick={handleTestConnection} disabled={testingConnection || saving || deletingProfile}>{testingConnection ? t("Testing...") : t("Test connection")}</Button>}
+              <Button type="submit" disabled={saving || testingConnection || deletingProfile}>{t("Save profile")}</Button>
+              {section === "storage" && profile && <Button variant="destructive" type="button" onClick={() => { setDeleteError(null); setDeleteMessage(null); setDeleteTarget(profile); }} disabled={saving || testingConnection || deletingProfile || providerBusy}>{t("Delete profile")}</Button>}
             </footer>
-            {(saving || saveMessage || connectionMessage || connectionError || saveError) && <div className="settings-status">
+            {(saving || saveMessage || deleteMessage || connectionMessage || connectionError || saveError) && <div className="settings-status">
               {saving && <p role="status">{t("Saving profile...")}</p>}
               {saveMessage && <p role="status">{saveMessage}</p>}
+              {deleteMessage && <p role="status">{deleteMessage}</p>}
               {connectionMessage && <p role="status">{connectionMessage}</p>}
               {connectionError && <Alert variant="destructive"><AlertDescription>{connectionError}</AlertDescription></Alert>}
               {saveError && <Alert variant="destructive"><AlertDescription>{saveError}</AlertDescription></Alert>}
@@ -466,6 +508,24 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
           </fieldset>
         </Tabs.Panel>
       </div>
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open && !deletingProfile) { setDeleteTarget(null); setDeleteError(null); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Delete profile?")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="block">{t("This will remove {{name}} and its saved credentials from this device.", { name: deleteTarget?.name ?? "" })}</span>
+              <span className="block">{t("Objects in this bucket will remain in S3.")}</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError && <Alert variant="destructive"><AlertDescription>{deleteError}</AlertDescription></Alert>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingProfile}>{t("Cancel")}</AlertDialogCancel>
+            <AlertDialogAction disabled={deletingProfile} onClick={(event) => { event.preventDefault(); void handleDeleteProfile(); }}>
+              {deletingProfile ? t("Deleting...") : t("Delete profile")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Tabs.Root>
   );
 }

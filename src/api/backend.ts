@@ -216,6 +216,7 @@ export const settingsApi = {
   onChanged: (listener: () => void): (() => void) => isMyGo() ? events.settingsChanged.on(() => listener()) : () => {},
   loadSettings: () => invoke<AppSettings>("load_app_settings"),
   saveSettings: (settings: AppSettings) => invoke<void>("save_app_settings", { request: { settings } }),
+  deleteProfile: (profileId: string) => invoke<AppSettings>("delete_s3_profile", { request: { profileId } }),
   saveS3Secret: (request: SaveS3SecretRequest) => invoke<{ credentialRef: string }>("save_s3_secret", { request }),
   testS3Connection: (request: TestS3ConnectionRequest) => invoke<void>("test_s3_connection", { request }),
 };
