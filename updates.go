@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/updater"
@@ -14,10 +15,13 @@ var UpdatesChanged = mygo.NewEvent[bool]("updates-changed")
 
 // Both bridge requests and the frontend's batch lifetime keep a prepared
 // update from interrupting work between individual image/upload requests.
+const activityLeaseDuration = 2 * time.Minute
+
 type updateController struct {
+	now             func() time.Time
 	mu              sync.Mutex
 	active          int
-	queues          map[string]bool
+	queues          map[string]time.Time
 	installed       bool
 	closing         bool
 	restartDeferred bool
@@ -32,6 +36,13 @@ type updateState struct {
 	LastCheck          string `json:"lastCheck"`
 	AvailableVersion   string `json:"availableVersion"`
 	RestartDeferred    bool   `json:"restartDeferred"`
+}
+
+func (u *updateController) activityNow() time.Time {
+	if u.now != nil {
+		return u.now()
+	}
+	return time.Now()
 }
 
 func (u *updateController) begin() (func(), error) {
@@ -50,8 +61,13 @@ func (u *updateController) prepareQuit(miniBusy, sessionEnding bool) bool {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	busy := u.active > 0 || miniBusy
-	for _, active := range u.queues {
-		busy = busy || active
+	now := u.activityNow()
+	for key, expires := range u.queues {
+		if !now.Before(expires) {
+			delete(u.queues, key)
+		} else {
+			busy = true
+		}
 	}
 	if u.installed && busy && !sessionEnding {
 		u.restartDeferred = true
@@ -133,11 +149,11 @@ func (u *updateController) call(operation string, payload []byte) (any, error) {
 			return nil, apperror.New("closing", "Pic Piper is closing. Try again after reopening the app.")
 		}
 		if u.queues == nil {
-			u.queues = make(map[string]bool)
+			u.queues = make(map[string]time.Time)
 		}
 		key := req.Scope + ":" + req.ID
 		if req.Busy {
-			u.queues[key] = true
+			u.queues[key] = u.activityNow().Add(activityLeaseDuration)
 		} else {
 			delete(u.queues, key)
 		}
