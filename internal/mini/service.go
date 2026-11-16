@@ -463,7 +463,7 @@ func (s *Service) process(id, path string, plan cloud.MiniPlan) error {
 	name := miniOutputFileName(path, plan.Settings.TargetFormat)
 	var result imaging.Result
 	if err := s.imageCall("compress_image", map[string]any{"taskId": id, "sourcePath": path, "outputDir": run.OutputDir, "outputFileName": name, "settings": map[string]any{"targetFormat": plan.Settings.TargetFormat, "quality": plan.Settings.Quality, "animationMode": "preserve"}}, &result); err != nil {
-		return err
+		return miniImageError(err)
 	}
 	thumb, _ := s.images.Call(s.ctx, "read_thumbnail", mustJSON(map[string]any{"path": result.OutputPath, "maxSize": 96}))
 	var preview struct {
@@ -481,6 +481,14 @@ func (s *Service) process(id, path string, plan cloud.MiniPlan) error {
 	})
 	s.update(id, func(i *Item) { i.Status = "completed"; i.CompletedAt = s.now() })
 	return nil
+}
+
+func miniImageError(err error) error {
+	var appErr *apperror.Error
+	if errors.As(err, &appErr) && (appErr.Code == "animationUnsupported" || appErr.Code == "animationNeedsTarget") {
+		return apperror.New("miniAnimationUnsupported", "Mini cannot preserve this animation with the current settings. Open it in the main window to choose a supported output format or frame handling option.")
+	}
+	return err
 }
 
 func miniOutputFileName(path, targetFormat string) string {
