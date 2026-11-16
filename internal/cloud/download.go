@@ -69,7 +69,7 @@ func copyDownloadExclusive(source, target string) error {
 		return nil
 	}
 	// Never remove a replacement created by another application during the copy.
-	if current, err := os.Stat(target); err == nil && statErr == nil && os.SameFile(original, current) {
+	if current, err := os.Lstat(target); err == nil && statErr == nil && os.SameFile(original, current) {
 		_ = os.Remove(target)
 	}
 	if copyErr != nil {

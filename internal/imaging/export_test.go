@@ -160,3 +160,29 @@ func TestFailedOrCancelledExportRemovesOnlyItsReservedFile(t *testing.T) {
 		})
 	}
 }
+
+func TestExportFallbackFailurePreservesReplacement(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source")
+	destination := filepath.Join(dir, "photo.png")
+	if err := os.WriteFile(source, []byte("complete image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	failingCopy := func(output io.Writer, input io.Reader) (int64, error) {
+		replacement := filepath.Join(dir, "replacement")
+		if err := os.WriteFile(replacement, []byte("user replacement"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(replacement, destination); err != nil {
+			t.Fatal(err)
+		}
+		return 0, io.ErrUnexpectedEOF
+	}
+	if err := copyExclusiveWith(source, destination, failingCopy); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil || string(data) != "user replacement" {
+		t.Fatalf("replacement was removed: %q %v", data, err)
+	}
+}
