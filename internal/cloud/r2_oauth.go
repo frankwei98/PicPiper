@@ -120,6 +120,24 @@ func (session *r2Session) closeServer() {
 		_ = session.server.Close()
 	}
 }
+
+// The callback may return before net/http has flushed its response buffer.
+// Stop accepting connections, then let accepted handlers finish before closing.
+// Explicit cancellation still uses closeServer to stop active work immediately.
+func (session *r2Session) shutdownServer() {
+	if session.listener != nil {
+		_ = session.listener.Close()
+	}
+	if session.server == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := session.server.Shutdown(ctx); err != nil {
+		_ = session.server.Close()
+	}
+}
+
 func (s *Service) r2Callback(session *r2Session, w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -138,7 +156,7 @@ func (s *Service) r2Callback(session *r2Session, w http.ResponseWriter, r *http.
 	verifier := session.verifier
 	session.verifier = ""
 	session.mu.Unlock()
-	defer func() { go session.closeServer() }()
+	defer func() { go session.shutdownServer() }()
 	fail := func(message string) {
 		session.mu.Lock()
 		defer session.mu.Unlock()
