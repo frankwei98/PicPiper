@@ -490,10 +490,15 @@ func validateSettings(v settings) error {
 		return appErr("invalidSettings", "Naming template is required.")
 	}
 	found := false
+	profileIDs := make(map[string]struct{}, len(v.Profiles))
 	for _, p := range v.Profiles {
 		if e := validateProfile(p); e != nil {
 			return e
 		}
+		if _, exists := profileIDs[p.ID]; exists {
+			return appErr("invalidSettings", "Profile IDs must be unique.")
+		}
+		profileIDs[p.ID] = struct{}{}
 		if v.DefaultProfileID != nil && p.ID == *v.DefaultProfileID {
 			found = true
 		}
