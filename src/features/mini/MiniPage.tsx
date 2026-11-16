@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, ChevronDown, Clock3, CloudUpload, Copy, ExternalLink, ImageDown, Images, Link, LoaderCircle, RefreshCw, X } from "lucide-react";
-import { defaultMiniSettings, miniApi, settingsApi, type MiniItem, type MiniSettings, type MiniState } from "@/api/backend";
+import { defaultMiniSettings, miniApi, settingsApi, type MiniCompressionChanges, type MiniItem, type MiniSettings, type MiniState } from "@/api/backend";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { open, onFileDrop } from "@/platform/desktop";
 import { errorMessage } from "@/lib/error";
@@ -32,10 +32,25 @@ export function MiniPage() {
   const [toast, setToast] = useState<{ message: MessageKey; values?: Record<string, string | number>; undo?: boolean }>();
   const alive = useRef(true);
   const stateVersion = useRef(0);
+  const configVersion = useRef(0);
+  const compressionBase = useRef<MiniSettings>(defaultMiniSettings);
 
   useEffect(() => {
     alive.current = true;
-    void settingsApi.loadSettings().then((settings) => { if (alive.current) { setConfig({ ...(settings.mini ?? defaultMiniSettings), action: "clipboard" }); setLoaded(true); } }).catch((cause) => { if (alive.current) setError(errorMessage(cause, t("Failed to load settings."))); });
+    const loadConfig = async () => {
+      const version = ++configVersion.current;
+      try {
+        const settings = await settingsApi.loadSettings();
+        if (alive.current && version === configVersion.current) {
+          setConfig({ ...(settings.mini ?? defaultMiniSettings), action: "clipboard" });
+          setLoaded(true);
+        }
+      } catch (cause) {
+        if (alive.current && version === configVersion.current) setError(errorMessage(cause, t("Failed to load settings.")));
+      }
+    };
+    void loadConfig();
+    const offSettings = settingsApi.onChanged?.(() => { void loadConfig(); });
     let running = false;
     const poll = async () => {
       if (running) return;
@@ -47,7 +62,7 @@ export function MiniPage() {
     };
     void poll();
     const timer = window.setInterval(() => void poll(), 500);
-    return () => { alive.current = false; window.clearInterval(timer); };
+    return () => { alive.current = false; configVersion.current++; offSettings?.(); window.clearInterval(timer); };
   }, []);
 
   const update = async (action: () => Promise<MiniState>) => {
@@ -85,9 +100,19 @@ export function MiniPage() {
   }, [toast]);
 
   const saveCompression = async () => {
+    if (saving) return;
     setSaving(true); setError("");
-    const next = { ...config, targetFormat: draft.targetFormat, quality: draft.quality, action: "clipboard" as const };
-    try { await miniApi.save(next); if (alive.current) { setConfig(next); setCompressionOpen(false); } }
+    const changes: MiniCompressionChanges = {};
+    if (draft.targetFormat !== compressionBase.current.targetFormat) changes.targetFormat = draft.targetFormat;
+    if (draft.quality !== compressionBase.current.quality) changes.quality = draft.quality;
+    const version = ++configVersion.current;
+    try {
+      const next = await miniApi.saveCompression(changes);
+      if (alive.current) {
+        if (version === configVersion.current) setConfig(next);
+        setCompressionOpen(false);
+      }
+    }
     catch (cause) { if (alive.current) setError(errorMessage(cause, t("Failed to save Mini settings."))); }
     finally { if (alive.current) setSaving(false); }
   };
@@ -137,7 +162,7 @@ export function MiniPage() {
   return <main className="mini-surface" aria-label={t("Pic Piper Mini")}>
     <header className="mini-header">
       <img src={logo} alt="" className="mini-logo" /><strong>Pic Piper</strong>
-      <button className="mini-format" aria-label={t("Adjust compression settings")} disabled={!loaded} onClick={() => { setDraft(config); setToast(undefined); setError(""); setCompressionOpen(true); }}>{config.targetFormat.toUpperCase()}<span>·</span>{config.quality}%<ChevronDown /></button>
+      <button className="mini-format" aria-label={t("Adjust compression settings")} disabled={!loaded} onClick={() => { compressionBase.current = config; setDraft(config); setToast(undefined); setError(""); setCompressionOpen(true); }}>{config.targetFormat.toUpperCase()}<span>·</span>{config.quality}%<ChevronDown /></button>
       <div className="mini-window-actions"><button aria-label={t("Open full window")} onClick={() => void miniApi.window("main")}><ExternalLink /></button><button aria-label={t("Close Mini")} onClick={() => void miniApi.window("close")}><X /></button></div>
     </header>
     <button className={`mini-drop ${dragging ? "is-dragging" : ""}`} data-testid="mini-drop-zone" disabled={!loaded || !config.enabled} onClick={() => void chooseFiles()} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={() => setDragging(false)}><ImageDown /><strong>{dragging ? t("Drop to start") : state.items.length ? t("Drop more images") : t("Drop images to compress")}</strong><span>{t("Or click to choose images")}</span></button>
