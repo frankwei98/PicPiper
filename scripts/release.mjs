@@ -29,6 +29,14 @@ const gh = (...args) => run("gh", args);
 const api = (path) => JSON.parse(gh("api", path));
 const digest = (file) => createHash("sha256").update(readFileSync(file)).digest();
 
+// Publishing flips the whole draft public, not just the assets uploaded by
+// this run. Reject any draft asset that was not verified against the local
+// inventory.
+export function unexpectedDraftAssets(assets, files) {
+  const expected = new Set(files.map((file) => basename(file)));
+  return assets.filter((asset) => !expected.has(asset.name)).map((asset) => asset.name);
+}
+
 const platforms = {
   "darwin-arm64": { runner: "macos-15", cgo: "1" },
   "windows-amd64": { runner: "windows-2025", cgo: "0" },
@@ -156,6 +164,8 @@ async function main() {
   gh("release", "upload", tag, ...files, "--clobber", "--repo", repository);
   const uploaded = api(`repos/${repository}/releases/${release.id}`);
   assert(uploaded.draft, "Release was published concurrently; stopped before further mutation");
+  const unexpected = unexpectedDraftAssets(uploaded.assets, files);
+  assert(unexpected.length === 0, `Draft has assets outside the verified release inventory: ${unexpected.join(", ")}. Remove them before publishing.`);
   for (const file of files) {
     const asset = uploaded.assets.find((entry) => entry.name === basename(file));
     assert(asset?.state === "uploaded" && asset.size === readFileSync(file).length && asset.digest === `sha256:${digest(file).toString("hex")}`, `Uploaded asset did not match: ${basename(file)}`);
