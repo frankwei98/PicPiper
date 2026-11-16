@@ -366,7 +366,10 @@ func (s *Service) compress(ctx context.Context, req request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if !validFileName(req.OutputFileName) || strings.ToLower(filepath.Ext(req.OutputFileName)) != "."+req.Settings.TargetFormat {
+	if !validFileName(req.OutputFileName) {
+		return Result{}, apperror.New("invalidFileName", "Choose a filename without path separators or reserved characters.")
+	}
+	if strings.ToLower(filepath.Ext(req.OutputFileName)) != "."+req.Settings.TargetFormat {
 		return Result{}, apperror.New("invalidFileName", "The output filename must match the selected format.")
 	}
 	img, inspection, err := decode(ctx, req.SourcePath)

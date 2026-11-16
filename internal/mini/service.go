@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/frankwei98/PicPiper/internal/apperror"
 	"github.com/frankwei98/PicPiper/internal/cloud"
@@ -459,7 +460,7 @@ func (s *Service) process(id, path string, plan cloud.MiniPlan) error {
 	if err := s.imageCall("create_optimizer_run", map[string]any{}, &run); err != nil {
 		return err
 	}
-	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)) + "." + plan.Settings.TargetFormat
+	name := miniOutputFileName(path, plan.Settings.TargetFormat)
 	var result imaging.Result
 	if err := s.imageCall("compress_image", map[string]any{"taskId": id, "sourcePath": path, "outputDir": run.OutputDir, "outputFileName": name, "settings": map[string]any{"targetFormat": plan.Settings.TargetFormat, "quality": plan.Settings.Quality, "animationMode": "preserve"}}, &result); err != nil {
 		return err
@@ -481,6 +482,31 @@ func (s *Service) process(id, path string, plan cloud.MiniPlan) error {
 	s.update(id, func(i *Item) { i.Status = "completed"; i.CompletedAt = s.now() })
 	return nil
 }
+
+func miniOutputFileName(path, targetFormat string) string {
+	name := filepath.Base(path)
+	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	stem = strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`/\\:*?"<>|`, r) || unicode.IsControl(r) {
+			return '_'
+		}
+		return r
+	}, stem)
+	stem = strings.TrimRight(stem, ". ")
+	if stem == "" {
+		stem = "image"
+	}
+	firstComponent := stem
+	if dot := strings.IndexByte(stem, '.'); dot >= 0 {
+		firstComponent = stem[:dot]
+	}
+	switch strings.ToUpper(firstComponent) {
+	case "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+		stem = firstComponent + "-image" + stem[len(firstComponent):]
+	}
+	return stem + "." + targetFormat
+}
+
 func (s *Service) imageCall(op string, req any, dst any) error {
 	return s.imageCallContext(s.ctx, op, req, dst)
 }

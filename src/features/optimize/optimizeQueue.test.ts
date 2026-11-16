@@ -55,6 +55,14 @@ describe("optimizeQueue", () => {
     expect(makeOutputFileName("photo", "jpg")).toBe("photo.jpg");
   });
 
+  it("sanitizes output stems that are invalid on Windows", () => {
+    expect(makeOutputFileName("a?b:c.png", "png")).toBe("a_b_c.png");
+    expect(makeOutputFileName("a\u0001b.png", "png")).toBe("a_b.png");
+    expect(makeOutputFileName("con.png", "png")).toBe("con-image.png");
+    expect(makeOutputFileName(".png", "png")).toBe("image.png");
+    expect(makeOutputFileName("aux.preview.jpg", "png")).toBe("aux-image.preview.png");
+  });
+
   it("disambiguates duplicate output filenames", () => {
     const outputNames = makeUniqueOutputFileNames(
       [

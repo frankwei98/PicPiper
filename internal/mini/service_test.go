@@ -31,6 +31,22 @@ func TestLinkFormatsEscapeUntrustedNames(t *testing.T) {
 	}
 }
 
+func TestMiniOutputFileNameSanitizesWindowsInvalidStems(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  string
+	}{
+		{input: "a?b:c.png", want: "a_b_c.webp"},
+		{input: "a\x01b.png", want: "a_b.webp"},
+		{input: "con.jpg", want: "con-image.webp"},
+		{input: ".png", want: "image.webp"},
+	} {
+		if got := miniOutputFileName(test.input, "webp"); got != test.want {
+			t.Errorf("miniOutputFileName(%q) = %q, want %q", test.input, got, test.want)
+		}
+	}
+}
+
 func TestQueueCopiesDecodedImageWithAlphaAndPreservesSource(t *testing.T) {
 	dir := t.TempDir()
 	storage := cloud.New(dir)
