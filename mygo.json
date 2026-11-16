@@ -2,7 +2,7 @@
   "name": "Pic Piper",
   "slug": "pic-piper",
   "identifier": "xyz.frankwei.pic-piper.mygo",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "updates": {
     "publicKey": "ksHoQVdMqjzU/fhDUG8mBcqu+u+czzbwuTbbXNkdVnc=",
     "github": "frankwei98/PicPiper"
