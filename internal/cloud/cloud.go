@@ -572,40 +572,6 @@ func safeFilename(n string) bool {
 	}
 	return true
 }
-func saveUnique(dir, name string, r io.Reader) (string, error) {
-	if !safeFilename(name) {
-		return "", fmt.Errorf("unsafe filename")
-	}
-	if e := os.MkdirAll(dir, 0755); e != nil {
-		return "", e
-	}
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
-	for i := 0; i < 10000; i++ {
-		n := name
-		if i > 0 {
-			n = stem + " (" + strconv.Itoa(i+1) + ")" + ext
-		}
-		p := filepath.Join(dir, n)
-		f, e := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-		if os.IsExist(e) {
-			continue
-		}
-		if e != nil {
-			return "", e
-		}
-		_, e = io.Copy(f, r)
-		ce := f.Close()
-		if e == nil {
-			e = ce
-		}
-		if e != nil {
-			return "", e
-		}
-		return p, nil
-	}
-	return "", fmt.Errorf("unable to reserve a unique filename")
-}
 func hashSeek(f *os.File) ([]byte, error) {
 	h := sha256.New()
 	if _, e := io.Copy(h, f); e != nil {
