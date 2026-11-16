@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,35 @@ function run(command, args, env = process.env) {
 
 // Cgo parses quoted flags itself; these strings are never evaluated by a shell.
 const flag = (value) => `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+
+// A builder writes its pid immediately after creating the lock directory.
+// Missing or unusable pid files are therefore either mid-creation or stale.
+const lockGraceMs = 5_000;
+
+export async function lockIsStale(lock) {
+  let pid;
+  try {
+    pid = Number((await readFile(join(lock, "pid"), "utf8")).trim());
+  } catch (error) {
+    if (error.code !== "ENOENT") return false;
+  }
+  if (Number.isInteger(pid) && pid > 0) {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      return error.code === "ESRCH";
+    }
+  }
+  // Give a builder that just created the directory time to record its pid
+  // before treating the lock as abandoned. Older locks are reclaimed.
+  try {
+    const { mtimeMs } = await stat(lock);
+    return Date.now() - mtimeMs > lockGraceMs;
+  } catch (error) {
+    return error.code === "ENOENT";
+  }
+}
 
 export async function prepareNativeCodec({ name, archives, revision, libraries, build }) {
   const target = JSON.parse(run("go", ["env", "-json", "CGO_ENABLED", "GOOS", "GOARCH", "CC"]));
@@ -41,14 +70,9 @@ export async function prepareNativeCodec({ name, archives, revision, libraries, 
         break;
       } catch (error) {
         if (error.code !== "EEXIST") throw error;
-        try {
-          const pid = Number(await readFile(join(lock, "pid"), "utf8"));
-          if (pid > 0) process.kill(pid, 0);
-        } catch (ownerError) {
-          if (ownerError.code === "ESRCH") {
-            await rm(lock, { recursive: true, force: true });
-            continue;
-          }
+        if (await lockIsStale(lock)) {
+          await rm(lock, { recursive: true, force: true });
+          continue;
         }
         if (Date.now() > deadline) throw new Error(`Timed out waiting for native ${name} build: ${lock}`);
         await new Promise((done) => setTimeout(done, 200));
