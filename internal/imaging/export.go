@@ -42,6 +42,10 @@ func publishExportWith(link func(source, destination string) error, source, dest
 // no-overwrite contract when links are unavailable, sacrificing atomicity.
 // A failed copy removes its partial destination.
 func copyExclusive(source, destination string) error {
+	return copyExclusiveWith(source, destination, io.Copy)
+}
+
+func copyExclusiveWith(source, destination string, copyFile func(io.Writer, io.Reader) (int64, error)) error {
 	input, err := os.Open(source)
 	if err != nil {
 		return err
@@ -51,12 +55,15 @@ func copyExclusive(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(output, input)
+	original, statErr := output.Stat()
+	_, copyErr := copyFile(output, input)
 	closeErr := output.Close()
 	if copyErr == nil && closeErr == nil {
 		return nil
 	}
-	_ = os.Remove(destination)
+	if current, err := os.Lstat(destination); err == nil && statErr == nil && os.SameFile(original, current) {
+		_ = os.Remove(destination)
+	}
 	if copyErr != nil {
 		return copyErr
 	}
