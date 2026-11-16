@@ -41,6 +41,8 @@
   "Downloading": "ダウンロード中",
   "No loaded objects match this search.": "読み込み済みのオブジェクトに一致するものはありません。",
   "No objects found.": "オブジェクトが見つかりません。",
+  "Unverified objects hidden: {{count}}.": "未検証のため非表示のオブジェクト数: {{count}}。",
+  "Refresh to retry": "更新して再試行",
   "Search only covers loaded objects. Load more to continue searching.": "検索対象は読み込み済みのオブジェクトのみです。続きを検索するには、さらに読み込んでください。",
   "Search only covers loaded objects in this prefix.": "このプレフィックス内の読み込み済みオブジェクトのみが検索対象です。",
   "Upload images or adjust the current prefix.": "画像をアップロードするか、現在のプレフィックスを変更してください。",

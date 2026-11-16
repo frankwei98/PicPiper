@@ -76,6 +76,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   }, [prefix]);
 
   const [objects, setObjects] = useState<GalleryObject[]>([]);
+  const [unverifiedCount, setUnverifiedCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextContinuationToken, setNextContinuationToken] = useState<string | null>(null);
@@ -116,6 +117,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const resetGalleryScope = useCallback(() => {
     setLoadedScope(null);
     setObjects([]);
+    setUnverifiedCount(0);
     setNextContinuationToken(null);
     setDeleteTarget(null);
     setPaginationError(null);
@@ -198,6 +200,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       const page: ListGalleryObjectsResponse = await galleryApi.listObjects(request);
       if (generation !== loadGenerationRef.current) return;
       setObjects((current) => append ? sortGalleryObjects([...new Map([...current, ...page.objects].map((object) => [object.key, object])).values()], sortOrder) : page.objects);
+      setUnverifiedCount((current) => append ? current + (page.unverifiedCount ?? 0) : (page.unverifiedCount ?? 0));
       setNextContinuationToken(page.nextContinuationToken ?? null);
       if (!append) {
         setLoadedScope({ profileId: selectedProfile.id, prefix: requestedPrefix });
@@ -554,6 +557,16 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
                 {t("Open Settings")}
               </Button>
             )}
+          </AlertDescription>
+        </Alert>
+      )}
+      {scopeReady && !loading && unverifiedCount > 0 && (
+        <Alert className="border-amber-500/30 bg-amber-50 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
+          <AlertDescription className="flex items-center justify-between gap-3 max-sm:items-start max-sm:flex-col">
+            <span>{t("Unverified objects hidden: {{count}}.", { count: unverifiedCount })}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => void loadObjects()} disabled={loading || loadingMore}>
+              {t("Refresh to retry")}
+            </Button>
           </AlertDescription>
         </Alert>
       )}

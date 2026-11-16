@@ -41,6 +41,8 @@
   "Downloading": "Downloading",
   "No loaded objects match this search.": "No loaded objects match this search.",
   "No objects found.": "No objects found.",
+  "Unverified objects hidden: {{count}}.": "Unverified objects hidden: {{count}}.",
+  "Refresh to retry": "Refresh to retry",
   "Search only covers loaded objects. Load more to continue searching.": "Search only covers loaded objects. Load more to continue searching.",
   "Search only covers loaded objects in this prefix.": "Search only covers loaded objects in this prefix.",
   "Upload images or adjust the current prefix.": "Upload images or adjust the current prefix.",

@@ -217,8 +217,9 @@ func TestGalleryVerificationErrorsDoNotForgetUnconfirmedRecords(t *testing.T) {
 					w.WriteHeader(status)
 				}
 			})
-			if _, err := s.listUploads(context.Background(), galleryRequest{Profile: p, Sort: "name-asc"}, "synthetic-secret"); err == nil {
-				t.Fatal("provider failure was hidden")
+			page, err := s.listUploads(context.Background(), galleryRequest{Profile: p, Sort: "name-asc"}, "synthetic-secret")
+			if err != nil || len(page.Objects) != 1 || page.Objects[0].Key != records[2].Key || page.UnverifiedCount != 1 {
+				t.Fatalf("verified partial results unavailable: %+v %v", page, err)
 			}
 			remaining := recordedUploads(t, s, p)
 			if len(remaining) != 2 || remaining[records[1].Key] != records[1] || remaining[records[2].Key] != records[2] {
@@ -283,5 +284,20 @@ func TestGalleryCancellationStopsInFlightVerificationWithoutPruning(t *testing.T
 	}
 	if remaining := recordedUploads(t, s, p); len(remaining) != len(records) {
 		t.Fatalf("cancellation removed unverified records: %d", len(remaining))
+	}
+}
+
+func TestGalleryMissingMetadataRetainsLocalRecord(t *testing.T) {
+	s, p, records := newUploadVerificationService(t, 2, func(w http.ResponseWriter, _ *http.Request, index int) {
+		if index == 0 {
+			w.Header().Del("X-Amz-Meta-Picpiper-Upload-Id")
+		}
+	})
+	page, err := s.listUploads(context.Background(), galleryRequest{Profile: p, Sort: "name-asc"}, "fake-secret")
+	if err != nil || len(page.Objects) != 1 || page.Objects[0].Key != records[1].Key || page.UnverifiedCount != 1 {
+		t.Fatalf("verified objects unavailable: %+v %v", page, err)
+	}
+	if len(recordedUploads(t, s, p)) != 2 {
+		t.Fatal("missing metadata permanently erased history")
 	}
 }

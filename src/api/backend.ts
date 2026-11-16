@@ -99,6 +99,7 @@ export interface ListGalleryObjectsRequest {
 export interface ListGalleryObjectsResponse {
   objects: GalleryObject[];
   nextContinuationToken?: string | null;
+  unverifiedCount?: number;
 }
 
 export interface DeleteObjectRequest {
