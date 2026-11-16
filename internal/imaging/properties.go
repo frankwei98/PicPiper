@@ -21,6 +21,8 @@ type sourceProperties struct {
 	hdrTransfer    uint16
 	invalidCICP    bool
 	sequence       bool
+	// rotation is the primary item's AVIF irot angle in 90-degree units.
+	rotation int
 }
 
 // Scan container metadata by seeking over image payloads. Profile decompression

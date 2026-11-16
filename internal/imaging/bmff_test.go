@@ -207,3 +207,26 @@ func TestMissingOrMalformedItemAssociationsIgnoreColors(t *testing.T) {
 		}
 	}
 }
+
+func TestContainerRotationFollowsPrimaryItem(t *testing.T) {
+	pitm := bmffBox("pitm", []byte{0, 0, 0, 0, 0, 7})
+	ipco := bmffBox("ipco", append(
+		bmffBox("irot", []byte{0}), // A different item's rotation.
+		bmffBox("irot", []byte{3})...,
+	))
+	ipma := []byte{
+		0, 0, 0, 0, // Version and flags.
+		0, 0, 0, 2, // Entry count.
+		0, 1, 1, 0x01, // Item 1 -> irot 0.
+		0, 7, 1, 0x02, // Primary item 7 -> irot 270.
+	}
+	children := append(pitm, bmffBox("iprp", append(ipco, bmffBox("ipma", ipma)...))...)
+	data := append(bmffBox("ftyp", []byte("avif\x00\x00\x00\x00avif")), bmffBox("meta", append(make([]byte, 4), children...))...)
+	path := filepath.Join(t.TempDir(), "rotation.avif")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := imageProperties(path).rotation; got != 3 {
+		t.Fatalf("rotation = %d, want the primary item's 3 (270 degrees)", got)
+	}
+}

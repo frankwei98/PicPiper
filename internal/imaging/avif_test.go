@@ -2,8 +2,31 @@ package imaging
 
 import (
 	"bytes"
+	"context"
+	"path/filepath"
 	"testing"
 )
+
+func TestAVIFInspectionMatchesDecodedRotation(t *testing.T) {
+	path := filepath.Join("testdata", "rotation.avif")
+	info, err := inspect(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Width != 480 || info.Height != 640 {
+		t.Fatalf("inspection reported %dx%d, want the rotated 480x640", info.Width, info.Height)
+	}
+	img, decoded, err := decode(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Width != info.Width || decoded.Height != info.Height {
+		t.Fatalf("inspection reported %dx%d, decoded %dx%d", info.Width, info.Height, decoded.Width, decoded.Height)
+	}
+	if bounds := img.Bounds(); bounds.Dx() != 480 || bounds.Dy() != 640 {
+		t.Fatalf("decoded pixels are %dx%d, want 480x640", bounds.Dx(), bounds.Dy())
+	}
+}
 
 func TestAVIFCompressionSizeAndFidelity(t *testing.T) {
 	img := lossyCodecFixture(t)
