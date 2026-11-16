@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/frankwei98/PicPiper/compare/v1.2.0...v1.2.1) (2026-11-16)
+
+
+### Features
+
+* add Windows and Linux installers for amd64 and arm64 ([e752d07](https://github.com/frankwei98/PicPiper/commit/e752d07db4f0fc6e97a0de044f9d25bbe9fc7969))
+
 ## [1.2.0](https://github.com/frankwei98/PicPiper/compare/v1.1.0...v1.2.0) (2026-11-15)
 
 
