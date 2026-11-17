@@ -1,6 +1,9 @@
 package cloud
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 // Delete a local connection only. Upload records are bucket-scoped and may
 // still belong to another profile pointing at that bucket.
@@ -38,10 +41,30 @@ func (s *Service) deleteProfile(id string) (settings, error) {
 	if err = validateSettings(next); err != nil {
 		return settings{}, err
 	}
+	sharedCredential := false
+	for _, remaining := range next.Profiles {
+		if !strings.EqualFold(remaining.ID, id) {
+			continue
+		}
+		deleted, deletedErr := os.Stat(s.secretPath(id))
+		retained, retainedErr := os.Stat(s.secretPath(remaining.ID))
+		if deletedErr != nil && !os.IsNotExist(deletedErr) || retainedErr != nil && !os.IsNotExist(retainedErr) {
+			return settings{}, appErr("credentialDeleteFailed", "Could not inspect saved credentials. The profile was kept; check local file permissions and retry.")
+		}
+		// Legacy IDs can alias one file on case-insensitive volumes. Distinct
+		// files on case-sensitive volumes still need their own cleanup.
+		if deletedErr == nil && retainedErr == nil && os.SameFile(deleted, retained) {
+			sharedCredential = true
+			break
+		}
+	}
 	// Persist references first so a failed settings write cannot destroy a
 	// still-configured credential. A cleanup failure restores the old settings.
 	if err = s.saveSettingsLocked(next); err != nil {
 		return settings{}, err
+	}
+	if sharedCredential {
+		return next, nil
 	}
 	if err = os.Remove(s.secretPath(id)); err != nil && !os.IsNotExist(err) {
 		if restoreErr := s.saveSettingsLocked(current); restoreErr != nil {

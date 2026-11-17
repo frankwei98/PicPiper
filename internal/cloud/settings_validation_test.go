@@ -37,3 +37,16 @@ func TestSaveSettingsAllowsDistinctProfileIDsForSameBucket(t *testing.T) {
 		t.Fatalf("different IDs for the same bucket should be allowed: %v", err)
 	}
 }
+
+func TestSaveSettingsRejectsCaseEquivalentProfileIDs(t *testing.T) {
+	s := New(t.TempDir())
+	first := testProfile("https://s3.example.test")
+	first.ID = "profile"
+	second := first
+	second.ID = "PROFILE"
+	cfg := defaults()
+	cfg.Profiles = []profile{first, second}
+	if _, err := call(t, s, "save_app_settings", map[string]any{"settings": cfg}); err == nil {
+		t.Fatal("case-equivalent credential IDs were accepted")
+	}
+}
