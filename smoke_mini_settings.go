@@ -55,6 +55,10 @@ func smokeMiniCompressionSync(panel *mygo.Window, backend *Backend, dir string) 
 	if before.Quality == quality {
 		quality = 84
 	}
+	format := "webp"
+	if format == before.TargetFormat {
+		format = "jpg"
+	}
 	if err = smokeWait(panel, `Boolean(document.querySelector('.mini-format:not(:disabled)'))`, 5*time.Second); err != nil {
 		return err
 	}
@@ -77,7 +81,7 @@ func smokeMiniCompressionSync(panel *mygo.Window, backend *Backend, dir string) 
 	}
 	// The main window saves a format change while the panel is editing quality.
 	mainWindow := before
-	mainWindow.TargetFormat = "avif"
+	mainWindow.TargetFormat = format
 	updated["mini"], err = json.Marshal(mainWindow)
 	if err != nil {
 		return err
@@ -89,13 +93,13 @@ func smokeMiniCompressionSync(panel *mygo.Window, backend *Backend, dir string) 
 	if err = save(raw); err != nil {
 		return err
 	}
-	if err = smokeWait(panel, `document.querySelector('.mini-format').textContent.includes('AVIF')`, 5*time.Second); err != nil {
+	if err = smokeWait(panel, `document.querySelector('.mini-format').textContent.includes(`+smokeJSON(strings.ToUpper(format))+`)`, 5*time.Second); err != nil {
 		return err
 	}
 	if err = smokeClick(panel, "Save Mini settings"); err != nil {
 		return err
 	}
-	if err = smokeWait(panel, `!document.querySelector('.mini-compression-dialog')&&document.querySelector('.mini-format').textContent.includes('AVIF')&&document.querySelector('.mini-format').textContent.includes(`+smokeJSON(fmt.Sprintf("%d%%", quality))+`)`, 5*time.Second); err != nil {
+	if err = smokeWait(panel, `!document.querySelector('.mini-compression-dialog')&&document.querySelector('.mini-format').textContent.includes(`+smokeJSON(strings.ToUpper(format))+`)&&document.querySelector('.mini-format').textContent.includes(`+smokeJSON(fmt.Sprintf("%d%%", quality))+`)`, 5*time.Second); err != nil {
 		return err
 	}
 	value, err := backend.cloud.Call(context.Background(), "load_app_settings", json.RawMessage(`{}`))
