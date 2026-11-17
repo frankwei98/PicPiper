@@ -303,14 +303,7 @@ func main() {
 		if smokeDir != "" {
 			return
 		}
-		backend.openMu.Lock()
-		if !backend.imagesReady {
-			backend.openedFiles = append(backend.openedFiles, path)
-			backend.openMu.Unlock()
-			return
-		}
-		backend.openMu.Unlock()
-		_ = ImagesOpened.Emit(window, []string{path})
+		backend.openImageFile(window, path)
 	})
 	mygo.App.WhenReady(func() {
 		options := appWindowOptions(smokeDir != "")
@@ -357,6 +350,22 @@ func main() {
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// Native file-open callbacks run on the main thread. Reveal the main window
+// even when it was hidden by the tray/background close preference.
+func (b *Backend) openImageFile(window *mygo.Window, path string) {
+	if window != nil {
+		b.desktop.openMain()
+	}
+	b.openMu.Lock()
+	if !b.imagesReady {
+		b.openedFiles = append(b.openedFiles, path)
+		b.openMu.Unlock()
+		return
+	}
+	b.openMu.Unlock()
+	_ = ImagesOpened.Emit(window, []string{path})
 }
 
 func (b *Backend) MiniWindow(action string) {
