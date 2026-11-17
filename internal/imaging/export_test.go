@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -168,20 +169,35 @@ func TestExportFallbackFailurePreservesReplacement(t *testing.T) {
 	if err := os.WriteFile(source, []byte("complete image"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	replacement := filepath.Join(dir, "replacement")
+	preserved := destination
 	failingCopy := func(output io.Writer, input io.Reader) (int64, error) {
-		replacement := filepath.Join(dir, "replacement")
+		written, err := output.Write([]byte("partial image"))
+		if err != nil {
+			return int64(written), err
+		}
 		if err := os.WriteFile(replacement, []byte("user replacement"), 0600); err != nil {
-			t.Fatal(err)
+			return int64(written), err
 		}
 		if err := os.Rename(replacement, destination); err != nil {
-			t.Fatal(err)
+			if runtime.GOOS != "windows" || !errors.Is(err, os.ErrPermission) {
+				return int64(written), err
+			}
+			// Windows can reject replacement while the destination is open.
+			// The failed copy must still clean up only its own partial file.
+			preserved = replacement
 		}
-		return 0, io.ErrUnexpectedEOF
+		return int64(written), io.ErrUnexpectedEOF
 	}
 	if err := copyExclusiveWith(source, destination, failingCopy); !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(destination)
+	if preserved != destination {
+		if _, err := os.Stat(destination); !os.IsNotExist(err) {
+			t.Fatalf("partial export left behind after replacement was denied: %v", err)
+		}
+	}
+	data, err := os.ReadFile(preserved)
 	if err != nil || string(data) != "user replacement" {
 		t.Fatalf("replacement was removed: %q %v", data, err)
 	}
