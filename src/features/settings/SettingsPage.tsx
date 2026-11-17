@@ -193,7 +193,13 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
     const nextSettings = { ...settings, mini, closeBehavior, processingConcurrency };
     try {
       const saved = await settingsApi.saveGeneralSettings(nextSettings, settings.mini ?? defaultMiniSettings);
-      onSettingsChange(saved);
+      // Keep storage identities stable so this save does not reset its unsaved draft.
+      onSettingsChange({
+        ...latestSettingsRef.current,
+        mini: saved.mini,
+        closeBehavior: saved.closeBehavior,
+        processingConcurrency: saved.processingConcurrency,
+      });
       setGeneralMessage(t("General settings saved."));
     } catch (error) {
       setGeneralError(errorMessage(error, t("Failed to save general settings.")));
