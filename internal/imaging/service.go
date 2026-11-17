@@ -246,6 +246,10 @@ func decode(ctx context.Context, path string) (image.Image, Inspection, error) {
 		return nil, info, err
 	}
 	metadata := properties(file)
+	if err := validateColorProperties(metadata); err != nil {
+		return nil, info, err
+	}
+	info.Animated = metadata.sequence
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, info, err
 	}
@@ -381,6 +385,10 @@ func (s *Service) compress(ctx context.Context, req request) (Result, error) {
 		return Result{}, err
 	}
 	metadata := imageProperties(req.SourcePath)
+	if err := validateColorProperties(metadata); err != nil {
+		return Result{}, err
+	}
+	metadata.sequence = metadata.sequence || inspection.Animated
 	var animationEncoder func(io.Writer) error
 	if metadata.sequence && req.Settings.AnimationMode != "firstFrame" {
 		if inspection.SourceFormat != "webp" {
