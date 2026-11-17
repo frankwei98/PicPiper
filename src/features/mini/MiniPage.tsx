@@ -116,8 +116,8 @@ export function MiniPage() {
     catch (cause) { if (alive.current) setError(errorMessage(cause, t("Failed to save Mini settings."))); }
     finally { if (alive.current) setSaving(false); }
   };
-  const upload = async (ids: string[], profileId: string, linkFormat: MiniSettings["linkFormat"]) => {
-    await update(() => miniApi.upload(ids, profileId, linkFormat));
+  const upload = async (ids: string[], profileId: string, linkFormat: MiniSettings["linkFormat"], bucketKey: string) => {
+    await update(() => miniApi.upload(ids, profileId, linkFormat, bucketKey));
     if (alive.current) { setConfig((current) => ({ ...current, profileId, linkFormat })); setUploadIds(null); setSelected(new Set()); }
   };
   const copy = async (item: MiniItem, image: boolean) => {

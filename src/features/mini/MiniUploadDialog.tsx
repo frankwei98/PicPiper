@@ -12,7 +12,7 @@ interface Props {
   initialProfileId: string;
   initialLinkFormat: MiniSettings["linkFormat"];
   onClose: () => void;
-  onUpload: (ids: string[], profileId: string, format: MiniSettings["linkFormat"]) => Promise<void>;
+  onUpload: (ids: string[], profileId: string, format: MiniSettings["linkFormat"], bucketKey: string) => Promise<void>;
 }
 
 export function MiniUploadDialog({ items, initialProfileId, initialLinkFormat, onClose, onUpload }: Props) {
@@ -22,9 +22,11 @@ export function MiniUploadDialog({ items, initialProfileId, initialLinkFormat, o
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [refresh, setRefresh] = useState(0);
 
   useEffect(() => {
     let active = true;
+    setLoading(true); setTargets([]); setError("");
     void miniApi.targets().then((loaded) => {
       if (!active) return;
       setTargets(loaded);
@@ -32,17 +34,17 @@ export function MiniUploadDialog({ items, initialProfileId, initialLinkFormat, o
     }).catch((cause) => { if (active) setError(errorMessage(cause, t("Failed to load upload destinations."))); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [refresh]);
 
   const target = targets.find((candidate) => candidate.profileId === profileId);
   const skipped = target ? items.filter((item) => item.uploads?.[target.bucketKey]).length : 0;
   const remaining = items.length - skipped;
   const allUploaded = Boolean(target) && remaining === 0 && items.length > 0;
   const confirm = async () => {
-    if (!target || submitting || !items.length) return;
+    if (!target || loading || submitting || !items.length) return;
     setSubmitting(true); setError("");
-    try { await onUpload(items.map((item) => item.id), target.profileId, linkFormat); }
-    catch (cause) { setError(errorMessage(cause, t("Could not upload the result."))); setSubmitting(false); }
+    try { await onUpload(items.map((item) => item.id), target.profileId, linkFormat, target.bucketKey); }
+    catch (cause) { setError(errorMessage(cause, t("Could not upload the result."))); setTargets([]); setSubmitting(false); }
   };
 
   return <Dialog open onOpenChange={(open) => { if (!open && !submitting) onClose(); }}>
@@ -58,7 +60,7 @@ export function MiniUploadDialog({ items, initialProfileId, initialLinkFormat, o
       </select></label>
       <fieldset className="mini-dialog-links"><legend>{t("Link format")}</legend><div className="mini-segments mini-link-formats" role="group" aria-label={t("Link format")}>{linkFormats.map(([format, label]) => <button key={format} type="button" aria-pressed={linkFormat === format} disabled={submitting} onClick={() => setLinkFormat(format)}>{t(label)}</button>)}</div></fieldset>
       {!loading && !targets.length ? <p className="mini-dialog-hint">{t("Mini uploads need a profile with a Public Base URL.")}</p> : skipped > 0 && <p className="mini-dialog-hint">{allUploaded ? t("These images are already in this bucket. Existing links will be reused.") : t("Upload {{upload}} images; skip {{skip}} already in this bucket and reuse their links.", { upload: remaining, skip: skipped })}</p>}
-      {error && <p className="mini-item-error" role="alert">{error}</p>}
+      {error && <><p className="mini-item-error" role="alert">{error}</p><button type="button" disabled={loading || submitting} onClick={() => { setLoading(true); setRefresh((current) => current + 1); }}>{t("Refresh to retry")}</button></>}
       <div className="mini-dialog-actions"><button type="button" disabled={submitting} onClick={onClose}>{t("Cancel")}</button><button type="button" className="mini-primary" disabled={loading || submitting || !target || !items.length} onClick={() => void confirm()}>{allUploaded ? <Copy /> : <CloudUpload />}{submitting ? t("Uploading...") : allUploaded ? t("Copy existing links") : skipped > 0 ? t("Upload {{count}} and copy links", { count: remaining }) : t("Upload and copy links")}</button></div>
     </DialogContent>
   </Dialog>;

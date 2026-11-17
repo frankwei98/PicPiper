@@ -169,7 +169,47 @@ it("shows indeterminate selection and uploads the selected IDs only after confir
   await waitFor(() => expect(within(dialog).getByRole("button", { name: "Upload and copy links" })).toBeEnabled());
   await user.click(within(dialog).getByRole("button", { name: "Upload and copy links" }));
 
-  await waitFor(() => expect(mockApi.upload).toHaveBeenCalledWith([completedItem.id], profile.id, "markdown"));
+  await waitFor(() => expect(mockApi.upload).toHaveBeenCalledWith([completedItem.id], profile.id, "markdown", defaultTarget.bucketKey));
+});
+
+it("refreshes a changed bucket after failed confirmation and requires another confirmation", async () => {
+  const user = userEvent.setup();
+  await renderReady(defaultSettings, resultWithoutURLState);
+  await user.click(screen.getByRole("button", { name: "Upload result.webp to S3" }));
+  const dialog = await screen.findByRole("dialog");
+  const confirm = () => within(dialog).getByRole("button", { name: "Upload and copy links" });
+  await waitFor(() => expect(confirm()).toBeEnabled());
+  expect(within(dialog).getByRole("option", { name: "Public bucket / images" })).toBeInTheDocument();
+  mockApi.upload.mockRejectedValueOnce({ code: "miniUploadTargetChanged", message: "Refresh to retry" });
+  await user.click(confirm());
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("Refresh to retry");
+  expect(mockApi.upload).toHaveBeenCalledWith([completedWithoutURL.id], profile.id, "url", defaultTarget.bucketKey);
+  expect(confirm()).toBeDisabled();
+
+  let finishRefresh: ((targets: MiniUploadTarget[]) => void) | undefined;
+  mockApi.targets.mockImplementationOnce(() => new Promise<MiniUploadTarget[]>((resolve) => { finishRefresh = resolve; }));
+  await user.click(within(dialog).getByRole("button", { name: "Refresh to retry" }));
+  expect(confirm()).toBeDisabled();
+  await act(async () => finishRefresh?.([{ ...defaultTarget, bucket: "replacement", bucketKey: "replacement-key" }]));
+  await waitFor(() => expect(confirm()).toBeEnabled());
+  expect(within(dialog).getByRole("option", { name: "Public bucket / replacement" })).toBeInTheDocument();
+  expect(mockApi.upload).toHaveBeenCalledTimes(1);
+  await user.click(confirm());
+  await waitFor(() => expect(mockApi.upload).toHaveBeenLastCalledWith([completedWithoutURL.id], profile.id, "url", "replacement-key"));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+});
+
+it("can retry loading upload destinations after a refresh fails", async () => {
+  const user = userEvent.setup();
+  await renderReady(defaultSettings, resultWithoutURLState);
+  mockApi.targets.mockRejectedValueOnce(new Error("target refresh failed"));
+  await user.click(screen.getByRole("button", { name: "Upload result.webp to S3" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("target refresh failed");
+  expect(within(dialog).getByRole("button", { name: "Upload and copy links" })).toBeDisabled();
+  await user.click(within(dialog).getByRole("button", { name: "Refresh to retry" }));
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "Upload and copy links" })).toBeEnabled());
+  expect(mockApi.upload).not.toHaveBeenCalled();
 });
 
 it("uploads a mixed selection together and labels the confirmation with its count", async () => {
@@ -182,7 +222,7 @@ it("uploads a mixed selection together and labels the confirmation with its coun
 
   await waitFor(() => expect(within(dialog).getByRole("button", { name: "Upload 1 and copy links" })).toBeEnabled());
   await user.click(within(dialog).getByRole("button", { name: "Upload 1 and copy links" }));
-  expect(mockApi.upload).toHaveBeenCalledWith([alreadyUploaded.id, fresh.id], profile.id, "url");
+  expect(mockApi.upload).toHaveBeenCalledWith([alreadyUploaded.id, fresh.id], profile.id, "url", defaultTarget.bucketKey);
 });
 
 it("copies existing links when all selected results already have the target bucket link", async () => {
@@ -197,7 +237,7 @@ it("copies existing links when all selected results already have the target buck
   await waitFor(() => expect(within(dialog).getByRole("button", { name: "Copy existing links" })).toBeEnabled());
   await user.click(within(dialog).getByRole("button", { name: "Copy existing links" }));
 
-  expect(mockApi.upload).toHaveBeenCalledWith([uploaded.id, second.id], profile.id, "url");
+  expect(mockApi.upload).toHaveBeenCalledWith([uploaded.id, second.id], profile.id, "url", defaultTarget.bucketKey);
   expect(mockApi.add).not.toHaveBeenCalled();
 });
 
@@ -210,7 +250,7 @@ it("opens the manual upload dialog from an item's upload button", async () => {
   await waitFor(() => expect(within(dialog).getByRole("button", { name: "Upload and copy links" })).toBeEnabled());
   await user.click(within(dialog).getByRole("button", { name: "Upload and copy links" }));
 
-  expect(mockApi.upload).toHaveBeenCalledWith([completedWithoutURL.id], profile.id, "url");
+  expect(mockApi.upload).toHaveBeenCalledWith([completedWithoutURL.id], profile.id, "url", defaultTarget.bucketKey);
   expect(mockApi.add).not.toHaveBeenCalled();
   expect(mockApi.save).not.toHaveBeenCalled();
 });

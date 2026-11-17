@@ -123,9 +123,10 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 				IDs        []string `json:"ids"`
 				ProfileID  string   `json:"profileId"`
 				LinkFormat string   `json:"linkFormat"`
+				BucketKey  string   `json:"bucketKey"`
 			}
 			if err = json.Unmarshal([]byte(payload), &req); err == nil {
-				err = b.mini.Upload(req.IDs, req.ProfileID, req.LinkFormat)
+				err = b.mini.Upload(req.IDs, req.ProfileID, req.LinkFormat, req.BucketKey)
 			}
 			value = b.mini.Snapshot()
 		case "copy_compressed_images":

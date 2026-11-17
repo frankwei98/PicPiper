@@ -142,7 +142,7 @@ func TestRecentHistoryIsIndependentOfTheActiveQueueLimit(t *testing.T) {
 	s.mu.Unlock()
 	copied := make(chan string, 1)
 	s.copyText = func(text string) error { copied <- text; return nil }
-	if err = s.Upload(ids, "public", "url"); err != nil {
+	if err = s.Upload(ids, "public", "url", targets[0].BucketKey); err != nil {
 		t.Fatal(err)
 	}
 	if miniIdle(t, s).Copied != "links" {

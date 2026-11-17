@@ -45,6 +45,21 @@ func miniIdle(t *testing.T, s *Service) State {
 	return State{}
 }
 
+func confirmedBucketKey(t *testing.T, storage *cloud.Service, profileID string) string {
+	t.Helper()
+	targets, err := storage.MiniUploadTargets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range targets {
+		if target.ProfileID == profileID {
+			return target.BucketKey
+		}
+	}
+	t.Fatalf("upload target %q missing", profileID)
+	return ""
+}
+
 func TestUploadCachedResultsRetriesWithoutRecompressingAndKeepsImageCopy(t *testing.T) {
 	var puts atomic.Int32
 	var reject atomic.Bool
@@ -134,16 +149,16 @@ func TestUploadCachedResultsRetriesWithoutRecompressingAndKeepsImageCopy(t *test
 	if err := storage.SaveMiniSettings(cfg); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Upload([]string{ids[0], "missing"}, "synthetic", "markdown"); err == nil {
+	if err := s.Upload([]string{ids[0], "missing"}, "synthetic", "markdown", confirmedBucketKey(t, storage, "synthetic")); err == nil {
 		t.Fatal("invalid selection accepted")
 	}
 	if s.Snapshot().Items[0].UploadStatus != "" {
 		t.Fatal("partially queued invalid batch")
 	}
-	if err := s.Upload(ids, "missing", "markdown"); err == nil {
+	if err := s.Upload(ids, "missing", "markdown", confirmedBucketKey(t, storage, "synthetic")); err == nil {
 		t.Fatal("missing profile accepted")
 	}
-	if err := s.Upload(ids, "synthetic", "markdown"); err != nil {
+	if err := s.Upload(ids, "synthetic", "markdown", confirmedBucketKey(t, storage, "synthetic")); err != nil {
 		t.Fatal(err)
 	}
 	failed := miniIdle(t, s)
@@ -160,7 +175,7 @@ func TestUploadCachedResultsRetriesWithoutRecompressingAndKeepsImageCopy(t *test
 	}
 	reject.Store(false)
 	block.Store(true)
-	if err := s.Upload([]string{ids[0]}, "synthetic", "markdown"); err != nil {
+	if err := s.Upload([]string{ids[0]}, "synthetic", "markdown", confirmedBucketKey(t, storage, "synthetic")); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -168,7 +183,7 @@ func TestUploadCachedResultsRetriesWithoutRecompressingAndKeepsImageCopy(t *test
 	case <-time.After(5 * time.Second):
 		t.Fatal("upload did not start")
 	}
-	if err := s.Upload([]string{ids[0]}, "synthetic", "markdown"); err == nil {
+	if err := s.Upload([]string{ids[0]}, "synthetic", "markdown", confirmedBucketKey(t, storage, "synthetic")); err == nil {
 		t.Fatal("duplicate pending upload accepted")
 	}
 	close(release)
@@ -180,7 +195,7 @@ func TestUploadCachedResultsRetriesWithoutRecompressingAndKeepsImageCopy(t *test
 	if text := <-textCopies; !strings.HasPrefix(text, "![") {
 		t.Fatal("upload did not copy Markdown")
 	}
-	if err := s.Upload(ids, "synthetic", "html"); err != nil {
+	if err := s.Upload(ids, "synthetic", "html", confirmedBucketKey(t, storage, "synthetic")); err != nil {
 		t.Fatal(err)
 	}
 	uploaded := miniIdle(t, s)
