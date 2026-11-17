@@ -1,6 +1,6 @@
 # Pic Piper 代码审查发现与修复交接（原始 HEAD 84f25fc）
 
-> **2026-11-17 更新**：原始发现保留供追溯，原有行号均对应 `84f25fc`。当前状态以第 3、10、11 节为准；第 9 节保留上一轮交接。业务修复快照 `a4f8806` 已补修 L5(c) 的 Mini 路径及 U1；Windows CI 测试兼容性补修见第 11 节。性能优化按用户决定另议，仍在用户指定的 `fix/review-findings` 分支。
+> **2026-11-17 更新**：原始发现及行号对应 `84f25fc`，第 9–11 节保留各轮交接。当前状态以第 3、12 节为准；最新实现 `6f0c950` 已核实并处理 CodeRabbit 的 11 条意见。Windows CI 补修见第 11 节。性能优化仍另议，继续原 `fix/review-findings` 分支。
 
 - **快照**：HEAD `84f25fc46b86bd534ba86e80e37736bc60f4a08e`，分支 `fix/review-findings`（没有上游跟踪分支），审查日期 2026-11-16。
 - **原始审查方法**：只读当时磁盘代码，没有使用 git 历史，没有改动代码。后续复核与修复包含回归测试、实现修改和逐问题提交，见第 9、10 节。
@@ -40,7 +40,7 @@
 | ID | 当前结论 | 提交 / 处理 |
 | --- | --- | --- |
 | H1 | 实测成立，已修复 | `4ae4019`：macOS ENOTSUP 独占复制回退 |
-| M1 | 实测成立，已修复 | `421726d`：下载完整暂存后独占发布，失败不留半文件 |
+| M1 | 已修复并加强 | `421726d` 暂存；`e902102` 去除最终路径复制降级，只允许原子不覆盖发布，见 CR2 |
 | M2 | 实测成立，已修复 | `7603d32`：主窗口/Mini 一致清洗派生输出名，区分校验提示 |
 | M3 | 实测成立，已修复 | `67065de`：取消/超时保留类型，响应与网络错误统一脱敏；覆盖下载正文取消 |
 | M4 | 原为已声明的平台限制，按用户要求扩展 | `a3c6fad`：内嵌 LittleCMS 2.20 完整 RGB ICC 转换，含 LUT、16 位和 alpha |
@@ -52,7 +52,7 @@
 | L4 | 读码及回归确认，已修复 | `e5e052c`：坏记录隔离到 0600 备份，有效记录继续可用 |
 | L5(a) | 重复 ID 校验已修复 | `08da7ae`：不同 ID 可指向同一桶，重复 ID 返回 invalidSettings |
 | L5(b) | 删除功能已实现 | `34db944`：删除本机 profile/凭据并清理引用，保留桶内对象和上传历史 |
-| L5(c) | Mini 路径已复现并修复；其余推断待验证 | `a4f8806`：Mini 只提交实际修改字段，后端锁内合并最新设置，订阅跨窗口通知，见第 10.1 节 |
+| L5(c) | Mini 及主窗口回滚路径已修复 | `a4f8806` 修复 Mini；`5e62492` 修复 profile 保存/回滚覆盖通用设置，R2 导入窄竞态仍待验证，见 CR3 |
 | L6 | 读码及回归确认，已修复 | `c55289f`：两分钟租约、15 秒心跳；进行中的后端请求继续阻止重启 |
 | L7 | 关闭：有文档支持的预期行为 | `docs/releasing.md` 明确支持打包应用的隔离 update smoke |
 | L8 | 已有测量，优化另议 | 对比图生成/传输、方向处理成本成立；三项在样本上撤回，HDR 限合成输入，见第 10.3 节 |
@@ -60,7 +60,7 @@
 | U2 | 待原生 Finder 拖放验证 | 模拟确认错误可被原生导入清除；没有证明实际绘制过一帧错误，见第 10.4 节 |
 | U3 | 当前样本反证，关闭本次尺寸疑点 | 旋转 JXL/HEIC 的卡片与解码均为 480×640，无需额外交换尺寸 |
 | R1（修复时发现） | 已修复 | `77a9aca`：上传到 profile 前缀的对象若不属于当前浏览前缀，不插入当前列表 |
-| R2（验证时发现） | 已复现，待单独诊断；未纳入本轮修复 | 上一轮当前版三次、原始 84f25fc 对照版一次同现 URL 激活焦点失败；最新结果见第 10.5 节 |
+| R2（验证时发现） | 保留历史失败，本轮未重现 | 最新本机 smoke 43 步及 macOS CI 通过；未改焦点代码或宣称查明根因，见第 12.4 节 |
 | R3（最终复查发现） | 已修复 | `c27b3c8`：回退复制失败清理前检查目标文件身份，不移除复制期间被替换的文件 |
 | C1（Windows CI） | 请求构造已修复 | `5a826b6`：测试用 json.Marshal 转义 Windows 路径，继续验证取消/超时错误码 |
 | C2（Windows CI） | 权限断言已修复 | `6a7bea7`：0600 精确检查限非 Windows，所有平台继续验证备份存在与内容 |
@@ -216,11 +216,11 @@
 
 ### L5 [低] 设置管理的缺口
 
-> **当前状态**：重复 ID 已修复（`08da7ae`），删除本机 profile/凭据入口已完成（`34db944`）。L5(c) 已确定性复现 Mini 过期快照覆盖，并补修；主窗口完整快照保存及 R2 取消/导入竞态仍待验证，见第 10.1 节。
+> **当前状态**：重复 ID 已修复（`08da7ae`），大小写等价 ID 与共享凭据保护进一步由 `5e020de` 完成；删除入口见 `34db944`。L5(c) 的 Mini 路径及主窗口 profile 保存/回滚路径均已复现并修复（`a4f8806`、`5e62492`）；R2 导入窄竞态仍待验证，见第 12 节。
 
 - **重复 profile ID**（读码确认）：`validateSettings`（`internal/cloud/cloud.go:474-499`）不拒绝重复 ID。secret 文件按 ID 存放，重复 ID 的两个 profile 会共用一份凭据。完成标准：保存含重复 ID 的设置返回 `invalidSettings`，有回归测试。
 - **删除 profile 的入口（原始缺口，现已完成）**：原始快照没有删除控件/操作；用户已确认实现。`34db944` 增加确认界面与后端本机删除操作，凭据行为见第 9.1 节。
-- **整体覆盖保存**（原始推断，行号需重新定位）：`SettingsPage.tsx` 保存时把 React 状态里的完整设置写回，包括失败回滚时的再次保存。此处尚未构造出实际失败；已确认并修复的是另一路径：Mini 挂载时的旧 `mini` 对象写回，覆盖主窗口后来保存的字段。不能将 Mini 的复现推广为所有设置保存都必然丢更新。
+- **整体覆盖保存**（原始推断，后续已部分复现）：除了 Mini 旧对象写回，现已复现 SettingsPage 的 profile 凭据保存等待失败期间回滚旧设置，覆盖另一个窗口刚保存的 Mini 值，详见 CR3。按 scope 合并已补修此路径；不将它推广为所有设置保存都必然丢更新。
 
 ### L6 [低] `update_activity` 租约没有过期机制
 
@@ -449,6 +449,58 @@ L8_DIR=/private/tmp/picpiper-l8 L8_MODE=ipc L8_FILES=12mp.jpg:12mp.jpg node scri
 node scripts/go.mjs test -race . ./internal/cloud ./internal/imaging -run 'TestDownloadBridgeRetainsContextErrorCodes|TestLoadUploadRecordsRecoversIndividualInvalidRecords|TestExportFallback' -count=1
 ```
 
-本轮仅调整三处测试，不改工作流或产品行为。完整本机检查结果见本次 PR 验证记录；日志位于 `/private/tmp/picpiper-windows-ci-20261117/`。Windows 原生测试、构建与 package smoke 的最终结论以 PR 后续 CI 运行结果为准。
+本轮仅调整三处测试，不改工作流或产品行为。完整本机检查日志位于 `/private/tmp/picpiper-windows-ci-20261117/`。补修快照 `1f8bfac` 的[后续 CI](https://github.com/frankwei98/PicPiper/actions/runs/44012856639)已全部通过：Windows amd64/arm64、macOS arm64、Linux amd64/arm64 的测试、构建及各自 package smoke 均成功；发布步骤按 PR 预期跳过。
 
 同一次失败运行中，macOS arm64、Linux amd64、Linux arm64 全部成功，含各自打包应用 smoke。此前本机记录的 URL 焦点问题在该 macOS runner 上未出现；保留本机失败记录，不将其泛化为所有环境的必现问题。
+
+## 12. CodeRabbit 意见逐条复核（2026-11-17）
+
+范围为 PR #15 首轮 11 条行内意见。CR1、CR5 已由 Windows CI 补修覆盖，其余九项分别提交。`6f0c950` 另修正新增设置回归夹具的 TypeScript 兼容性（不使用 Array.at，补全 pathStyle），不改产品行为或编译目标。
+
+### 12.1 结论与提交
+
+| 意见 | 独立核查 | 处理 |
+| --- | --- | --- |
+| [CR1：下载 JSON](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025531) | 成立，两个 Windows runner 实际返回 invalidRequest | 已由 `5a826b6` 修复，见 C1 |
+| [CR2：下载复制降级](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025536) | 成立。先创建最终路径再复制不能保证完整发布；新增回归在原子操作均不支持时，旧实现仍返回成功 | `e902102`：Windows 无覆盖/复制标志的 MoveFileEx、Linux RENAME_NOREPLACE、macOS RENAME_EXCL；只允许硬链接作为原子降级，都不可用则明确失败 |
+| [CR3：主窗口覆盖 Mini](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025544) | 部分成立。「前端无人监听」不成立，App.tsx 已订阅；但确定性复现凭据保存等待失败期间，另一窗口保存 AVIF·77，回滚写回 WEBP·90 | `5e62492`：通用与存储设置按 scope 在后端锁内合并；profile 保存/回滚保留最新通用字段，General 只应用实际改动的 Mini 控件。前端及后端回归先红后绿 |
+| [CR4：大小写 ID 共用凭据](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025552) | 成立，本机大小写不敏感卷删除 profile 后，保留的 PROFILE 读取凭据失败；校验也接受这两个 ID | `5e020de`：忽略大小写校验唯一性；删除旧配置时按实际文件身份保留共享凭据。大小写敏感卷上的独立凭据仍分别清理 |
+| [CR5：0600 断言](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025558) | 成立，错误在测试的 POSIX 模式假设 | 已由 `6a7bea7` 修复，见 C2 |
+| [CR6：无关链接错误触发复制](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025563) | 成立，注入非支持类错误时，旧实现仍创建输出并吞掉原错误；未发现覆盖既有文件漏洞 | `4c9ac89`：仅支持能力类错误降级，保留 FAT/exFAT 的 EPERM/不支持兼容；其他错误原样返回。回归先红后绿 |
+| [CR7：旧等待者删新构建锁](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025569) | 成立，可控重放两个等待者观察旧锁后，第二个仍删除第一个写有活 PID 的新目录 | `f9eaa68`：改用内核 advisory lock，不按路径删除锁。标准库 Go 小进程持有 flock，stdin 关闭或客户端退出释放；仅用于 macOS/Linux 原生 codec 准备 |
+| [CR8：发布前草稿变化](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025572) | 成立，假 gh 在首次快照后追加资产、发布草稿或改变同名资产 digest，旧实现仍 edit | `e61f366`：edit 前按 ID 重读，复查草稿、prerelease、完整清单及已验证元数据；最终读取后不再重算本地哈希 |
+| [CR9：smoke 固定 AVIF](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025576) | 条件成立。原私有初值 WEBP 的运行未因此假通过，但 helper 在初值 AVIF 时不能证明通知发生 | `640c3c5`：选择不同的支持格式并跟随断言；最新实际 smoke 验证 JPG·85 后恢复原设置 |
+| [CR10：保留名首组件尾空格](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025587) | 成立，con .preview.png / AUX .x.jpg 在主窗口、Mini 命名及后端校验均有遗漏 | `3f0a378`：三处按去尾空格后的首组件判断，保留正确后缀，拒绝未清洗形式；回归先红后绿 |
+| [CR11：心跳测试忽略错误](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595025604) | 测试诊断问题成立，没有据此发现心跳产品故障 | `aa7c61b`：两次调用立即检查错误，原行为回归继续通过 |
+
+### 12.2 取舍与边界
+
+- **下载与导出**：下载要求完整文件原子发布。macOS FAT32/exFAT 的排他重命名及硬链接均不可用时，返回 downloadWriteUnsupported，提示选择其他目录；不向最终名字写入部分内容。两个合成卷的原生探针均验证拒绝、最终路径不存在、暂存内容未变，卷已卸载清理。导出保留先前确认的独占复制兼容策略，不宣称该路径有崩溃原子性。README 已同步限制。第 9.3 节 FAT 下载成功是旧实现的历史结果。
+- **设置范围**：修复已证明的 Mini 字段丢更新，不把所有 profile 数组或 R2 导入/取消竞态一并算作解决。第 6、10.1 节未验证的 R2 候选仍保留。
+- **构建锁**：四条真实进程测试覆盖空缓存双客户端只构建一次、两个等待者串行取得锁、客户端退出后恢复、超时不删除另一持有者的锁。锁文件保持原 inode，不再依赖 pid 是否过期或删除新持有者路径。
+- **发布窗口**：GitHub 的读取与 release edit 不是条件原子事务；最终读取后仍有一次 API 请求间隔，无法仅靠再读完全消除外部写者竞态。本轮检测核验期间的变化并缩短窗口，没有真实发布 release。
+- **仍待验证**：物理 Finder 拖放、真实 Cloudflare 登录的可见发生率、真实 HDR/照片及 WebView 性能；L8 未优化，U3 保持关闭。
+
+Windows 移动策略参考 [MoveFileExW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw)；暂存文件与目的地位于同一卷，不启用覆盖或跨卷复制。保留名核查还读取了本机 Go 1.27.3 的 `src/internal/filepathlite/path_windows.go:isReservedName`。
+
+### 12.3 最新验证
+
+| 检查 | 结果 |
+| --- | --- |
+| pnpm test | 33 个文件、280 个测试通过 |
+| pnpm build:web | TypeScript 与生产构建通过 |
+| pnpm test:go / 全量 race | 全部通过，含设置 scope、凭据别名与发布回归 |
+| modern codec concurrent first-use 独立 race | 通过 |
+| vet / gofmt | 通过，另包含 scripts/codec-lock |
+| node --test scripts/release-checks.mjs | 9 项全部通过，gh 为私有假服务 |
+| Windows amd64 / arm64 cloud 测试二进制交叉编译 | 均通过；原生运行由 PR Checks 继续验证 |
+| pnpm build | macOS 应用与 DMG 通过 |
+| pnpm smoke | 43 步全部通过，见第 12.4 节 |
+
+代码推送后以 [PR Checks](https://github.com/frankwei98/PicPiper/pull/15/checks) 的原生结果为准。此前 `1f8bfac` 的五平台完整 CI 已通过，不能将其当作这些后续业务修改的原生验证。本机日志位于 `/private/tmp/picpiper-coderabbit-20261117/checks/`，临时卷探针及旧锁重放均在仓库外；未改用户旧报告 `docs/code-review-2026-11-16.md`。
+
+### 12.4 原生 smoke 与历史焦点问题
+
+最新 `build/smoke-YhTUW3/report.json` 为 passed=true、43 步，包含设置保存、Mini 同步、下载、应用 URL 恢复焦点及 OAuth 完成页六语言展示。已目视检查 `mini-settings-synced.png` 与 `settings.png`，布局正常。Mini 用例仍仅在执行期间禁用退出动画，不验收该动画完成时序。
+
+第 9.4、10.5 节旧焦点失败保留为历史观察，本次本机及此前 macOS CI 均未重现；未改焦点实现，不能声称定位了根因。真实 Cloudflare 登录及物理 Finder 拖放仍独立于该 smoke。
