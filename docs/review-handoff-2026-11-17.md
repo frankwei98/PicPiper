@@ -56,7 +56,9 @@
 
 最终代码 HEAD 的 `pnpm build` exit 0。同一构建上 `pnpm smoke` 执行两次（`build/smoke-WynESJ` 及随后一次重试）均在既有的 “App URL scheme did not restore and focus Pic Piper” 断言退出 1（received=true, minimized=false, focused=false, active=false）。该断言之前全部 42 个步骤通过，包括本轮新增的 “File-open handling reveals a hidden main window and imports the image”；已核阅 `build/smoke-WynESJ/open-with-hidden-window.png`，被打开图片出现在队列底部、主窗口完整可见。
 
-对照：`build/smoke-S0OTZD` 使用同一 window/file-open 代码（JPEG XL 尚未合入）时整轮 exit 0，并通过同一 URL 聚焦断言。JPEG XL 改动仅涉及 imaging 元数据解析，代码层面不触及窗口激活；但两次失败均为 received=true 而窗口未被 macOS 授予前台焦点，原因尚未确定，可能与桌面会话的焦点抢占/Spaces 状态有关。现有证据不足以判定为环境限制，也不足以排除本分支回归。未削弱该既有断言，如实记录为最终 HEAD 上未通过。
+对照：`build/smoke-S0OTZD` 使用同一 window/file-open 代码（JPEG XL 尚未合入）时整轮 exit 0，并通过同一 URL 聚焦断言。两次失败均为 received=true 而窗口未被 macOS 授予前台焦点；未削弱该既有断言。
+
+随后在同一代码 HEAD 上重跑 `pnpm build && pnpm smoke`：`build/smoke-2eZ1Rc` exit 0，44 个步骤全部通过，包括 “OS app URL scheme restored and focused the existing Pic Piper window”、“File-open handling reveals a hidden main window and imports the image” 和 “UI encoded jxl and rendered its full-resolution comparison”。已核阅该轮 `open-with-hidden-window.png`（图片导入队列、窗口完整可见）。因此先前两次 URL 聚焦失败是会话焦点状态相关的偶发问题，不是可复现回归；若再遇到，重跑即可，但不要删除该断言。
 
 hidden smoke 最初放在模拟 quit/cancel 场景之后，导致 AppKit 激活检查失败；移到该生命周期测试之前。提交 `43b8d29` 将新增 hidden 步骤的断言收敛为“窗口可见 + 图片已导入”（该缺陷的实际契约），聚焦由后续经 Launch Services 的 URL-scheme 步骤覆盖，避免后台激活的 AppKit 竞态。
 
@@ -64,7 +66,7 @@ hidden smoke 最初放在模拟 quit/cancel 场景之后，导致 AppKit 激活�
 
 ## 待核验边界
 
-- 不再扩展审查范围。最终 Go/前端全套与 `pnpm build` 已在代码 HEAD 上通过；原生 smoke 仅剩上述既有 URL 聚焦断言未通过，原因尚未确定（可能与会话焦点授予有关）。若需确认，应在无人抢占焦点的桌面会话重跑 `pnpm build && pnpm smoke`。
+- 不再扩展审查范围。最终 Go/前端全套、`pnpm build` 与完整原生 smoke（`build/smoke-2eZ1Rc`，44/44）均已通过。URL 聚焦断言曾因会话焦点状态连续失败两次，重跑即通过，属偶发；若再次失败，重跑而不是删除断言。
 - S3 删除仍为按 key 的无条件 DELETE；被其他客户端替换的对象存在误删窗口。条件 DELETE 的真实 provider 兼容性未验证，本轮未改，HEAD+DELETE 不构成原子身份保护。
 - Windows/Linux 无 single-instance lock 的多进程边界未修改；需平台验证且涉及 updater/smoke。
 - 原生 picker、真实 Finder 物理拖放、真实 S3/R2 账号均未使用，仅 fake credentials 和 loopback bucket。
