@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,19 @@ import (
 	"strconv"
 	"strings"
 )
+
+// Both operations publish an already complete staged file without replacing an
+// existing destination. Never fall back to copying into the final filename.
+func publishDownloadWith(publish, link func(string, string) error, source, target string) error {
+	err := publish(source, target)
+	if err == nil || os.IsExist(err) || !errors.Is(err, errors.ErrUnsupported) {
+		return err
+	}
+	if linkErr := link(source, target); linkErr == nil || os.IsExist(linkErr) {
+		return linkErr
+	}
+	return err
+}
 
 func saveUnique(dir, name string, r io.Reader) (string, error) {
 	if !safeFilename(name) {
@@ -49,31 +63,4 @@ func saveUnique(dir, name string, r io.Reader) (string, error) {
 		return target, nil
 	}
 	return "", fmt.Errorf("unable to reserve a unique filename")
-}
-
-// Used only when the filesystem cannot atomically publish without replacing.
-func copyDownloadExclusive(source, target string) error {
-	input, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer input.Close()
-	output, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return err
-	}
-	original, statErr := output.Stat()
-	_, copyErr := io.Copy(output, input)
-	closeErr := output.Close()
-	if copyErr == nil && closeErr == nil {
-		return nil
-	}
-	// Never remove a replacement created by another application during the copy.
-	if current, err := os.Lstat(target); err == nil && statErr == nil && os.SameFile(original, current) {
-		_ = os.Remove(target)
-	}
-	if copyErr != nil {
-		return copyErr
-	}
-	return closeErr
 }
