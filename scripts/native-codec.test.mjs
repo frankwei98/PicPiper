@@ -126,4 +126,33 @@ describe.skipIf(!["darwin", "linux"].includes(process.platform))("native codec b
       await rm(root, { recursive: true, force: true });
     }
   }, 60_000);
+
+  it("lets a timed-out client exit while the owner still holds the lock", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pic-piper-lock-cancel-"));
+    const path = join(root, "build.lock");
+    const release = await acquireNativeBuildLock(path);
+    const moduleURL = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "native-codec-lock.mjs")).href;
+    const client = spawn(process.execPath, ["--input-type=module", "-e", `
+      import { acquireNativeBuildLock } from ${JSON.stringify(moduleURL)};
+      try {
+        await acquireNativeBuildLock(process.argv[1], 1000);
+        throw new Error('lock was acquired while the owner held it');
+      } catch (error) {
+        if (!error.message.startsWith('Timed out')) throw error;
+        console.log('timed out');
+      }
+    `, path], { stdio: ["ignore", "pipe", "pipe"] });
+    const exited = once(client, "exit");
+    try {
+      const result = await Promise.race([exited, delay(5000, "still running", { ref: false })]);
+      expect(result).not.toBe("still running");
+      expect(result[0]).toBe(0);
+      // The timed-out client's cleanup must not release the original owner.
+      await expect(acquireNativeBuildLock(path, 100)).rejects.toThrow("Timed out");
+    } finally {
+      client.kill("SIGKILL");
+      await release();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
