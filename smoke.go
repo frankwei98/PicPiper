@@ -604,6 +604,33 @@ return saved.length === 1;`)
 	must(smokeCapture(win, dir, "batch-lazy-bottom.png"))
 	report.Steps = append(report.Steps, "Long compression batch mounted only nearby cards and retained scroll placeholders")
 
+	openedHidden := filepath.Join(dir, "Opened while hidden.jpg")
+	must(os.WriteFile(openedHidden, body, 0600))
+	mygo.RunOnMain(func() { win.Hide() })
+	deadline = time.Now().Add(5 * time.Second)
+	for win.IsVisible() && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if win.IsVisible() {
+		panic("Could not hide the main window for the file-open test")
+	}
+	mygo.RunOnMain(func() { backend.openImageFile(win, openedHidden) })
+	must(smokeWait(win, `Boolean(document.querySelector('.batch-list > [aria-label="Opened while hidden.jpg"]'))`, 15*time.Second))
+	_, err = smokeEval(win, `const list = document.querySelector('.batch-list'); list.scrollTop = list.scrollHeight; return true;`)
+	must(err)
+	must(smokeWait(win, `Boolean(document.querySelector('button[aria-label="Compare Opened while hidden.jpg"]'))`, 15*time.Second))
+	if !win.IsVisible() {
+		panic("File-open handling left the main window hidden")
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for (!win.IsFocused() || !mygo.App.IsActive()) && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !win.IsFocused() || !mygo.App.IsActive() {
+		panic("File-open handling did not activate the main window")
+	}
+	must(smokeCapture(win, dir, "open-with-hidden-window.png"))
+	report.Steps = append(report.Steps, "File-open handling reveals a hidden main window and imports the image")
 	must(smokeMini(backend, dir, bucket))
 	report.Steps = append(report.Steps, "Mini received a main-window format change while editing quality and saved both without replacing other Mini preferences")
 	report.Steps = append(report.Steps, "Mini supports selection, on-demand upload sheets, same-bucket skips, four clipboard link formats, clear/undo without changing gallery objects, and fixed controls in all six languages")
