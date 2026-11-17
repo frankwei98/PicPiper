@@ -11,7 +11,16 @@ func TestDownloadBridgeRetainsContextErrorCodes(t *testing.T) {
 	backend := newBackend(t.TempDir())
 	defer backend.images.Close()
 	backend.Call(context.Background(), "save_s3_secret", `{"profileId":"profile","secretAccessKey":"fake-secret"}`)
-	payload := `{"profile":{"id":"profile","name":"Profile","endpoint":"https://s3.example.test","region":"auto","bucket":"images","accessKeyId":"fake-access","pathStyle":true},"key":"photo.png","outputDir":"` + t.TempDir() + `"}`
+	payload, err := json.Marshal(map[string]any{
+		"profile": map[string]any{
+			"id": "profile", "name": "Profile", "endpoint": "https://s3.example.test",
+			"region": "auto", "bucket": "images", "accessKeyId": "fake-access", "pathStyle": true,
+		},
+		"key": "photo.png", "outputDir": t.TempDir(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, timedOut := range []bool{false, true} {
 		ctx, cancel := context.WithCancel(context.Background())
 		code := "cancelled"
@@ -23,7 +32,7 @@ func TestDownloadBridgeRetainsContextErrorCodes(t *testing.T) {
 			cancel()
 		}
 		var response reply
-		if err := json.Unmarshal([]byte(backend.Call(ctx, "download_gallery_object", payload)), &response); err != nil {
+		if err := json.Unmarshal([]byte(backend.Call(ctx, "download_gallery_object", string(payload))), &response); err != nil {
 			t.Fatal(err)
 		}
 		cancel()
