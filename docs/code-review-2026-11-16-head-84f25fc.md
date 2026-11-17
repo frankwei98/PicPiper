@@ -1,6 +1,6 @@
 # Pic Piper 代码审查发现与修复交接（原始 HEAD 84f25fc）
 
-> **2026-11-17 更新**：原始发现保留供追溯，原有行号均对应 `84f25fc`。当前状态以第 3、10 节为准；第 9 节保留上一轮交接。实现快照 `a4f8806` 已补修 L5(c) 的 Mini 路径及 U1，性能优化按用户决定另议。仍在用户指定的 `fix/review-findings` 分支。
+> **2026-11-17 更新**：原始发现保留供追溯，原有行号均对应 `84f25fc`。当前状态以第 3、10、11 节为准；第 9 节保留上一轮交接。业务修复快照 `a4f8806` 已补修 L5(c) 的 Mini 路径及 U1；Windows CI 测试兼容性补修见第 11 节。性能优化按用户决定另议，仍在用户指定的 `fix/review-findings` 分支。
 
 - **快照**：HEAD `84f25fc46b86bd534ba86e80e37736bc60f4a08e`，分支 `fix/review-findings`（没有上游跟踪分支），审查日期 2026-11-16。
 - **原始审查方法**：只读当时磁盘代码，没有使用 git 历史，没有改动代码。后续复核与修复包含回归测试、实现修改和逐问题提交，见第 9、10 节。
@@ -62,6 +62,9 @@
 | R1（修复时发现） | 已修复 | `77a9aca`：上传到 profile 前缀的对象若不属于当前浏览前缀，不插入当前列表 |
 | R2（验证时发现） | 已复现，待单独诊断；未纳入本轮修复 | 上一轮当前版三次、原始 84f25fc 对照版一次同现 URL 激活焦点失败；最新结果见第 10.5 节 |
 | R3（最终复查发现） | 已修复 | `c27b3c8`：回退复制失败清理前检查目标文件身份，不移除复制期间被替换的文件 |
+| C1（Windows CI） | 请求构造已修复 | `5a826b6`：测试用 json.Marshal 转义 Windows 路径，继续验证取消/超时错误码 |
+| C2（Windows CI） | 权限断言已修复 | `6a7bea7`：0600 精确检查限非 Windows，所有平台继续验证备份存在与内容 |
+| C3（Windows CI） | 替换测试已修复 | `673ba7e`：Windows 拒绝替换打开文件时验证候选保留、半文件清理；POSIX 仍验证已替换文件保留 |
 
 用户已确认：M4 完整 RGB 色彩转换；L1 保持 0600；L2 使用 profile 前缀；L3 展示部分结果；L5 增加删除入口。2026-11-17 追加授权补修 L5(c)、U1，每个问题一个 commit；性能优化另议。
 
@@ -429,3 +432,23 @@ L8_DIR=/private/tmp/picpiper-l8 L8_MODE=ipc L8_FILES=12mp.jpg:12mp.jpg node scri
 **R2 焦点失败仍在**：最终为 `received=true, minimized=false, focused=false, active=false`，与第 9.4 节原始 `84f25fc` 的对照结果一致。本轮没有改焦点逻辑或放宽其断言；OAuth completion HTML 的后续 GUI 展示步骤仍因中止未执行。U1 的完整 HTTP 响应已有独立真实 TCP 回归，不能因此称为全套 GUI 验收通过。
 
 完整检查日志在 `/private/tmp/picpiper-followup-20261117/frontend-checks.log`、`go-checks.log`、`native-build-4.log` 与 `native-smoke-4.log`。Go 使用私有临时缓存及仓库脚本；无真实凭据，测试服务均为本机假服务。构建仍有既存的前端 chunk 大小、重复链接库及本地未签更新包提示。
+
+## 11. Windows CI 测试兼容性补修（2026-11-17）
+
+[PR #15](https://github.com/frankwei98/PicPiper/pull/15) 的[首次 Build and release 运行](https://github.com/frankwei98/PicPiper/actions/runs/44010899828) 中，Windows amd64 与 arm64 均在 `Check native bridge and concurrency` 的 `node scripts/go.mjs test ./...` 失败；应用构建、安装器及 Windows package smoke 尚未执行。两个架构出现相同的三个测试错误，不是已定位的编译器或 codec 构建失败。
+
+| 问题 | 失败原因 | 修复与保持的断言 |
+| --- | --- | --- |
+| C1：下载桥错误码测试 | 手拼 JSON 直接嵌入 `t.TempDir()`；Windows 路径反斜杠未转义，桥首先返回 invalidRequest，而不是预期 cancelled/timedOut | `5a826b6` 使用 json.Marshal 构造完整请求；仍通过真实桥检查两类上下文错误码 |
+| C2：坏历史记录备份测试 | 无条件要求 Stat 的权限位为 0600，Windows 的 Go 文件模式不表达完整 POSIX 权限语义 | `6a7bea7` 沿用仓库既有非 Windows 权限断言；所有平台继续检查备份存在、坏记录诊断保留及有效历史可继续写入。产品写入权限策略未改 |
+| C3：失败复制期间替换测试 | 测试在输出文件仍打开时 Rename 覆盖它；Windows 的 Go 文件打开共享方式不允许该替换，得到 Access denied。回调内 t.Fatal 又跳过复制函数的 Close，导致 TempDir 清理报告文件占用 | `673ba7e` 在回调中返回错误，保证复制函数关闭句柄；写入真实部分内容后模拟失败。POSIX 继续验证已替换文件不被删除；若 Windows 明确拒绝替换，则验证候选文件完整保留、属于本次复制的半文件被清理。未跳过整条测试或改变产品导出代码 |
+
+定向 race 已通过：
+
+```bash
+node scripts/go.mjs test -race . ./internal/cloud ./internal/imaging -run 'TestDownloadBridgeRetainsContextErrorCodes|TestLoadUploadRecordsRecoversIndividualInvalidRecords|TestExportFallback' -count=1
+```
+
+本轮仅调整三处测试，不改工作流或产品行为。完整本机检查结果见本次 PR 验证记录；日志位于 `/private/tmp/picpiper-windows-ci-20261117/`。Windows 原生测试、构建与 package smoke 的最终结论以 PR 后续 CI 运行结果为准。
+
+同一次失败运行中，macOS arm64、Linux amd64、Linux arm64 全部成功，含各自打包应用 smoke。此前本机记录的 URL 焦点问题在该 macOS runner 上未出现；保留本机失败记录，不将其泛化为所有环境的必现问题。
