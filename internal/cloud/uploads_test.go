@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -186,6 +187,94 @@ func TestUploadRecordFailureDoesNotTurnSuccessfulRemoteUploadIntoRetryableFailur
 		t.Fatal("successful upload must report a local-record warning, not a retryable upload failure")
 	}
 }
+func TestGalleryDeletePreservesConcurrentUploadRecord(t *testing.T) {
+	for _, history := range []string{"recorded", "missing", "unreadable"} {
+		t.Run(history, func(t *testing.T) {
+			s, p, fixture, source := newUploadFixture(t)
+			deleted, proceed := make(chan struct{}), make(chan struct{})
+			release := sync.OnceFunc(func() { close(proceed) })
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodDelete {
+					fixture.ServeHTTP(w, r)
+					return
+				}
+				// Remove the remote object without returning the DELETE response yet.
+				response := httptest.NewRecorder()
+				fixture.ServeHTTP(response, r)
+				close(deleted)
+				select {
+				case <-proceed:
+					w.WriteHeader(response.Code)
+				case <-r.Context().Done():
+				}
+			}))
+			t.Cleanup(server.Close)
+			defer release()
+			p.Endpoint = server.URL
+			const key = "images/reused.png"
+			uploadRecorded(t, s, p, source, key, "original.png")
+			original := recordedUploads(t, s, p)[key]
+			switch history {
+			case "missing":
+				if err := os.Remove(s.uploadRecordsPath(p)); err != nil {
+					t.Fatal(err)
+				}
+			case "unreadable":
+				if err := os.WriteFile(s.uploadRecordsPath(p), []byte("invalid history"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			payload, err := json.Marshal(map[string]any{"profile": p, "key": key})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				_, err := s.Call(ctx, "delete_gallery_object", payload)
+				done <- err
+			}()
+			select {
+			case <-deleted:
+			case <-ctx.Done():
+				t.Fatal("remote deletion did not start")
+			}
+			if history == "unreadable" {
+				// Repair local history before the replacement upload records itself.
+				if err := os.Remove(s.uploadRecordsPath(p)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			uploadRecorded(t, s, p, source, key, "replacement.png")
+			replacement := recordedUploads(t, s, p)[key]
+			if replacement.UploadID == original.UploadID || replacement.FileName != "replacement.png" {
+				t.Fatal("replacement upload did not persist a new record")
+			}
+			release()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatalf("remote deletion failed: %v", err)
+				}
+			case <-ctx.Done():
+				t.Fatal("remote deletion did not finish")
+			}
+			if records := recordedUploads(t, s, p); len(records) != 1 || records[key] != replacement {
+				t.Fatalf("delete cleanup lost the replacement record: %+v", records)
+			}
+			result, err := call(t, s, "list_gallery_objects", map[string]any{"profile": p, "prefix": "images/"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			objects := result.(listResponse).Objects
+			if len(objects) != 1 || objects[0].Key != key || objects[0].FileName != replacement.FileName {
+				t.Fatalf("replacement upload missing from gallery: %+v", objects)
+			}
+		})
+	}
+}
+
 func TestConcurrentUploadsPreserveAllLocalRecords(t *testing.T) {
 	s, p, _, source := newUploadFixture(t)
 	var group sync.WaitGroup

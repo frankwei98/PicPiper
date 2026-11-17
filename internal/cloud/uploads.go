@@ -184,24 +184,6 @@ func (s *Service) recordUpload(p profile, record uploadedImage) error {
 	}
 	return atomicWrite(s.uploadRecordsPath(p), data, 0600, "uploadHistoryWriteFailed")
 }
-func (s *Service) forgetUpload(p profile, key string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	records, err := s.loadUploadRecordsLocked(p)
-	if err != nil {
-		return err
-	}
-	if _, exists := records[key]; !exists {
-		return nil
-	}
-	delete(records, key)
-	data, err := json.Marshal(records)
-	if err != nil {
-		return err
-	}
-	return atomicWrite(s.uploadRecordsPath(p), data, 0600, "uploadHistoryWriteFailed")
-}
-
 func (s *Service) forgetInvalidUploads(p profile, invalid []uploadedImage) error {
 	if len(invalid) == 0 {
 		return nil
@@ -214,8 +196,8 @@ func (s *Service) forgetInvalidUploads(p profile, invalid []uploadedImage) error
 	}
 	changed := false
 	for _, observed := range invalid {
-		// A HEAD checked an earlier snapshot. Do not remove a newer upload of
-		// the same key or overwrite records added while verification ran.
+		// Remote verification or deletion used an earlier snapshot. Do not remove
+		// a newer upload of the same key or overwrite records added meanwhile.
 		if current, exists := records[observed.Key]; exists && current == observed {
 			delete(records, observed.Key)
 			changed = true
