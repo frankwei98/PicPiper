@@ -2,12 +2,19 @@ package imaging
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"image"
+	"image/color"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/frankwei98/PicPiper/internal/apperror"
 )
 
 type jxlTestBits struct{ bits []byte }
@@ -193,6 +200,68 @@ func TestJXLKnownAnimationHeader(t *testing.T) {
 	}
 	if animated, err := jxlAnimation(bytes.NewReader(prefix), int64(len(prefix))); err != nil || !animated {
 		t.Fatalf("known animation header: %t %v", animated, err)
+	}
+}
+
+func TestJXLAnimationRequiresFirstFrameExport(t *testing.T) {
+	path := filepath.Join("testdata", "animated.jxl")
+	inspection, err := inspect(path)
+	if err != nil || !inspection.Animated || inspection.SourceFormat != "jxl" {
+		t.Fatalf("animation not detected: %+v %v", inspection, err)
+	}
+	service := New(t.TempDir())
+	run := call(t, service, "create_optimizer_run", request{}).(map[string]string)
+	queue := func(name, mode string) (Result, error) {
+		payload, err := json.Marshal(request{SourcePath: path, OutputDir: run["outputDir"], OutputFileName: name, Settings: settings{TargetFormat: "png", AnimationMode: mode}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, err := service.Call(context.Background(), "compress_image", payload)
+		if err != nil {
+			return Result{}, err
+		}
+		return value.(Result), nil
+	}
+
+	if _, err := queue("implicit.png", ""); err == nil {
+		t.Fatal("animation exported without an explicit first-frame choice")
+	} else {
+		var app *apperror.Error
+		if !errors.As(err, &app) || app.Code != "animationUnsupported" {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+	result, err := queue("first.png", "firstFrame")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Warning, "First frame only") {
+		t.Fatalf("missing first-frame warning: %q", result.Warning)
+	}
+	source, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := decodePixels(source, inspection.SourceFormat)
+	source.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exported, _, err := decode(context.Background(), result.OutputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exported.Bounds() != first.Bounds() {
+		t.Fatalf("exported %v, first frame is %v", exported.Bounds(), first.Bounds())
+	}
+	count := 0
+	for y := first.Bounds().Min.Y; y < first.Bounds().Max.Y; y++ {
+		for x := first.Bounds().Min.X; x < first.Bounds().Max.X; x++ {
+			if count%97 == 0 && color.NRGBAModel.Convert(first.At(x, y)) != color.NRGBAModel.Convert(exported.At(x, y)) {
+				t.Fatalf("exported pixel (%d, %d) does not match the decoder's first frame", x, y)
+			}
+			count++
+		}
 	}
 }
 

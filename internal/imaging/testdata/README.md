@@ -6,6 +6,14 @@
 Copyright (c) 2024 gen2brain). It stores a 640x480 AVIF with a 90-degree
 container rotation, so the decoded image is 480x640.
 
+## animated.jxl
+
+`test.jxl` from github.com/gen2brain/jpegxl v0.6.0 (MIT License,
+Copyright (c) 2024 gen2brain). It is an animated JPEG XL file whose bundled
+decoder returns 48 frames. The animation regression uses it to check detection,
+the still-export guard, and that an explicit first-frame export matches the
+decoder's first frame.
+
 ## ICC profiles
 
 `srgb.icc`, `display-p3.icc`, and `rgb-lut.icc` are synthetic profiles generated
