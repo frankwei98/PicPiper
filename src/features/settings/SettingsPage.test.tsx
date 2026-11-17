@@ -1,10 +1,13 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AppSettings } from "../../api/backend";
 
-const { saveSettings, saveS3Secret, testS3Connection, deleteProfile } = vi.hoisted(() => ({
+const { saveSettings, saveGeneralSettings, saveStorageSettings, loadSettings, saveS3Secret, testS3Connection, deleteProfile } = vi.hoisted(() => ({
   saveSettings: vi.fn(async (_settings?: AppSettings) => {}),
+  saveGeneralSettings: vi.fn(),
+  saveStorageSettings: vi.fn(),
+  loadSettings: vi.fn(),
   saveS3Secret: vi.fn(async () => ({
     credentialRef: "s3:personal",
   })),
@@ -15,6 +18,9 @@ const { saveSettings, saveS3Secret, testS3Connection, deleteProfile } = vi.hoist
 vi.mock("../../api/backend", async () => ({
   settingsApi: {
     saveSettings,
+    saveGeneralSettings,
+    saveStorageSettings,
+    loadSettings,
     saveS3Secret,
     testS3Connection,
     deleteProfile,
@@ -32,6 +38,12 @@ describe("SettingsPage", () => {
   beforeEach(() => {
     saveSettings.mockReset();
     saveSettings.mockResolvedValue(undefined);
+    saveGeneralSettings.mockReset();
+    saveGeneralSettings.mockImplementation(async (settings: AppSettings) => { await saveSettings(settings); return settings; });
+    saveStorageSettings.mockReset();
+    saveStorageSettings.mockImplementation(async (settings: AppSettings) => { await saveSettings(settings); return settings; });
+    loadSettings.mockReset();
+    loadSettings.mockImplementation(async () => saveSettings.mock.calls.at(-1)?.[0]);
     saveS3Secret.mockReset();
     saveS3Secret.mockResolvedValue({ credentialRef: "s3:personal" });
     testS3Connection.mockReset();
@@ -45,6 +57,33 @@ describe("SettingsPage", () => {
 
     expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("button", { name: "Save general settings" })).toBeInTheDocument();
+  });
+
+  it("keeps a Mini change made while a profile credential save is awaiting failure", async () => {
+    const user = userEvent.setup();
+    let stored: AppSettings = {
+      profiles: [{ id: "profile", name: "Profile", endpoint: "https://s3.example.test", region: "auto", bucket: "images", accessKeyId: "fake-access", credentialRef: "s3:profile", defaultPrefix: "" }],
+      namingTemplate: "{slug}.{ext}",
+      mini: { enabled: true, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
+    };
+    saveSettings.mockImplementation(async (settings) => { stored = settings!; });
+    saveStorageSettings.mockImplementation(async (settings: AppSettings) => {
+      stored = { ...stored, profiles: settings.profiles, namingTemplate: settings.namingTemplate, defaultProfileId: settings.defaultProfileId };
+      return stored;
+    });
+    loadSettings.mockImplementation(async () => stored);
+    let rejectSecret: ((error: Error) => void) | undefined;
+    saveS3Secret.mockImplementationOnce(() => new Promise((_, reject) => { rejectSecret = reject; }));
+    const view = render(<SettingsPage settings={stored} onSettingsChange={() => {}} />);
+    await goToSection(user, "S3 profiles");
+    await user.type(screen.getByLabelText("Secret access key"), "fake-new-secret");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await waitFor(() => expect(saveS3Secret).toHaveBeenCalled());
+    stored = { ...stored, mini: { ...stored.mini!, targetFormat: "avif", quality: 77 } };
+    view.rerender(<SettingsPage settings={stored} onSettingsChange={() => {}} />);
+    await act(async () => rejectSecret?.(new Error("credential write failed")));
+    await screen.findByText("credential write failed");
+    expect(stored.mini).toMatchObject({ targetFormat: "avif", quality: 77 });
   });
 
   it("shows the settings groups and expected tab order without a Mini tab", () => {

@@ -190,8 +190,8 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
     setGeneralSaving(true);
     const nextSettings = { ...settings, mini, closeBehavior, processingConcurrency };
     try {
-      await settingsApi.saveSettings(nextSettings);
-      onSettingsChange(nextSettings);
+      const saved = await settingsApi.saveGeneralSettings(nextSettings, settings.mini ?? defaultMiniSettings);
+      onSettingsChange(saved);
       setGeneralMessage(t("General settings saved."));
     } catch (error) {
       setGeneralError(errorMessage(error, t("Failed to save general settings.")));
@@ -310,7 +310,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
             : settings.defaultProfileId,
       };
 
-      await settingsApi.saveSettings(nextSettings);
+      await settingsApi.saveStorageSettings(nextSettings);
       try {
         if (secretAccessKey) {
           await settingsApi.saveS3Secret({
@@ -320,7 +320,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
         }
       } catch (error) {
         try {
-          await settingsApi.saveSettings(settings);
+          await settingsApi.saveStorageSettings(settings);
         } catch (rollbackError) {
           setSaving(false);
           setSaveError(
@@ -330,7 +330,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
         }
         throw error;
       }
-      onSettingsChange(nextSettings);
+      onSettingsChange(await settingsApi.loadSettings());
       setSecretAccessKey("");
       setSaving(false);
       setSaveMessage(t("Profile saved."));

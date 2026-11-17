@@ -5,7 +5,7 @@ import type { AppSettings } from "@/api/backend";
 
 const { saveSettings } = vi.hoisted(() => ({ saveSettings: vi.fn(async (_settings: AppSettings) => {}) }));
 vi.mock("@/api/backend", () => ({
-  settingsApi: { saveSettings },
+  settingsApi: { saveGeneralSettings: async (settings: AppSettings) => { await saveSettings(settings); return settings; } },
   defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
 }));
 
