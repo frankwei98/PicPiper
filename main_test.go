@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 
 	"github.com/frankwei98/PicPiper/internal/imaging"
+	"github.com/frankwei98/PicPiper/internal/mini"
 	"testing"
 )
 
@@ -67,6 +68,42 @@ func TestBridgePreservesBusinessErrorCodes(t *testing.T) {
 		if result.Data != nil || result.Error == nil || result.Error.Code != test.code || result.Error.Message == "" {
 			t.Fatalf("unexpected bridge error: %+v", result)
 		}
+	}
+}
+
+func TestMiniUploadBridgeRequiresConfirmedBucketKey(t *testing.T) {
+	backend := newBackend(t.TempDir())
+	t.Cleanup(backend.images.Close)
+	backend.mini = mini.New(backend.images, backend.cloud, nil, nil)
+	t.Cleanup(backend.mini.Close)
+	settings := `{"settings":{"profiles":[{"id":"public","name":"Public","endpoint":"https://s3.example.test","region":"us-east-1","bucket":"images","accessKeyId":"fake","pathStyle":true,"publicBaseUrl":"https://cdn.example.test"}],"namingTemplate":"{slug}.{ext}","mini":{"enabled":true,"targetFormat":"png","quality":90,"action":"clipboard","profileId":"public","linkFormat":"url"}}}`
+	var saved reply
+	if err := json.Unmarshal([]byte(backend.Call(context.Background(), "save_app_settings", settings)), &saved); err != nil || saved.Error != nil {
+		t.Fatalf("save synthetic settings: %v %+v", err, saved.Error)
+	}
+	targets, err := backend.cloud.MiniUploadTargets()
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("load upload target: %v", err)
+	}
+	for _, test := range []struct {
+		name, key, code string
+	}{
+		{"omitted", "", "miniUploadTargetChanged"},
+		{"null", `,"bucketKey":null`, "miniUploadTargetChanged"},
+		{"empty", `,"bucketKey":""`, "miniUploadTargetChanged"},
+		{"stale", `,"bucketKey":"old-bucket"`, "miniUploadTargetChanged"},
+		{"matching", `,"bucketKey":"` + targets[0].BucketKey + `"`, "miniItemMissing"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload := `{"ids":["missing"],"profileId":"public","linkFormat":"url"` + test.key + `}`
+			var result reply
+			if err := json.Unmarshal([]byte(backend.Call(context.Background(), "mini_upload", payload)), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Error == nil || result.Error.Code != test.code {
+				t.Fatalf("unexpected confirmation result: %+v", result)
+			}
+		})
 	}
 }
 

@@ -201,13 +201,18 @@ func activeItem(i Item) bool {
 // Upload queues cached outputs, independently of the drop-time completion action.
 // Validate the entire selection before changing any item so invalid requests
 // cannot leave a partially queued batch behind.
-func (s *Service) Upload(ids []string, profileID, format string) error {
+func (s *Service) Upload(ids []string, profileID, format, bucketKey string) error {
 	if len(ids) == 0 {
 		return apperror.New("invalidMiniUpload", "Choose compressed images to upload.")
 	}
 	plan, err := s.cloud.MiniUploadPlan(profileID, format)
 	if err != nil {
 		return err
+	}
+	// Missing keys from older runtime requests must also require confirmation.
+	// Validate the same captured plan that will be queued, never reread settings.
+	if bucketKey == "" || plan.BucketKey() != bucketKey {
+		return apperror.New("miniUploadTargetChanged", "Refresh to retry")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

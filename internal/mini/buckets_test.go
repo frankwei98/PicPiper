@@ -2,6 +2,7 @@ package mini
 
 import (
 	"context"
+	"errors"
 	"image"
 	"image/png"
 	"net/http"
@@ -12,9 +13,75 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/frankwei98/PicPiper/internal/apperror"
 	"github.com/frankwei98/PicPiper/internal/cloud"
 	"github.com/frankwei98/PicPiper/internal/imaging"
 )
+
+func TestUploadRejectsChangedOrMissingConfirmedBucket(t *testing.T) {
+	var puts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || !strings.HasPrefix(r.URL.Path, "/replacement/") {
+			t.Errorf("unexpected upload: %s %s", r.Method, r.URL.Path)
+		}
+		puts.Add(1)
+		w.Header().Set("ETag", `"synthetic"`)
+	}))
+	defer server.Close()
+	storage := cloud.New(t.TempDir())
+	cfg := cloud.DefaultMiniSettings()
+	cfg.Enabled = true
+	p := map[string]any{"id": "same-id", "name": "Public", "endpoint": server.URL, "region": "us-east-1", "bucket": "original", "accessKeyId": "fake", "pathStyle": true, "publicBaseUrl": "https://cdn.example.test"}
+	save := func() {
+		t.Helper()
+		if _, err := storage.Call(context.Background(), "save_app_settings", mustJSON(map[string]any{"settings": map[string]any{"profiles": []any{p}, "namingTemplate": "{slug}.{ext}", "mini": cfg}})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save()
+	if _, err := storage.Call(context.Background(), "save_s3_secret", mustJSON(map[string]any{"profileId": "same-id", "secretAccessKey": "synthetic-secret"})); err != nil {
+		t.Fatal(err)
+	}
+	confirmed := confirmedBucketKey(t, storage, "same-id")
+	path := filepath.Join(t.TempDir(), "cached.png")
+	if err := os.WriteFile(path, []byte("synthetic cached image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	copies := make(chan string, 1)
+	s := New(nil, storage, nil, func(text string) error { copies <- text; return nil })
+	defer s.Close()
+	const id = "cached-result"
+	s.mu.Lock()
+	s.items = []Item{{ID: id, Status: "completed", OutputName: "cached.png", outputPath: path}}
+	s.mu.Unlock()
+	p["bucket"] = "replacement"
+	save()
+	for _, key := range []string{confirmed, ""} {
+		err := s.Upload([]string{id}, "same-id", "url", key)
+		var business *apperror.Error
+		if !errors.As(err, &business) || business.Code != "miniUploadTargetChanged" {
+			t.Fatalf("changed or missing confirmed bucket accepted: %v", err)
+		}
+		state := s.Snapshot()
+		if state.Busy || state.Items[0].UploadStatus != "" || len(state.Items[0].Uploads) != 0 || puts.Load() != 0 {
+			t.Fatal("rejected confirmation mutated the queue or uploaded")
+		}
+	}
+	refreshed := confirmedBucketKey(t, storage, "same-id")
+	if refreshed == confirmed {
+		t.Fatal("changed bucket kept its old identity")
+	}
+	if err := s.Upload([]string{id}, "same-id", "url", refreshed); err != nil {
+		t.Fatal(err)
+	}
+	state := miniIdle(t, s)
+	if puts.Load() != 1 || state.Items[0].Uploads[refreshed] == "" || state.Copied != "links" {
+		t.Fatalf("reconfirmed upload failed: %+v", state)
+	}
+	if text := <-copies; text != state.Items[0].Uploads[refreshed] {
+		t.Fatal("reconfirmed link was not copied")
+	}
+}
 
 func TestUploadRemembersEveryBucketAndIgnoresProfileAliases(t *testing.T) {
 	var puts atomic.Int32
@@ -82,7 +149,7 @@ func TestUploadRemembersEveryBucketAndIgnoresProfileAliases(t *testing.T) {
 	id := miniIdle(t, s).Items[0].ID
 	firstURL := ""
 	for n, target := range []string{"first", "second", "alias", "first", "second"} {
-		if err = s.Upload([]string{id}, target, "markdown"); err != nil {
+		if err = s.Upload([]string{id}, target, "markdown", confirmedBucketKey(t, storage, target)); err != nil {
 			t.Fatal(err)
 		}
 		snapshot := miniIdle(t, s)
@@ -119,7 +186,7 @@ func TestUploadRemembersEveryBucketAndIgnoresProfileAliases(t *testing.T) {
 	if len(s.Snapshot().Items) != 1 || len(s.Snapshot().Items[0].Uploads) != 2 {
 		t.Fatal("undo lost multi-bucket history")
 	}
-	if err = s.Upload([]string{id}, "first", "html"); err != nil {
+	if err = s.Upload([]string{id}, "first", "html", confirmedBucketKey(t, storage, "first")); err != nil {
 		t.Fatal(err)
 	}
 	miniIdle(t, s)
