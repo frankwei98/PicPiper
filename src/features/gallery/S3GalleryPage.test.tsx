@@ -1,4 +1,4 @@
-import { render, screen, within, act, waitFor } from "@testing-library/react";
+import { render, screen, within, act, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { S3GalleryPage } from "./S3GalleryPage";
@@ -1081,6 +1081,98 @@ describe("S3GalleryPage", () => {
         ([request]) => (request as { profile: { id: string } }).profile.id === "p1",
       ),
     ).toHaveLength(oldProfileRequests);
+  });
+
+  it.each([false, true])("preserves uploads and their fresh metadata when an in-flight first page has a stale duplicate: %s", async (includesStaleDuplicate) => {
+    let finishListing!: (value: unknown) => void;
+    listObjects.mockImplementationOnce(() => new Promise((resolve) => { finishListing = resolve; }));
+    const uploaded = {
+      key: "images/new.png",
+      fileName: "Fresh local upload.png",
+      size: 300,
+      isImage: true,
+      publicUrl: "https://cdn.example.com/images/fresh.png",
+    };
+    uploadObject.mockResolvedValueOnce(uploaded);
+    mockDialogOpen.mockResolvedValueOnce("/tmp/new.png");
+    const galleryFocus = { profileId: profile.id, prefix: "images", highlightedKeys: [] };
+    const profiles = [profile];
+    const user = userEvent.setup();
+    const { rerender } = render(<S3GalleryPage galleryFocus={galleryFocus} profiles={profiles} />);
+    await waitFor(() => expect(listObjects).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "Upload local images" }));
+    await screen.findByText("Uploaded 1 image(s).");
+    await act(async () => finishListing({
+      objects: [
+        { key: "images/existing.png", size: 100, isImage: true },
+        ...(includesStaleDuplicate ? [{ ...uploaded, fileName: "Stale listing.png", publicUrl: "https://cdn.example.com/images/stale.png" }] : []),
+      ],
+      nextContinuationToken: null,
+    }));
+
+    expect(await screen.findByText(uploaded.fileName)).toBeInTheDocument();
+    expect(screen.getAllByText(uploaded.key)).toHaveLength(1);
+    expect(screen.getByText("images/existing.png")).toBeInTheDocument();
+    expect(screen.queryByText("Stale listing.png")).not.toBeInTheDocument();
+    const uploadedCard = screen.getByText(uploaded.key).closest("li")!;
+    await user.click(within(uploadedCard).getByRole("button", { name: "Copy URL" }));
+    expect(mockWriteClipboard).toHaveBeenLastCalledWith(uploaded.publicUrl);
+
+    listObjects.mockResolvedValueOnce({ objects: [], nextContinuationToken: null });
+    rerender(<S3GalleryPage galleryFocus={{ ...galleryFocus, highlightedKeys: [] }} profiles={profiles} />);
+    await screen.findByText("No objects found.");
+    expect(screen.queryByText(uploaded.key)).not.toBeInTheDocument();
+  });
+
+  it("keeps an upload for an edited prefix out of the previous prefix's pending listing", async () => {
+    vi.useFakeTimers();
+    try {
+      let finishOldListing!: (value: unknown) => void;
+      listObjects.mockImplementationOnce(() => new Promise((resolve) => { finishOldListing = resolve; }));
+      const uploaded = { key: "edited/local.png", size: 300, isImage: true, publicUrl: "https://cdn.example.com/edited/local.png" };
+      uploadObject.mockResolvedValueOnce(uploaded);
+      mockDialogOpen.mockResolvedValueOnce("/tmp/local.png");
+      render(<S3GalleryPage galleryFocus={{ profileId: profile.id, prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+      expect(listObjects).toHaveBeenCalledTimes(1);
+      fireEvent.change(screen.getByLabelText("Prefix"), { target: { value: "edited/" } });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Upload local images" })); });
+      expect(screen.getByText("Uploaded 1 image(s).")).toBeInTheDocument();
+      expect(listObjects).toHaveBeenCalledTimes(1);
+      await act(async () => finishOldListing({ objects: [], nextContinuationToken: null }));
+
+      fireEvent.change(screen.getByLabelText("Prefix"), { target: { value: "images" } });
+      expect(screen.getByText("No objects found.")).toBeInTheDocument();
+      expect(screen.queryByText(uploaded.key)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not carry an upload from a pending first page into another profile with the same prefix", async () => {
+    let finishOldListing!: (value: unknown) => void;
+    let finishNewListing!: (value: unknown) => void;
+    listObjects
+      .mockImplementationOnce(() => new Promise((resolve) => { finishOldListing = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishNewListing = resolve; }));
+    const profile2 = { ...profile, id: "p2", name: "Work S3", defaultPrefix: "images" };
+    const uploaded = { key: "images/local.png", size: 300, isImage: true, publicUrl: "https://cdn.example.com/images/local.png" };
+    uploadObject.mockResolvedValueOnce(uploaded);
+    mockDialogOpen.mockResolvedValueOnce("/tmp/local.png");
+    const user = userEvent.setup();
+    render(<S3GalleryPage galleryFocus={{ profileId: profile.id, prefix: "images", highlightedKeys: [] }} profiles={[profile, profile2]} />);
+    await waitFor(() => expect(listObjects).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "Upload local images" }));
+    await screen.findByText("Uploaded 1 image(s).");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Profile" }), profile2.id);
+    await waitFor(() => expect(listObjects).toHaveBeenCalledTimes(2));
+    await act(async () => finishNewListing({ objects: [{ key: "images/work.png", size: 100, isImage: true }], nextContinuationToken: null }));
+    await screen.findByText("images/work.png");
+    await act(async () => finishOldListing({ objects: [uploaded], nextContinuationToken: null }));
+
+    expect(screen.queryByText(uploaded.key)).not.toBeInTheDocument();
+    expect(screen.getByText("images/work.png")).toBeInTheDocument();
+    expect(screen.getByText("1 of 1 images")).toBeInTheDocument();
   });
 
   it("adds a local upload without discarding the loaded pages", async () => {

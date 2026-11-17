@@ -213,7 +213,13 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       };
       const page: ListGalleryObjectsResponse = await galleryApi.listObjects(request);
       if (generation !== loadGenerationRef.current) return;
-      setObjects((current) => append ? sortGalleryObjects([...new Map([...current, ...page.objects].map((object) => [object.key, object])).values()], sortOrder) : page.objects);
+      setObjects((current) => {
+        // A first-page request cleared the old list before awaiting. Preserve
+        // uploads added since then, including their newer metadata for duplicates.
+        const localUploads = current.filter((object) => object.key.startsWith(requestedPrefix));
+        const merged = append ? [...current, ...page.objects] : [...page.objects, ...localUploads];
+        return sortGalleryObjects([...new Map(merged.map((object) => [object.key, object])).values()], sortOrder);
+      });
       setUnverifiedCount((current) => append ? current + (page.unverifiedCount ?? 0) : (page.unverifiedCount ?? 0));
       setNextContinuationToken(page.nextContinuationToken ?? null);
       if (!append) {
