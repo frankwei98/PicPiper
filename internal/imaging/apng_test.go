@@ -44,6 +44,39 @@ func TestAPNGFirstFrameAcceptsPaletteAfterFrameControl(t *testing.T) {
 	}
 }
 
+func TestAPNGFirstFrameRejectsRepeatedHeader(t *testing.T) {
+	encode := func(width, height int) []byte {
+		var out bytes.Buffer
+		if err := png.Encode(&out, image.NewNRGBA(image.Rect(0, 0, width, height))); err != nil {
+			t.Fatal(err)
+		}
+		return out.Bytes()
+	}
+	canvas, oversized := encode(1, 1), encode(64, 64)
+	control := binary.BigEndian.AppendUint32(nil, 1)
+	control = binary.BigEndian.AppendUint32(control, 0)
+	frame := make([]byte, 26)
+	binary.BigEndian.PutUint32(frame[4:8], 1)
+	binary.BigEndian.PutUint32(frame[8:12], 1)
+	binary.BigEndian.PutUint16(frame[20:22], 1)
+	binary.BigEndian.PutUint16(frame[22:24], 10)
+	data := append([]byte{}, canvas[:33]...)
+	data = append(data, pngChunk("acTL", control)...)
+	data = append(data, pngChunk("fcTL", frame)...)
+	// The frame control fits the 1x1 canvas; the second header and its pixels do not.
+	data = append(data, oversized[8:]...)
+	path := filepath.Join(t.TempDir(), "repeated-header.png")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := inspect(path); err != nil || !info.Animated || info.Width != 1 || info.Height != 1 {
+		t.Fatalf("fixture is not a 1x1 APNG: %+v %v", info, err)
+	}
+	if _, _, err := decode(context.Background(), path); err == nil {
+		t.Fatal("a repeated IHDR replaced the frame size validated against the canvas")
+	}
+}
+
 func TestAPNGFirstFrameExcludesDefaultPoster(t *testing.T) {
 	encode := func(img image.Image) []byte {
 		var out bytes.Buffer

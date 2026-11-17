@@ -64,7 +64,8 @@ func decodeAPNGFirst(ctx context.Context, file *os.File, canvas image.Config) (i
 		}
 		switch kind {
 		case "IHDR":
-			if len(data) != 13 {
+			// A repeated header would replace the frame size checked against the canvas.
+			if len(data) != 13 || header != nil {
 				return nil, fmt.Errorf("invalid APNG header")
 			}
 			header = data
