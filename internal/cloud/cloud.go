@@ -506,10 +506,11 @@ func validateSettings(v settings) error {
 		if e := validateProfile(p); e != nil {
 			return e
 		}
-		if _, exists := profileIDs[p.ID]; exists {
-			return appErr("invalidSettings", "Profile IDs must be unique.")
+		identity := strings.ToLower(p.ID)
+		if _, exists := profileIDs[identity]; exists {
+			return appErr("invalidSettings", "Profile IDs must be unique, ignoring case.")
 		}
-		profileIDs[p.ID] = struct{}{}
+		profileIDs[identity] = struct{}{}
 		if v.DefaultProfileID != nil && p.ID == *v.DefaultProfileID {
 			found = true
 		}

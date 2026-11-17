@@ -89,3 +89,42 @@ func TestDeleteProfileHandlesMissingCredentialAndRejectsUnsafeIDs(t *testing.T) 
 		t.Fatal(err)
 	}
 }
+
+func TestDeleteProfilePreservesCaseEquivalentCredentials(t *testing.T) {
+	s := New(t.TempDir())
+	first := testProfile("https://s3.example.test")
+	first.ID = "profile"
+	second := first
+	second.ID = "PROFILE"
+	cfg := defaults()
+	cfg.Profiles = []profile{first, second}
+	// Older settings could contain IDs that alias on a case-insensitive volume.
+	if err := s.saveSettings(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.saveSecret(first.ID, "fake-shared-secret"); err != nil {
+		t.Fatal(err)
+	}
+	_, secondErr := os.Stat(s.secretPath(second.ID))
+	shared := secondErr == nil
+	if os.IsNotExist(secondErr) {
+		if _, err := s.saveSecret(second.ID, "fake-distinct-secret"); err != nil {
+			t.Fatal(err)
+		}
+	} else if secondErr != nil {
+		t.Fatal(secondErr)
+	}
+	before, err := s.getSecret(second, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.deleteProfile(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if after, err := s.getSecret(second, nil); err != nil || after != before {
+		t.Fatalf("remaining profile lost its credential: %v", err)
+	}
+	if _, err := os.Stat(s.secretPath(first.ID)); !shared && !os.IsNotExist(err) {
+		t.Fatalf("distinct deleted credential remains: %v", err)
+	}
+}
