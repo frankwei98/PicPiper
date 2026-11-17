@@ -10,6 +10,22 @@ import { describe, expect, it } from "vitest";
 import { acquireNativeBuildLock } from "./native-codec-lock.mjs";
 
 describe.skipIf(!["darwin", "linux"].includes(process.platform))("native codec build lock", () => {
+  it("ignores application Go flags without changing the caller's flags", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pic-piper-lock-flags-"));
+    const originalFlags = process.env.GOFLAGS;
+    let release;
+    try {
+      process.env.GOFLAGS = "-race";
+      release = await acquireNativeBuildLock(join(root, "build.lock"));
+      expect(process.env.GOFLAGS).toBe("-race");
+    } finally {
+      if (originalFlags === undefined) delete process.env.GOFLAGS;
+      else process.env.GOFLAGS = originalFlags;
+      if (release) await release();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   it("prepares an uncached codec once across concurrent build clients", async () => {
     const root = await mkdtemp(join(tmpdir(), "pic-piper-codec-build-"));
     const name = `lock-test-${randomUUID()}`;

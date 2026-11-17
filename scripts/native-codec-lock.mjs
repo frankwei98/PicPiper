@@ -8,7 +8,7 @@ const helper = join(dirname(fileURLToPath(import.meta.url)), "codec-lock", "main
 // Keep the lock file: unlinking it would let waiters lock different inodes.
 export async function acquireNativeBuildLock(path, timeoutMs = 10 * 60_000) {
   const holder = spawn("go", ["run", helper, path], {
-    env: { ...process.env, CGO_ENABLED: "0" },
+    env: { ...process.env, CGO_ENABLED: "0", GOFLAGS: "" },
     stdio: ["pipe", "pipe", "pipe"],
   });
   let diagnostics = "";
