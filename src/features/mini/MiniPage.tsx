@@ -57,7 +57,7 @@ export function MiniPage() {
       running = true;
       const version = stateVersion.current;
       try { const snapshot = await miniApi.state(); if (alive.current && version === stateVersion.current) setState(snapshot); }
-      catch (cause) { if (alive.current) setError(errorMessage(cause, t("Mini could not load its queue."))); }
+      catch (cause) { if (alive.current && version === stateVersion.current) setError(errorMessage(cause, t("Mini could not load its queue."))); }
       finally { running = false; }
     };
     void poll();

@@ -254,6 +254,30 @@ it("adds dropped file paths through the Mini API", async () => {
   expect(await screen.findByText("result.webp")).toBeVisible();
 });
 
+it("ignores a poll error from before a successful add", async () => {
+  prepare();
+  let rejectPoll: ((cause: Error) => void) | undefined;
+  mockApi.state.mockImplementationOnce(() => new Promise<MiniState>((_resolve, reject) => { rejectPoll = reject; }));
+  mockApi.add.mockResolvedValue({ ...emptyState, items: [completedItem] });
+  render(<MiniPage />);
+  await screen.findByRole("button", { name: /Drop (images to compress|more images)/ });
+
+  mockDesktop.fileDropListener?.(["/tmp/drop image.png"]);
+  expect(await screen.findByText("result.webp")).toBeVisible();
+  await act(async () => rejectPoll?.(new Error("stale poll failure")));
+
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByText("result.webp")).toBeVisible();
+});
+
+it("shows errors from the current queue poll", async () => {
+  prepare();
+  mockApi.state.mockRejectedValueOnce(new Error("current poll failure"));
+  render(<MiniPage />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("current poll failure");
+});
+
 it("restores results from Mini state after closing and remounting", async () => {
   const user = userEvent.setup();
   const view = await renderReady(defaultSettings, resultState);
