@@ -43,7 +43,7 @@ describe("SettingsPage", () => {
     saveStorageSettings.mockReset();
     saveStorageSettings.mockImplementation(async (settings: AppSettings) => { await saveSettings(settings); return settings; });
     loadSettings.mockReset();
-    loadSettings.mockImplementation(async () => saveSettings.mock.calls.at(-1)?.[0]);
+    loadSettings.mockImplementation(async () => saveSettings.mock.calls[saveSettings.mock.calls.length - 1]?.[0]);
     saveS3Secret.mockReset();
     saveS3Secret.mockResolvedValue({ credentialRef: "s3:personal" });
     testS3Connection.mockReset();
@@ -62,7 +62,7 @@ describe("SettingsPage", () => {
   it("keeps a Mini change made while a profile credential save is awaiting failure", async () => {
     const user = userEvent.setup();
     let stored: AppSettings = {
-      profiles: [{ id: "profile", name: "Profile", endpoint: "https://s3.example.test", region: "auto", bucket: "images", accessKeyId: "fake-access", credentialRef: "s3:profile", defaultPrefix: "" }],
+      profiles: [{ id: "profile", name: "Profile", endpoint: "https://s3.example.test", region: "auto", bucket: "images", accessKeyId: "fake-access", credentialRef: "s3:profile", defaultPrefix: "", pathStyle: true }],
       namingTemplate: "{slug}.{ext}",
       mini: { enabled: true, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
     };
