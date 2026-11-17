@@ -288,12 +288,28 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
     setDragging(false);
   }, []);
 
-  const importImagesRef = useRef(importImages);
-  importImagesRef.current = importImages;
+  const pendingOpenedPaths = useRef<string[]>([]);
+  const handleImagesOpenedRef = useRef<(paths: string[]) => void>(() => {});
+  handleImagesOpenedRef.current = (paths) => {
+    if (!canMutateQueue()) {
+      pendingOpenedPaths.current.push(...paths);
+      return;
+    }
+    void importImages(paths);
+  };
 
   useEffect(() => onImagesOpened((paths) => {
-    void importImagesRef.current(paths);
+    handleImagesOpenedRef.current(paths);
   }), []);
+
+  // Upload bookkeeping can render after isUploading becomes false. Recheck the
+  // actual mutation guard after every render before draining native-open paths.
+  useEffect(() => {
+    if (!pendingOpenedPaths.current.length || !canMutateQueue()) return;
+    const paths = pendingOpenedPaths.current;
+    pendingOpenedPaths.current = [];
+    void importImages(paths);
+  });
 
   useEffect(() => {
     if (!isActive) return;
