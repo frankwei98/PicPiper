@@ -622,13 +622,8 @@ return saved.length === 1;`)
 	if !win.IsVisible() {
 		panic("File-open handling left the main window hidden")
 	}
-	deadline = time.Now().Add(5 * time.Second)
-	for (!win.IsFocused() || !mygo.App.IsActive()) && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if !win.IsFocused() || !mygo.App.IsActive() {
-		panic("File-open handling did not activate the main window")
-	}
+	// Focus after internal activation follows macOS's focus-stealing rules and is
+	// covered by the URL-scheme step below, which goes through Launch Services.
 	must(smokeCapture(win, dir, "open-with-hidden-window.png"))
 	report.Steps = append(report.Steps, "File-open handling reveals a hidden main window and imports the image")
 	must(smokeMini(backend, dir, bucket))
