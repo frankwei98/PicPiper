@@ -35,7 +35,7 @@ func TestExportFallsBackWhenHardLinksAreUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	destination := filepath.Join(dir, "photo.png")
-	unsupported := func(string, string) error { return errors.New("operation not supported") }
+	unsupported := func(string, string) error { return errors.ErrUnsupported }
 	if err := publishExportWith(unsupported, source, destination); err != nil {
 		t.Fatalf("fallback copy failed: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestExportFallbackNeverReplacesExistingFile(t *testing.T) {
 	if err := os.WriteFile(destination, []byte("user file"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	unsupported := func(string, string) error { return errors.New("operation not supported") }
+	unsupported := func(string, string) error { return errors.ErrUnsupported }
 	if err := publishExportWith(unsupported, source, destination); !os.IsExist(err) {
 		t.Fatalf("expected an exclusive-create conflict, got %v", err)
 	}
@@ -73,6 +73,23 @@ func TestExportFallbackRemovesIncompleteCopy(t *testing.T) {
 	}
 	if _, err := os.Stat(destination); !os.IsNotExist(err) {
 		t.Fatalf("partial export left behind: %v", err)
+	}
+}
+
+func TestExportRetainsUnrelatedLinkErrors(t *testing.T) {
+	dir := t.TempDir()
+	source, destination := filepath.Join(dir, "staged"), filepath.Join(dir, "photo.png")
+	if err := os.WriteFile(source, []byte("complete image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, failure := range []error{os.ErrPermission, os.ErrNotExist, errors.New("disk full")} {
+		link := func(string, string) error { return failure }
+		if err := publishExportWith(link, source, destination); err != failure {
+			t.Fatalf("link error was hidden: got %v, want %v", err, failure)
+		}
+		if _, err := os.Stat(destination); !os.IsNotExist(err) {
+			t.Fatalf("unrelated link failure created a destination: %v", err)
+		}
 	}
 }
 

@@ -32,7 +32,7 @@ func (r contextReader) Read(buffer []byte) (int, error) {
 // hard links, so fall back to an exclusive copy instead of failing the export.
 func publishExportWith(link func(source, destination string) error, source, destination string) error {
 	err := link(source, destination)
-	if err == nil || os.IsExist(err) {
+	if err == nil || os.IsExist(err) || !exportLinkUnsupported(err) {
 		return err
 	}
 	return copyExclusive(source, destination)
