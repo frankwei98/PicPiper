@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -41,8 +42,11 @@ func TestLoadUploadRecordsRecoversIndividualInvalidRecords(t *testing.T) {
 		t.Fatalf("recovery backup files = %v, %v", backups, err)
 	}
 	info, err := os.Stat(backups[0])
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil {
 		t.Fatalf("backup permissions = %v, %v", info, err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
+		t.Fatalf("backup permissions = %04o, want 0600", info.Mode().Perm())
 	}
 	backupData, err := os.ReadFile(backups[0])
 	if err != nil || !strings.Contains(string(backupData), "invalid/schema.png") || !strings.Contains(string(backupData), "not-a-date") || !strings.Contains(string(backupData), "invalid/decode.png") {
