@@ -1,6 +1,6 @@
 # Pic Piper 代码审查发现与修复交接（原始 HEAD 84f25fc）
 
-> **2026-11-17 更新**：原始发现及行号对应 `84f25fc`，第 9–11 节保留各轮交接。当前状态以第 3、12 节为准；最新实现 `6f0c950` 已核实并处理 CodeRabbit 的 11 条意见。Windows CI 补修见第 11 节。性能优化仍另议，继续原 `fix/review-findings` 分支。
+> **2026-11-17 更新**：原始发现及行号对应 `84f25fc`，第 9–12 节保留各轮交接。当前状态以第 3、13 节为准；最新实现 `3ad6b9b` 已处理 CodeRabbit 首轮 11 条及后续 3 条意见。Windows CI 补修见第 11 节。性能优化仍另议，继续原 `fix/review-findings` 分支。
 
 - **快照**：HEAD `84f25fc46b86bd534ba86e80e37736bc60f4a08e`，分支 `fix/review-findings`（没有上游跟踪分支），审查日期 2026-11-16。
 - **原始审查方法**：只读当时磁盘代码，没有使用 git 历史，没有改动代码。后续复核与修复包含回归测试、实现修改和逐问题提交，见第 9、10 节。
@@ -60,7 +60,7 @@
 | U2 | 待原生 Finder 拖放验证 | 模拟确认错误可被原生导入清除；没有证明实际绘制过一帧错误，见第 10.4 节 |
 | U3 | 当前样本反证，关闭本次尺寸疑点 | 旋转 JXL/HEIC 的卡片与解码均为 480×640，无需额外交换尺寸 |
 | R1（修复时发现） | 已修复 | `77a9aca`：上传到 profile 前缀的对象若不属于当前浏览前缀，不插入当前列表 |
-| R2（验证时发现） | 保留历史失败，本轮未重现 | 最新本机 smoke 43 步及 macOS CI 通过；未改焦点代码或宣称查明根因，见第 12.4 节 |
+| R2（验证时发现） | 间歇性焦点失败再次出现，仍待定位 | 第 12 轮本机 43 步及 macOS CI 通过；第 13 轮本机完成 41 步后同一焦点断言失败，未改代码或放宽断言，见第 13 节 |
 | R3（最终复查发现） | 已修复 | `c27b3c8`：回退复制失败清理前检查目标文件身份，不移除复制期间被替换的文件 |
 | C1（Windows CI） | 请求构造已修复 | `5a826b6`：测试用 json.Marshal 转义 Windows 路径，继续验证取消/超时错误码 |
 | C2（Windows CI） | 权限断言已修复 | `6a7bea7`：0600 精确检查限非 Windows，所有平台继续验证备份存在与内容 |
@@ -504,3 +504,19 @@ Windows 移动策略参考 [MoveFileExW](https://learn.microsoft.com/en-us/windo
 最新 `build/smoke-YhTUW3/report.json` 为 passed=true、43 步，包含设置保存、Mini 同步、下载、应用 URL 恢复焦点及 OAuth 完成页六语言展示。已目视检查 `mini-settings-synced.png` 与 `settings.png`，布局正常。Mini 用例仍仅在执行期间禁用退出动画，不验收该动画完成时序。
 
 第 9.4、10.5 节旧焦点失败保留为历史观察，本次本机及此前 macOS CI 均未重现；未改焦点实现，不能声称定位了根因。真实 Cloudflare 登录及物理 Finder 拖放仍独立于该 smoke。
+
+## 13. 后续三条意见（2026-11-17）
+
+`7cc6f69` 的[五平台 CI](https://github.com/frankwei98/PicPiper/actions/runs/44018406654)已全部通过，含原生测试、构建及 package smoke。收尾刷新时又发现 CodeRabbit 对本次新代码提出三条边界意见，继续逐条复核并分别提交；没有把 CI 全绿视为这些未覆盖场景也已正确。
+
+| 意见 | 独立核查 | 修复 |
+| --- | --- | --- |
+| [CR12：helper 继承 GOFLAGS](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595435322) | Linux 条件成立：GOFLAGS=-race 与 helper 的 CGO_ENABLED=0 冲突，Linux 交叉编译实际返回 go: -race requires cgo。本机 macOS Go 1.27 不要求 race 必须启用 cgo，因此原测试在 macOS 未失败，不能泛称所有平台均受影响 | `cd9d526`：仅为 helper 清空 GOFLAGS，保留调用者环境。新增测试验证调用者仍保有 -race；应用测试继续使用自己的 flags |
+| [CR13：超时后实际 helper 滞留](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595435333) | 已复现：原持有者一直锁定时，独立客户端捕获 1 秒超时后，5 秒内仍不能自然退出；杀死 go run 父进程未结束阻塞 flock 的实际子进程 | `3ad6b9b`：go run 与编译后 helper 置于独立进程组；取消时关闭所有管道、终止该组并移除进程引用。回归验证客户端能退出且原持有者仍锁定，先红后绿 |
+| [CR14：保存后刷新失败误作保存失败](https://github.com/frankwei98/PicPiper/pull/15#discussion_r4595435339) | 已复现：profile/secret 已保存，loadSettings 拒绝时未向父层发布已保存 profile；新 harness 验证重试会丢失已定稿身份。同时验证先发布旧快照也不能覆盖保存等待期间已收到的 AVIF·77 | `97637b1`：先发布已持久化 profile、保留等待期间收到的最新通用设置、定稿 ID 并清空 secret；刷新独立处理。回归保留成功提示及加载错误，重试使用同一 ID，secret 只写一次，先红后绿 |
+
+本轮 Go 业务代码未改变。新完整检查再次通过：33 个文件、283 个前端/脚本测试，web build（含 TypeScript），Go 全量测试、全量 race、modern codec 独立并发 race、vet、gofmt，以及 9 项模拟发布 CLI 回归。构建锁的真实进程测试现为 6 项。
+
+本轮 `pnpm build` 通过，产出 macOS 应用及 DMG；`pnpm smoke` **未全通过**。`build/smoke-1VMM2d/report.json` 记录 41 个步骤完成，包括 profile 保存、下载及 Mini 跨窗口设置同步；随后 URL 返回焦点断言再次失败：`received=true, minimized=false, focused=false, active=false`。已目视检查本轮 `mini-settings-synced.png` 与 `settings.png`，布局正常。后续 OAuth 完成页展示因中止未执行，不能使用上一轮通过结果代替本轮验证。
+
+这是第 9.4、10.5 节已有且原始版对照同现的间歇性焦点问题；第 12 轮通过不代表根因已消除。本轮没有改焦点实现或放宽断言，保留待定位状态。日志在 `/private/tmp/picpiper-coderabbit-20261117/followup-checks/`；最新原生 CI 以 [PR Checks](https://github.com/frankwei98/PicPiper/pull/15/checks) 为准，前两轮的全绿不能替代这三项补修的复验。
