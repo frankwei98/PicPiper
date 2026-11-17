@@ -9,6 +9,9 @@ const helper = join(dirname(fileURLToPath(import.meta.url)), "codec-lock", "main
 export async function acquireNativeBuildLock(path, timeoutMs = 10 * 60_000) {
   const holder = spawn("go", ["run", helper, path], {
     env: { ...process.env, CGO_ENABLED: "0", GOFLAGS: "" },
+    // go run starts another process for the compiled helper. Isolate both so
+    // cancellation can stop the entire group without touching the caller.
+    detached: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
   let diagnostics = "";
@@ -28,7 +31,16 @@ export async function acquireNativeBuildLock(path, timeoutMs = 10 * 60_000) {
     });
   } catch (error) {
     holder.stdin.destroy();
-    holder.kill();
+    holder.stdout.destroy();
+    holder.stderr.destroy();
+    holder.unref();
+    if (holder.pid) {
+      try {
+        process.kill(-holder.pid, "SIGKILL");
+      } catch (killError) {
+        if (killError.code !== "ESRCH") throw killError;
+      }
+    }
     throw error;
   } finally {
     clearTimeout(timer);
