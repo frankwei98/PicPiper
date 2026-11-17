@@ -173,6 +173,7 @@
   "Optional. Used for image previews and public links.": "任意。画像のプレビューと公開リンクに使用します。",
   "Default prefix must not contain path traversal segments.": "デフォルトのプレフィックスにパストラバーサル要素を含めることはできません。",
   "Default prefix must not contain control characters.": "デフォルトのプレフィックスに制御文字を含めることはできません。",
+  "Default prefix must not contain backslashes or empty path segments.": "デフォルトのプレフィックスにバックスラッシュや空のパスセグメントを含めることはできません。",
   "Enter a secret access key to test this new profile.": "新しいプロファイルをテストするには、Secret access key を入力してください。",
   "Connection successful. Bucket listing works.": "接続に成功しました。バケット一覧を取得できます。",
   "Connection test failed.": "接続テストに失敗しました。",

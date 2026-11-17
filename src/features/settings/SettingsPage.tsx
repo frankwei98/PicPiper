@@ -227,6 +227,8 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
       errors.defaultPrefix = t("Default prefix must not contain path traversal segments.");
     } else if (Array.from(defaultPrefix).some((character) => /[\u0000-\u001f\u007f]/.test(character))) {
       errors.defaultPrefix = t("Default prefix must not contain control characters.");
+    } else if (defaultPrefix.includes("\\") || defaultPrefix.trim().replace(/^\/+|\/+$/g, "").includes("//")) {
+      errors.defaultPrefix = t("Default prefix must not contain backslashes or empty path segments.");
     }
     return Object.fromEntries(Object.entries(errors).filter(([, value]) => value)) as FieldErrors;
   };

@@ -173,6 +173,7 @@
   "Optional. Used for image previews and public links.": "선택 사항입니다. 이미지 미리보기와 공개 링크에 사용됩니다.",
   "Default prefix must not contain path traversal segments.": "기본 접두사에 상위 경로 이동 구간을 포함할 수 없습니다.",
   "Default prefix must not contain control characters.": "기본 접두사에 제어 문자를 포함할 수 없습니다.",
+  "Default prefix must not contain backslashes or empty path segments.": "기본 접두사에는 역슬래시나 빈 경로 구간을 포함할 수 없습니다.",
   "Enter a secret access key to test this new profile.": "새 프로필을 테스트하려면 Secret Access Key를 입력하세요.",
   "Connection successful. Bucket listing works.": "연결되었습니다. 버킷 목록을 불러올 수 있습니다.",
   "Connection test failed.": "연결 테스트에 실패했습니다.",

@@ -173,6 +173,7 @@
   "Optional. Used for image previews and public links.": "Facultatif. Utilisé pour les aperçus d’images et les liens publics.",
   "Default prefix must not contain path traversal segments.": "Le préfixe par défaut ne doit pas contenir de segments de traversée de chemin.",
   "Default prefix must not contain control characters.": "Le préfixe par défaut ne doit pas contenir de caractères de contrôle.",
+  "Default prefix must not contain backslashes or empty path segments.": "Le préfixe par défaut ne doit pas contenir de barres obliques inverses ni de segments de chemin vides.",
   "Enter a secret access key to test this new profile.": "Saisissez une clé d’accès secrète pour tester ce nouveau profil.",
   "Connection successful. Bucket listing works.": "Connexion réussie. La liste du bucket est accessible.",
   "Connection test failed.": "Échec du test de connexion.",

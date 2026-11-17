@@ -340,6 +340,49 @@ describe("SettingsPage", () => {
     expect(onSettingsChange).toHaveBeenCalled();
   });
 
+  it.each([String.raw`images\2026`, "images//2026"])("rejects invalid default prefix %s before saving or testing a connection", async (prefix) => {
+    const user = userEvent.setup();
+    const existing = {
+      id: "personal", name: "Personal S3", endpoint: "https://s3.example.test",
+      region: "auto", bucket: "images", accessKeyId: "fake-key", credentialRef: "s3:personal",
+      pathStyle: true, defaultPrefix: "",
+    };
+    render(<SettingsPage settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+
+    await goToSection(user, "Links and naming");
+    const prefixInput = screen.getByLabelText("Default prefix");
+    await user.type(prefixInput, prefix);
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(screen.getByText("Default prefix must not contain backslashes or empty path segments.")).toBeInTheDocument();
+    expect(prefixInput).toHaveAttribute("aria-invalid", "true");
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(saveS3Secret).not.toHaveBeenCalled();
+
+    await goToSection(user, "S3 profiles");
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(testS3Connection).not.toHaveBeenCalled();
+    expect(screen.getByRole("tab", { name: "Links and naming" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("normalizes boundary slashes in a valid default prefix", async () => {
+    const user = userEvent.setup();
+    const existing = {
+      id: "personal", name: "Personal S3", endpoint: "https://s3.example.test",
+      region: "auto", bucket: "images", accessKeyId: "fake-key", credentialRef: "s3:personal",
+      pathStyle: true, defaultPrefix: "",
+    };
+    render(<SettingsPage settings={{ profiles: [existing], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
+
+    await goToSection(user, "Links and naming");
+    await user.type(screen.getByLabelText("Default prefix"), "//images/2026//");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      profiles: [expect.objectContaining({ defaultPrefix: "images/2026" })],
+    }));
+  });
+
   it("keeps a newly saved profile committed when reloading settings fails", async () => {
     const user = userEvent.setup();
     const initialSettings: AppSettings = {
