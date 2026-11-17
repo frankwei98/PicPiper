@@ -38,6 +38,7 @@ type Service struct {
 	lifetime      context.Context
 	stop          context.CancelFunc
 	closeOnce     sync.Once
+	cleanupOnce   sync.Once
 }
 
 func New(dataDir string) *Service {
@@ -283,19 +284,22 @@ func (s *Service) createRun() (any, error) {
 	if err := os.MkdirAll(s.cacheDir, 0700); err != nil {
 		return nil, err
 	}
+	// Clean up before this service creates any outputs. A run can remain in the
+	// main window's queue for days; later requests must not expire those files.
+	s.cleanupOnce.Do(func() {
+		entries, _ := os.ReadDir(s.cacheDir)
+		for _, entry := range entries {
+			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "run-") {
+				continue
+			}
+			if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > 7*24*time.Hour {
+				_ = os.RemoveAll(filepath.Join(s.cacheDir, entry.Name()))
+			}
+		}
+	})
 	dir, err := os.MkdirTemp(s.cacheDir, "run-")
 	if err != nil {
 		return nil, err
-	}
-	// Runs are private disposable outputs; only old run directories are removed.
-	entries, _ := os.ReadDir(s.cacheDir)
-	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "run-") {
-			continue
-		}
-		if info, err := entry.Info(); err == nil && time.Since(info.ModTime()) > 7*24*time.Hour {
-			_ = os.RemoveAll(filepath.Join(s.cacheDir, entry.Name()))
-		}
 	}
 	return map[string]string{"runId": filepath.Base(dir), "outputDir": dir}, nil
 }
