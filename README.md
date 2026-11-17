@@ -84,6 +84,8 @@ Use **Settings → Language** to choose a language or follow the system. Unsuppo
 4. Optionally set a public base URL and prefix, then choose **Save profile**.
 5. Compress images and choose **Upload to S3**, or upload originals from S3 Gallery.
 
+Optimize, S3 Gallery, and Mini uploads use the selected profile's default prefix. Leaving it empty adds no prefix to the naming template. The Gallery **Prefix** field filters the displayed objects; uploads continue to use the profile's default prefix.
+
 The S3 gallery currently shows only images uploaded by Pic Piper on this device. Successful uploads are recorded privately under `uploads`, scoped by endpoint and bucket, and verified against a signed upload marker and object ETag. Other bucket objects and uploads from other devices are excluded. Older uploads made before local history tracking cannot be automatically claimed. The gallery sorts all recorded images by upload time (newest/oldest) or filename (A–Z/Z–A) before pagination; newest first is the default. Filenames use the uploaded output filename rather than the generated object key.
 
 Gallery cards and compression queue items mount their content only within 400 pixels of the viewport and unload it offscreen, keeping measured placeholders for scrolling. Keyboard focus can reveal a placeholder and prevents focused cards from unloading. Skeletons cover initial settings, R2 discovery, gallery pages and pagination, thumbnail reads, browser image decoding, compression previews, and full-resolution comparisons. Reduced-motion preferences disable skeleton animation; failures replace skeletons with the existing error or fallback UI.

@@ -177,7 +177,7 @@ export function useOptimizeUploads({
     if (currentFailures.size === 0) {
       collisionRetryAttempts.current.clear();
     }
-    const prefix = activeProfile.defaultPrefix || "images";
+    const prefix = activeProfile.defaultPrefix;
     const compressedItems = items.filter(
       (item) =>
         isCurrentCompressionOutput(item, currentQuality) &&
@@ -234,7 +234,7 @@ export function useOptimizeUploads({
       return;
     }
     setUploadError(null);
-    const prefix = activeProfile.defaultPrefix || "images";
+    const prefix = activeProfile.defaultPrefix;
     const currentFailures = failedUploadsRef.current;
     const failedItems = items.filter(
       (item) =>
