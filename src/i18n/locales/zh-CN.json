@@ -173,6 +173,7 @@
   "Optional. Used for image previews and public links.": "可选。用于图片预览和公开链接。",
   "Default prefix must not contain path traversal segments.": "默认前缀不能包含路径遍历片段。",
   "Default prefix must not contain control characters.": "默认前缀不能包含控制字符。",
+  "Default prefix must not contain backslashes or empty path segments.": "默认前缀不能包含反斜杠或空路径片段。",
   "Enter a secret access key to test this new profile.": "请输入秘密访问密钥以测试此新配置。",
   "Connection successful. Bucket listing works.": "连接成功。可以列出存储桶内容。",
   "Connection test failed.": "连接测试失败。",

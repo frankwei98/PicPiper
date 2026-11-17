@@ -205,6 +205,45 @@ func TestNamingMatchesTemplateHashAndSuffix(t *testing.T) {
 	}
 }
 
+func TestDefaultPrefixValidationMatchesGeneratedKeys(t *testing.T) {
+	for _, prefix := range []string{`images\2026`, "images//2026", "images/./2026", "images/../2026", "images/\x1f2026"} {
+		t.Run("invalid/"+prefix, func(t *testing.T) {
+			s := New(t.TempDir())
+			p := testProfile("https://s3.example.test")
+			p.DefaultPrefix = prefix
+			_, err := call(t, s, "save_app_settings", map[string]any{"settings": settings{Profiles: []profile{p}, NamingTemplate: "{slug}.{ext}"}})
+			if err == nil || !strings.Contains(err.Error(), "Default prefix") {
+				t.Fatalf("expected a prefix validation error for %q, got %v", prefix, err)
+			}
+		})
+	}
+	for _, prefix := range []string{"", "images/2026", "/images/2026/", "///", "photos/旅行"} {
+		t.Run("valid/"+prefix, func(t *testing.T) {
+			s := New(t.TempDir())
+			p := testProfile("https://s3.example.test")
+			p.DefaultPrefix = prefix
+			if _, err := call(t, s, "save_app_settings", map[string]any{"settings": settings{Profiles: []profile{p}, NamingTemplate: "{slug}.{ext}"}}); err != nil {
+				t.Fatal(err)
+			}
+			source := filepath.Join(t.TempDir(), "photo.jpg")
+			if err := os.WriteFile(source, []byte("synthetic-image"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			value, err := call(t, s, "generate_object_key", map[string]any{"sourcePath": source, "outputFileName": "photo.jpg", "prefix": prefix, "namingTemplate": "{slug}.{ext}", "ext": "jpg"})
+			if err != nil {
+				t.Fatalf("saved prefix %q cannot generate a key: %v", prefix, err)
+			}
+			want := "photo.jpg"
+			if normalized := strings.Trim(prefix, "/"); normalized != "" {
+				want = normalized + "/" + want
+			}
+			if got := value.(map[string]string)["objectKey"]; got != want {
+				t.Fatalf("generated key %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestSafeFilenameAndExclusiveDownloads(t *testing.T) {
 	for _, name := range []string{"CON.jpg", "photo.", "photo?x", "sub/photo.jpg", "COM¹.txt"} {
 		if safeFilename(name) {

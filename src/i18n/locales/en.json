@@ -173,6 +173,7 @@
   "Optional. Used for image previews and public links.": "Optional. Used for image previews and public links.",
   "Default prefix must not contain path traversal segments.": "Default prefix must not contain path traversal segments.",
   "Default prefix must not contain control characters.": "Default prefix must not contain control characters.",
+  "Default prefix must not contain backslashes or empty path segments.": "Default prefix must not contain backslashes or empty path segments.",
   "Enter a secret access key to test this new profile.": "Enter a secret access key to test this new profile.",
   "Connection successful. Bucket listing works.": "Connection successful. Bucket listing works.",
   "Connection test failed.": "Connection test failed.",

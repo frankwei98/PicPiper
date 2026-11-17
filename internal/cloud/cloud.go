@@ -550,6 +550,11 @@ func validateProfile(p profile) error {
 	if hasControl(p.DefaultPrefix) || hasDotSegments(p.DefaultPrefix) {
 		return appErr("invalidSettings", "Default prefix must not contain control characters or path traversal segments.")
 	}
+	if prefix := strings.Trim(p.DefaultPrefix, "/"); prefix != "" {
+		if err := validateKey(prefix); err != nil {
+			return appErr("invalidSettings", "Default prefix must not contain backslashes or empty path segments.")
+		}
+	}
 	return nil
 }
 func hasControl(v string) bool {
