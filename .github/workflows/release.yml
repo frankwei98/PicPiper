@@ -23,6 +23,7 @@ on:
       MYGO_UPDATER_PRIVATE_KEY:
         required: true
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
