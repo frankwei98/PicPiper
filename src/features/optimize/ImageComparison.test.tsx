@@ -64,6 +64,59 @@ describe("ImageComparison", () => {
     expect(compressedPane.scrollTop).toBe(220);
   });
 
+  it("ignores clamped scroll echoes while allowing either pane to drive scrolling", async () => {
+    readComparisonImage
+      .mockResolvedValueOnce({ dataUrl: "data:image/png;base64,original", width: 2400, height: 1600 })
+      .mockResolvedValueOnce({ dataUrl: "data:image/png;base64,compressed", width: 800, height: 600 });
+    const user = userEvent.setup();
+    render(<ImageComparison originalPath="source.jpg" compressedPath="output.webp" />);
+    await screen.findByAltText("Original full-resolution preview");
+    await user.click(screen.getByRole("button", { name: "100%" }));
+    const originalPane = screen.getByTestId("original-comparison-pane");
+    const compressedPane = screen.getByTestId("compressed-comparison-pane");
+    let compressedLeft = 0;
+    let compressedTop = 0;
+    Object.defineProperties(compressedPane, {
+      scrollLeft: {
+        get: () => compressedLeft,
+        set: (value: number) => { compressedLeft = Math.max(0, Math.min(200, value)); },
+      },
+      scrollTop: {
+        get: () => compressedTop,
+        set: (value: number) => { compressedTop = Math.max(0, Math.min(100, value)); },
+      },
+    });
+
+    originalPane.scrollLeft = 900;
+    originalPane.scrollTop = 500;
+    fireEvent.scroll(originalPane);
+    expect(compressedPane.scrollLeft).toBe(200);
+    expect(compressedPane.scrollTop).toBe(100);
+    fireEvent.scroll(compressedPane);
+    expect(originalPane.scrollLeft).toBe(900);
+    expect(originalPane.scrollTop).toBe(500);
+
+    // A genuine scroll can arrive before a pending programmatic echo.
+    originalPane.scrollLeft = 1000;
+    originalPane.scrollTop = 600;
+    fireEvent.scroll(originalPane);
+    compressedPane.scrollLeft = 120;
+    compressedPane.scrollTop = 60;
+    fireEvent.scroll(compressedPane);
+    expect(originalPane.scrollLeft).toBe(120);
+    expect(originalPane.scrollTop).toBe(60);
+    fireEvent.scroll(originalPane);
+    expect(compressedPane.scrollLeft).toBe(120);
+    expect(compressedPane.scrollTop).toBe(60);
+
+    originalPane.scrollLeft = 700;
+    originalPane.scrollTop = 300;
+    fireEvent.scroll(originalPane);
+    fireEvent.scroll(compressedPane);
+    expect(originalPane.scrollLeft).toBe(700);
+    expect(originalPane.scrollTop).toBe(300);
+  });
+
   it("cancels both pending reads when closed", () => {
     readComparisonImage.mockImplementation(() => new Promise(() => {}));
     const view = render(<ImageComparison originalPath="source.avif" compressedPath="output.avif" />);
