@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { imageApi } from "./api/backend";
 
 const mocks = vi.hoisted(() => {
   const openedListeners = new Set<(paths: string[]) => void>();
@@ -63,6 +64,40 @@ describe("application workflow", () => {
     expect(mocks.onImagesOpened).toHaveBeenCalledOnce();
     view.unmount();
     expect(mocks.openedListeners.size).toBe(0);
+  });
+
+  it.each(["save", "upload"])("imports native-open paths once after a pending %s unlocks the queue", async (operation) => {
+    const user = userEvent.setup();
+    let complete!: () => void;
+    if (operation === "save") {
+      mocks.copy.mockImplementationOnce(() => new Promise((resolve) => { complete = () => resolve(["/saved/photo.jpg"]); }));
+    } else {
+      mocks.upload.mockImplementationOnce(() => new Promise((resolve) => { complete = () => resolve({ key: "images/photo.jpg", size: 500, isImage: true }); }));
+    }
+    render(<App />);
+    await screen.findByRole("tablist", { name: "Views" });
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await user.click(await screen.findByRole("button", { name: operation === "save" ? "Save to local folder" : "Upload to S3" }));
+    await waitFor(() => expect(operation === "save" ? mocks.copy : mocks.upload).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      mocks.openedListeners.forEach((listener) => {
+        listener(["/photo.jpg", "/opened-first.jpg", "/opened-first.jpg"]);
+        listener(["/opened-first.jpg", "/opened-second.jpg"]);
+      });
+    });
+    expect(imageApi.inspectImage).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Select opened-first.jpg" })).not.toBeInTheDocument();
+
+    await act(async () => complete());
+    expect(await screen.findByRole("button", { name: "Compare opened-first.jpg" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Compare opened-second.jpg" })).toBeVisible();
+    expect(imageApi.inspectImage).toHaveBeenCalledTimes(3);
+    for (const path of ["/photo.jpg", "/opened-first.jpg", "/opened-second.jpg"]) {
+      expect(vi.mocked(imageApi.inspectImage).mock.calls.filter(([request]) => request.path === path)).toHaveLength(1);
+    }
+    expect(screen.getByText("3 image(s) already in this batch; duplicates skipped.")).toBeVisible();
+    expect(mocks.onImagesOpened).toHaveBeenCalledOnce();
   });
 
   it("retains compression results and settings drafts when switching tabs", async () => {
