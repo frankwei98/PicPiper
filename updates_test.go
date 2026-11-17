@@ -102,9 +102,13 @@ func TestActivityHeartbeatAndRunningRequestsKeepRestartDeferred(t *testing.T) {
 	now := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 	u := &updateController{installed: true, now: func() time.Time { return now }}
 	payload := []byte(`{"scope":"gallery","id":"live-page","busy":true}`)
-	u.call("update_activity", payload)
+	if _, err := u.call("update_activity", payload); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(activityLeaseDuration / 2)
-	u.call("update_activity", payload)
+	if _, err := u.call("update_activity", payload); err != nil {
+		t.Fatal(err)
+	}
 	now = now.Add(activityLeaseDuration/2 + time.Second)
 	if u.prepareQuit(false, false) {
 		t.Fatal("renewed lease allowed restart")
