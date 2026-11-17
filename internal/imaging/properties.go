@@ -21,6 +21,7 @@ type sourceProperties struct {
 	hdrTransfer    uint16
 	invalidCICP    bool
 	sequence       bool
+	metadataErr    error
 	// rotation is the primary item's AVIF irot angle in 90-degree units.
 	rotation int
 }
@@ -31,11 +32,23 @@ func properties(file *os.File) sourceProperties {
 	result := sourceProperties{frames: 1, bitDepth: 8}
 	_, _ = file.Seek(0, io.SeekStart)
 	var magic [12]byte
-	if _, err := io.ReadFull(file, magic[:]); err != nil {
+	n, readErr := io.ReadFull(file, magic[:])
+	jxl := n >= 2 && magic[0] == 0xff && magic[1] == 0x0a || n == len(magic) && bytes.Equal(magic[:], jxlContainerSignature)
+	if readErr != nil && !jxl {
 		return result
 	}
 	info, err := file.Stat()
 	if err != nil {
+		if jxl {
+			result.metadataErr = err
+		}
+		return result
+	}
+	if jxl {
+		result.sequence, err = jxlAnimation(file, info.Size())
+		if err != nil {
+			result.metadataErr = apperror.New("invalidImageMetadata", "Could not read the JPEG XL animation header safely. Choose a valid JPEG XL image.")
+		}
 		return result
 	}
 	read := func(size uint32) []byte {
@@ -171,6 +184,9 @@ func properties(file *os.File) sourceProperties {
 }
 
 func validateColorProperties(metadata sourceProperties) error {
+	if metadata.metadataErr != nil {
+		return metadata.metadataErr
+	}
 	if metadata.invalidCICP {
 		return apperror.New("invalidColorProperties", "This PNG declares an unsupported color matrix or sample range. Choose an RGB, full-range PNG.")
 	}
