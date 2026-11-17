@@ -39,11 +39,11 @@
 
 覆盖 raw/jxlc/jxlp 逐字节分片、192-bit 最长头、size/preview selector、size=0/extended 容器、截断及 box 预算、真实 48 帧样本的 24-byte 头、运行时编码静态 JXL 及 modern format roundtrip。
 
-先前只读实验用依赖 testdata/test.jxl 确认 DecodeAll 得到 48 个不同帧，旧属性却 sequence=false。完整 fixture 复制被自动审批拒绝，未复制；测试仅嵌入短头部，没有依赖模块缓存路径。尚未新增完整动画端到端 preserve 拒绝/firstFrame 成功的仓库回归。不要调用 DecodeAll 来做生产动画识别（无界分配）。
+先前只读实验用依赖 testdata/test.jxl 确认 DecodeAll 得到 48 个不同帧，旧属性却 sequence=false。经用户特批复制完整 fixture 到 `internal/imaging/testdata/animated.jxl`（341,449 bytes，sha256 `4a4c545a…60da1fe`，来源与 MIT 许可见同目录 README），新增 `TestJXLAnimationRequiresFirstFrameExport`：真实动画被 inspect 识别为 animated；未选 firstFrame 时返回 `animationUnsupported`；显式 firstFrame 导出 PNG 的警告与像素均匹配解码器首帧。临时关闭 JXL 检测分支已验证该测试先红后绿。不要调用 DecodeAll 来做生产动画识别（无界分配）。
 
 ## 验证状态
 
-在最终代码 HEAD `55f1153` 上重新执行，全部通过：
+在代码 HEAD `55f1153` 及新增 JXL 完整动画回归上重新执行，全部通过（race 输出包含 `TestJXLAnimationRequiresFirstFrameExport`）：
 
 - `pnpm test`：33 files / 304 tests。
 - `pnpm build:web`。
