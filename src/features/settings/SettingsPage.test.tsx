@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AppSettings } from "../../api/backend";
 
@@ -337,6 +338,63 @@ describe("SettingsPage", () => {
     });
     expect(saveSettings).toHaveBeenCalled();
     expect(onSettingsChange).toHaveBeenCalled();
+  });
+
+  it("keeps a newly saved profile committed when reloading settings fails", async () => {
+    const user = userEvent.setup();
+    const initialSettings: AppSettings = {
+      profiles: [],
+      namingTemplate: "{slug}.{ext}",
+      mini: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
+    };
+    const onSettingsChange = vi.fn();
+    loadSettings.mockRejectedValueOnce(new Error("Settings reload unavailable"));
+    let finishSecret: (() => void) | undefined;
+    saveS3Secret.mockImplementationOnce(() => new Promise((resolve) => {
+      finishSecret = () => resolve({ credentialRef: "s3:new-profile" });
+    }));
+    let setHarnessSettings: Dispatch<SetStateAction<AppSettings>> | undefined;
+    function Harness() {
+      const [settings, setSettings] = useState(initialSettings);
+      setHarnessSettings = setSettings;
+      return <SettingsPage settings={settings} onSettingsChange={(next) => { onSettingsChange(next); setSettings(next); }} />;
+    }
+
+    render(<Harness />);
+    await goToSection(user, "S3 profiles");
+    await user.click(screen.getByRole("button", { name: /add profile/i }));
+    await user.clear(screen.getByLabelText("Profile name"));
+    await user.type(screen.getByLabelText("Profile name"), "New S3");
+    await user.type(screen.getByLabelText("Endpoint"), "https://new.s3.example.com");
+    await user.clear(screen.getByLabelText("Region"));
+    await user.type(screen.getByLabelText("Region"), "auto");
+    await user.type(screen.getByLabelText("Bucket"), "new-bucket");
+    await user.type(screen.getByLabelText("Access key ID"), "new-key");
+    await user.type(screen.getByLabelText("Secret access key"), "new-secret");
+
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    const savedProfileId = saveStorageSettings.mock.calls[0]![0]!.profiles[0]!.id;
+    await waitFor(() => expect(saveS3Secret).toHaveBeenCalledTimes(1));
+    act(() => setHarnessSettings?.((current) => ({
+      ...current,
+      mini: { ...current.mini!, targetFormat: "avif", quality: 77 },
+    })));
+    await act(async () => finishSecret?.());
+    await waitFor(() => expect(onSettingsChange).toHaveBeenCalledWith(expect.objectContaining({
+      profiles: [expect.objectContaining({ id: savedProfileId, name: "New S3" })],
+      mini: expect.objectContaining({ targetFormat: "avif", quality: 77 }),
+    })));
+    expect(await screen.findByRole("status")).toHaveTextContent("Profile saved.");
+    expect(await screen.findByText("Settings reload unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText("Secret access key")).toHaveValue("");
+
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => expect(saveStorageSettings).toHaveBeenCalledTimes(2));
+    expect(saveStorageSettings.mock.calls[1]![0]!.profiles[0]!.id).toBe(savedProfileId);
+    expect(saveS3Secret).toHaveBeenCalledTimes(1);
+    expect(saveS3Secret).toHaveBeenCalledWith({ profileId: savedProfileId, secretAccessKey: "new-secret" });
   });
 
   it("does not store a credential when saving the profile settings fails", async () => {
