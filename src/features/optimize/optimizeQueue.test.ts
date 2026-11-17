@@ -61,6 +61,8 @@ describe("optimizeQueue", () => {
     expect(makeOutputFileName("con.png", "png")).toBe("con-image.png");
     expect(makeOutputFileName(".png", "png")).toBe("image.png");
     expect(makeOutputFileName("aux.preview.jpg", "png")).toBe("aux-image.preview.png");
+    expect(makeOutputFileName("con .preview.png", "png")).toBe("con-image.preview.png");
+    expect(makeOutputFileName("AUX .x.jpg", "png")).toBe("AUX-image.x.png");
   });
 
   it("disambiguates duplicate output filenames", () => {

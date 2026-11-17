@@ -20,8 +20,9 @@ export function makeOutputFileName(fileName: string, targetFormat: WritableImage
   let stem = base.replace(/[<>:"/\\|?*\u0000-\u001f\u007f-\u009f]/g, "_").replace(/[. ]+$/g, "");
   if (!stem) stem = "image";
   const firstComponent = stem.split(".", 1)[0];
-  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(firstComponent)) {
-    stem = `${firstComponent}-image${stem.slice(firstComponent.length)}`;
+  const reservedComponent = firstComponent.replace(/[ .]+$/g, "");
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(reservedComponent)) {
+    stem = `${reservedComponent}-image${stem.slice(firstComponent.length)}`;
   }
   return `${stem}.${targetFormat}`;
 }

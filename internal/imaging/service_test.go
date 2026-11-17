@@ -194,7 +194,7 @@ func TestRejectsCorruptAndOversizedImagesBeforeDecoding(t *testing.T) {
 			t.Fatal("invalid or oversized image was accepted")
 		}
 	}
-	for _, name := range []string{"../bad.png", "nested/path.png", "CON.png", "file. ", "hello\x00.png"} {
+	for _, name := range []string{"../bad.png", "nested/path.png", "CON.png", "con .preview.png", "AUX .x.jpg", "file. ", "hello\x00.png"} {
 		if validFileName(name) {
 			t.Fatalf("unsafe filename accepted: %q", name)
 		}
