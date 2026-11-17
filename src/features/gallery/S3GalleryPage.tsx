@@ -103,6 +103,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const statusTimersRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentScopeRef = useRef<{ profileId: string; prefix: string } | null>(null);
   const scopeEditedByUserRef = useRef(false);
+  const focusDefaultPrefix = profiles.find((profile) => profile.id === galleryFocus.profileId)?.defaultPrefix || "";
+  const previousFocusRef = useRef({ ...galleryFocus, defaultPrefix: focusDefaultPrefix });
+  const [focusRevision, setFocusRevision] = useState(0);
 
   useEffect(() => {
     currentScopeRef.current = selectedProfile
@@ -140,29 +143,40 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     if (!defaultProfile) return;
 
     const defaultPrefix = defaultProfile.defaultPrefix || "";
+    if (selectedProfileId === defaultProfile.id && prefix === defaultPrefix) return;
+
     setSelectedProfileId(defaultProfile.id);
     setPrefix(defaultPrefix);
     setDebouncedPrefix(defaultPrefix);
     resetGalleryScope();
-  }, [defaultProfileId, galleryFocus.prefix, galleryFocus.profileId, profiles, resetGalleryScope]);
+  }, [defaultProfileId, galleryFocus.prefix, galleryFocus.profileId, prefix, profiles, resetGalleryScope, selectedProfileId]);
 
-  // Sync profile and prefix when galleryFocus changes externally
+  // Each upload supplies a new highlightedKeys array, even when its scope and
+  // keys match the previous upload. Initial state already applies the first focus.
   useEffect(() => {
-    resetGalleryScope();
+    const previous = previousFocusRef.current;
+    const focusChanged = previous.profileId !== galleryFocus.profileId ||
+      previous.prefix !== galleryFocus.prefix ||
+      previous.highlightedKeys !== galleryFocus.highlightedKeys;
+    const defaultChanged = !scopeEditedByUserRef.current && galleryFocus.profileId &&
+      !galleryFocus.prefix && previous.defaultPrefix !== focusDefaultPrefix;
+    previousFocusRef.current = { ...galleryFocus, defaultPrefix: focusDefaultPrefix };
+    if (!focusChanged && !defaultChanged) return;
+
     if (galleryFocus.profileId) {
       setSelectedProfileId(galleryFocus.profileId);
-      const p = profiles.find((pr) => pr.id === galleryFocus.profileId);
-      if (p && !galleryFocus.prefix) {
-        const newPrefix = p.defaultPrefix || "";
-        setPrefix(newPrefix);
-        setDebouncedPrefix(newPrefix); // immediate for programmatic changes
+      if (!galleryFocus.prefix) {
+        setPrefix(focusDefaultPrefix);
+        setDebouncedPrefix(focusDefaultPrefix);
       }
     }
     if (galleryFocus.prefix) {
       setPrefix(galleryFocus.prefix);
-      setDebouncedPrefix(galleryFocus.prefix); // immediate for programmatic changes
+      setDebouncedPrefix(galleryFocus.prefix);
     }
-  }, [galleryFocus.profileId, galleryFocus.prefix, profiles, resetGalleryScope]);
+    resetGalleryScope();
+    setFocusRevision((current) => current + 1);
+  }, [focusDefaultPrefix, galleryFocus.profileId, galleryFocus.prefix, galleryFocus.highlightedKeys, resetGalleryScope]);
 
   // Auto-dismiss transient status messages after a few seconds so stale
   // "URL copied" / "Saved to ..." banners don't linger across view changes.
@@ -228,7 +242,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       // before the next effect starts or the component unmounts.
       loadGenerationRef.current += 1;
     };
-  }, [loadObjects]);
+  }, [focusRevision, loadObjects]);
 
   const handleLoadMore = () => {
     if (!scopeReady || !nextContinuationToken || loading || loadingMore) return;

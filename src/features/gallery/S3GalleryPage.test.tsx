@@ -939,6 +939,54 @@ describe("S3GalleryPage", () => {
     expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
   });
 
+  it("refreshes unchanged scopes for each external upload notification, including repeated keys", async () => {
+    const profiles = [profile];
+    const galleryFocus = { profileId: profile.id, prefix: "images", highlightedKeys: [] as string[] };
+    const { rerender } = render(<S3GalleryPage galleryFocus={galleryFocus} profiles={profiles} />);
+    await screen.findByText("images/photo.webp");
+    expect(listObjects).toHaveBeenCalledTimes(1);
+
+    for (const key of ["images/new.png", "images/new.png"]) {
+      listObjects.mockResolvedValueOnce({ objects: [{ key, size: 100, isImage: true }], nextContinuationToken: null });
+      const previousCalls = listObjects.mock.calls.length;
+      rerender(<S3GalleryPage galleryFocus={{ ...galleryFocus, highlightedKeys: [key] }} profiles={profiles} />);
+      await waitFor(() => expect(listObjects).toHaveBeenCalledTimes(previousCalls + 1));
+      expect(await screen.findByText(key)).toBeInTheDocument();
+      expect(screen.getByText("New")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+    }
+  });
+
+  it("keeps a loaded default scope ready when the profiles array changes without changing its entries", async () => {
+    const galleryFocus = { prefix: "", highlightedKeys: [] };
+    const { rerender } = render(<S3GalleryPage galleryFocus={galleryFocus} profiles={[profile]} />);
+    await screen.findByText("images/photo.webp");
+
+    rerender(<S3GalleryPage galleryFocus={galleryFocus} profiles={[profile]} />);
+
+    expect(screen.getByText("images/photo.webp")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+    expect(listObjects).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves an edited prefix when settings rerender with an unchanged external focus", async () => {
+    const galleryFocus = { profileId: profile.id, prefix: "images", highlightedKeys: [] };
+    const user = userEvent.setup();
+    const { rerender } = render(<S3GalleryPage galleryFocus={galleryFocus} profiles={[profile]} />);
+    await screen.findByText("images/photo.webp");
+    await user.clear(screen.getByLabelText("Prefix"));
+    await user.type(screen.getByLabelText("Prefix"), "edited/");
+    await waitFor(() => expect(listObjects).toHaveBeenLastCalledWith({ profile, prefix: "edited/" }));
+    await screen.findByText("images/photo.webp");
+
+    rerender(<S3GalleryPage galleryFocus={galleryFocus} profiles={[profile]} />);
+
+    expect(screen.getByLabelText("Prefix")).toHaveValue("edited/");
+    expect(screen.getByText("images/photo.webp")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Loading")).not.toBeInTheDocument();
+    expect(listObjects).toHaveBeenCalledTimes(2);
+  });
+
   it("syncs selected profile when galleryFocus.profileId changes", async () => {
     const profile2 = {
       ...profile,
