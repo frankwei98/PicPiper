@@ -220,6 +220,10 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		if err != nil {
 			return nil, err
 		}
+		s.mu.Lock()
+		records, historyErr := s.loadUploadRecordsLocked(p.Profile)
+		observed, recorded := records[p.Key]
+		s.mu.Unlock()
 		resp, err := s.doS3(ctx, p.Profile, secret, http.MethodDelete, p.Key, nil, "", nil)
 		if err != nil {
 			return nil, s3error("s3DeleteFailed", err)
@@ -228,7 +232,9 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		s.removeGalleryThumbnails(ctx, p.Profile, p.Key)
 		// Remote deletion already succeeded; a stale local record is also
 		// hidden by the next HEAD check if its cleanup cannot be persisted.
-		_ = s.forgetUpload(p.Profile, p.Key)
+		if historyErr == nil && recorded {
+			_ = s.forgetInvalidUploads(p.Profile, []uploadedImage{observed})
+		}
 		return nil, nil
 	case "download_gallery_object":
 		var p struct {
