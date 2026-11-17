@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 type downloadReaderFunc func([]byte) (int, error)
@@ -37,6 +38,35 @@ func TestDownloadFailureLeavesNoPartialFile(t *testing.T) {
 			path, err := saveUnique(dir, "photo.png", strings.NewReader("complete"))
 			if err != nil || filepath.Base(path) != "photo (2).png" {
 				t.Fatalf("retry consumed filename: %s %v", path, err)
+			}
+		})
+	}
+}
+
+func TestDownloadCollisionWithLongFilename(t *testing.T) {
+	for _, stem := range []string{strings.Repeat("a", 251), strings.Repeat("界", 83) + "ab"} {
+		t.Run(stem[:3], func(t *testing.T) {
+			dir := t.TempDir()
+			name := stem + ".png"
+			existing := filepath.Join(dir, name)
+			if err := os.WriteFile(existing, []byte("user image"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				path, err := saveUnique(dir, name, strings.NewReader("download"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				base := filepath.Base(path)
+				if len(base) > 255 || !utf8.ValidString(base) || !strings.HasSuffix(base, ").png") {
+					t.Fatalf("invalid collision filename: %q", base)
+				}
+				if data, err := os.ReadFile(path); err != nil || string(data) != "download" {
+					t.Fatalf("download missing: %q %v", data, err)
+				}
+			}
+			if data, err := os.ReadFile(existing); err != nil || string(data) != "user image" {
+				t.Fatalf("existing file changed: %q %v", data, err)
 			}
 		})
 	}

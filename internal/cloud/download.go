@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Both operations publish an already complete staged file without replacing an
@@ -52,7 +53,15 @@ func saveUnique(dir, name string, r io.Reader) (string, error) {
 	for i := 0; i < 10000; i++ {
 		candidate := name
 		if i > 0 {
-			candidate = stem + " (" + strconv.Itoa(i+1) + ")" + ext
+			suffix := " (" + strconv.Itoa(i+1) + ")"
+			// Leave room for the collision suffix within a filesystem component.
+			// Trim whole runes so non-ASCII filenames remain valid UTF-8.
+			shortStem := stem
+			for len(shortStem)+len(suffix)+len(ext) > 255 && len(shortStem) > 0 {
+				_, size := utf8.DecodeLastRuneInString(shortStem)
+				shortStem = shortStem[:len(shortStem)-size]
+			}
+			candidate = shortStem + suffix + ext
 		}
 		target := filepath.Join(dir, candidate)
 		if err := publishDownload(file.Name(), target); os.IsExist(err) {
