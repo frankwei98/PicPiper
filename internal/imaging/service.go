@@ -325,7 +325,7 @@ func validFileName(name string) bool {
 			return false
 		}
 	}
-	stem := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
+	stem := strings.ToUpper(strings.TrimRight(strings.SplitN(name, ".", 2)[0], " ."))
 	if stem == "CON" || stem == "PRN" || stem == "AUX" || stem == "NUL" || (len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9') {
 		return false
 	}

@@ -44,6 +44,8 @@ func TestMiniOutputFileNameSanitizesWindowsInvalidStems(t *testing.T) {
 		{input: "a?b:c.png", want: "a_b_c.webp"},
 		{input: "a\x01b.png", want: "a_b.webp"},
 		{input: "con.jpg", want: "con-image.webp"},
+		{input: "con .preview.png", want: "con-image.preview.webp"},
+		{input: "AUX .x.jpg", want: "AUX-image.x.webp"},
 		{input: ".png", want: "image.webp"},
 	} {
 		if got := miniOutputFileName(test.input, "webp"); got != test.want {
