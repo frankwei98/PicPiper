@@ -151,6 +151,67 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Default prefix")).toHaveValue("draft/images");
   });
 
+  it.each([false, true])("preserves the storage draft when General is saved (new profile: %s)", async (creatingNew) => {
+    const user = userEvent.setup();
+    const initial: AppSettings = {
+      profiles: [{ id: "personal", name: "Personal S3", endpoint: "https://s3.example.test", region: "auto", bucket: "images", accessKeyId: "fake-access", credentialRef: "s3:personal", defaultPrefix: "images", pathStyle: true }],
+      namingTemplate: "{slug}.{ext}",
+      defaultProfileId: "personal",
+      defaultOutputDir: "/tmp/out",
+      features: { compression: true, s3: true },
+    };
+    const saved: AppSettings = {
+      ...JSON.parse(JSON.stringify(initial)),
+      namingTemplate: "{hash}.{ext}",
+      defaultProfileId: undefined,
+      mini: { enabled: true, targetFormat: "avif", quality: 73, action: "clipboard", profileId: "personal", linkFormat: "markdown" },
+      closeBehavior: "background",
+      processingConcurrency: 2,
+    };
+    saveGeneralSettings.mockResolvedValueOnce(saved);
+    const onSettingsChange = vi.fn();
+    function Parent() {
+      const [settings, setSettings] = useState(initial);
+      return <SettingsPage settings={settings} processingLimits={{ cpuCount: 4, defaultConcurrency: 2, concurrency: 2 }} onSettingsChange={(next) => { onSettingsChange(next); setSettings(next); }} />;
+    }
+    render(<Parent />);
+    await goToSection(user, "S3 profiles");
+    if (creatingNew) await user.click(screen.getByRole("button", { name: "Add profile" }));
+    await user.clear(screen.getByLabelText("Profile name"));
+    await user.type(screen.getByLabelText("Profile name"), "Unsaved profile");
+    await user.clear(screen.getByLabelText("Bucket"));
+    await user.type(screen.getByLabelText("Bucket"), "draft-bucket");
+    await user.type(screen.getByLabelText("Secret access key"), "fake-unsaved-secret");
+    await goToSection(user, "Links and naming");
+    await user.clear(screen.getByLabelText("Default prefix"));
+    await user.type(screen.getByLabelText("Default prefix"), "draft/images");
+    await user.clear(screen.getByLabelText("Naming template"));
+    await user.type(screen.getByLabelText("Naming template"), "draft-name");
+    await goToSection(user, "General");
+    await user.click(screen.getByRole("button", { name: "Save general settings" }));
+    await screen.findByText("General settings saved.");
+
+    const published = onSettingsChange.mock.calls[0][0] as AppSettings;
+    expect(published.profiles).toBe(initial.profiles);
+    expect(published.namingTemplate).toBe(initial.namingTemplate);
+    expect(published.defaultProfileId).toBe(initial.defaultProfileId);
+    expect(published.features).toBe(initial.features);
+    expect(published.defaultOutputDir).toBe(initial.defaultOutputDir);
+    expect(published.mini).toBe(saved.mini);
+    expect(published.closeBehavior).toBe(saved.closeBehavior);
+    expect(published.processingConcurrency).toBe(saved.processingConcurrency);
+    expect(screen.getByLabelText("Default image format")).toHaveValue("avif");
+    expect(screen.getByLabelText("Default image quality")).toHaveValue(73);
+    expect(screen.getByLabelText("Parallel image tasks")).toHaveValue("2");
+    await goToSection(user, "S3 profiles");
+    expect(screen.getByLabelText("Profile name")).toHaveValue("Unsaved profile");
+    expect(screen.getByLabelText("Bucket")).toHaveValue("draft-bucket");
+    expect(screen.getByLabelText("Secret access key")).toHaveValue("fake-unsaved-secret");
+    await goToSection(user, "Links and naming");
+    expect(screen.getByLabelText("Default prefix")).toHaveValue("draft/images");
+    expect(screen.getByLabelText("Naming template")).toHaveValue("draft-name");
+  });
+
   it("opens account authorization from the S3 hero and hides S3 fields", async () => {
     const user = userEvent.setup();
     render(<SettingsPage settings={{ profiles: [], namingTemplate: "{slug}.{ext}" }} onSettingsChange={() => {}} />);
