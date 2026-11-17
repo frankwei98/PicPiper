@@ -72,6 +72,8 @@ function httpUrlError(value: string, label: string): string | undefined {
 
 export function SettingsPage({ settings, onSettingsChange, isActive = true, processingLimits }: SettingsPageProps) {
   useLocale();
+  const latestSettingsRef = useRef(settings);
+  latestSettingsRef.current = settings;
   const [section, setSection] = useState<SettingsSection>("general");
   const [mini, setMini] = useState<MiniSettings>({ ...(settings.mini ?? defaultMiniSettings), action: "clipboard" });
   const [closeBehavior, setCloseBehavior] = useState<AppSettings["closeBehavior"]>(settings.closeBehavior ?? "quit");
@@ -310,7 +312,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
             : settings.defaultProfileId,
       };
 
-      await settingsApi.saveStorageSettings(nextSettings);
+      const persistedSettings = await settingsApi.saveStorageSettings(nextSettings);
       try {
         if (secretAccessKey) {
           await settingsApi.saveS3Secret({
@@ -330,12 +332,24 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
         }
         throw error;
       }
-      onSettingsChange(await settingsApi.loadSettings());
+      const latest = latestSettingsRef.current;
+      // Keep preferences received from Mini while the credential write waited.
+      onSettingsChange(latest === settings ? persistedSettings : {
+        ...persistedSettings,
+        mini: latest.mini,
+        closeBehavior: latest.closeBehavior,
+        processingConcurrency: latest.processingConcurrency,
+      });
       setSecretAccessKey("");
-      setSaving(false);
       setSaveMessage(t("Profile saved."));
       setCreatingNew(false);
       setEditingProfileId(profileId);
+      try {
+        onSettingsChange(await settingsApi.loadSettings());
+      } catch (error) {
+        setSaveError(errorMessage(error, t("Failed to load settings.")));
+      }
+      setSaving(false);
     } catch (error) {
       setSaving(false);
       setSaveError(errorMessage(error, t("Failed to save profile.")));
