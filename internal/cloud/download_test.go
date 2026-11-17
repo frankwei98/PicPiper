@@ -60,3 +60,39 @@ func TestDownloadPreservesFileCreatedDuringRead(t *testing.T) {
 		t.Fatal("concurrent file changed")
 	}
 }
+
+func TestDownloadUnsupportedPublicationLeavesNoFinalFile(t *testing.T) {
+	dir := t.TempDir()
+	source, target := filepath.Join(dir, "staged"), filepath.Join(dir, "photo.png")
+	if err := os.WriteFile(source, []byte("complete image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	unsupported := func(string, string) error { return errors.ErrUnsupported }
+	if err := publishDownloadWith(unsupported, unsupported, source, target); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("unsafe publication was not rejected: %v", err)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("unsupported publication exposed a final file: %v", err)
+	}
+}
+
+func TestDownloadAtomicFallbackPreservesConcurrentFile(t *testing.T) {
+	dir := t.TempDir()
+	source, target := filepath.Join(dir, "staged"), filepath.Join(dir, "photo.png")
+	if err := os.WriteFile(source, []byte("complete image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	publish := func(string, string) error {
+		if err := os.WriteFile(target, []byte("user image"), 0600); err != nil {
+			return err
+		}
+		return errors.ErrUnsupported
+	}
+	if err := publishDownloadWith(publish, os.Link, source, target); !os.IsExist(err) {
+		t.Fatalf("concurrent file was not protected: %v", err)
+	}
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "user image" {
+		t.Fatalf("concurrent file changed: %q %v", data, err)
+	}
+}

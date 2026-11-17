@@ -255,6 +255,9 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 			if cause := requestContextError(err); cause != nil {
 				return nil, cause
 			}
+			if errors.Is(err, errors.ErrUnsupported) {
+				return nil, appErr("downloadWriteUnsupported", "This volume cannot safely publish a complete download without replacing existing files. Choose another destination.")
+			}
 			return nil, appErr("downloadWriteFailed", "Could not save the downloaded image. Check folder permissions and disk space.")
 		}
 		return path, nil
