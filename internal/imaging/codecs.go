@@ -20,7 +20,12 @@ import (
 // Serialize their entry points; native encoders and JPEG/PNG/WebP stay parallel.
 var codecMu sync.Mutex
 
-func decodeConfig(reader io.Reader) (image.Config, string, error) {
+func decodeConfig(reader io.Reader) (config image.Config, format string, err error) {
+	defer func() {
+		if recover() != nil {
+			config, format, err = image.Config{}, "", fmt.Errorf("image decoder rejected malformed input")
+		}
+	}()
 	buffered := bufio.NewReader(reader)
 	header, _ := buffered.Peek(12)
 	webpHeader := len(header) >= 12 && string(header[:4]) == "RIFF" && string(header[8:12]) == "WEBP"
@@ -47,7 +52,12 @@ func writableFormat(format string) bool {
 	return false
 }
 
-func decodePixels(reader io.Reader, format string) (image.Image, error) {
+func decodePixels(reader io.Reader, format string) (decoded image.Image, err error) {
+	defer func() {
+		if recover() != nil {
+			decoded, err = nil, fmt.Errorf("image decoder rejected malformed input")
+		}
+	}()
 	if format != "jpeg" && format != "png" && format != "webp" {
 		codecMu.Lock()
 		defer codecMu.Unlock()
