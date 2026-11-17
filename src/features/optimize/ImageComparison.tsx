@@ -27,6 +27,7 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
   const [loadAttempt, setLoadAttempt] = useState(0);
   const originalPaneRef = useRef<HTMLDivElement>(null);
   const compressedPaneRef = useRef<HTMLDivElement>(null);
+  const pendingScrolls = useRef(new Map<HTMLDivElement, { left: number; top: number }>());
 
   useEffect(() => {
     let active = true;
@@ -62,14 +63,25 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
   }, [compressedPath, loadAttempt, originalPath]);
 
   useEffect(() => {
+    pendingScrolls.current.clear();
+  }, [mode, images]);
+
+  useEffect(() => {
     originalPaneRef.current?.scrollTo({ left: 0, top: 0 });
     compressedPaneRef.current?.scrollTo({ left: 0, top: 0 });
   }, [mode]);
 
   const syncScroll = (event: UIEvent<HTMLDivElement>, target: HTMLDivElement | null) => {
+    const source = event.currentTarget;
+    const pending = pendingScrolls.current.get(source);
+    pendingScrolls.current.delete(source);
+    if (pending && source.scrollLeft === pending.left && source.scrollTop === pending.top) return;
     if (!target) return;
-    target.scrollLeft = event.currentTarget.scrollLeft;
-    target.scrollTop = event.currentTarget.scrollTop;
+    target.scrollLeft = source.scrollLeft;
+    target.scrollTop = source.scrollTop;
+    // Smaller outputs can clamp these offsets. Suppress only the resulting
+    // position so a user scroll on either pane can still drive synchronization.
+    pendingScrolls.current.set(target, { left: target.scrollLeft, top: target.scrollTop });
   };
 
   return (
