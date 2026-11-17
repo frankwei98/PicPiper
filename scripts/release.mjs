@@ -37,6 +37,27 @@ export function unexpectedDraftAssets(assets, files) {
   return assets.filter((asset) => !expected.has(asset.name)).map((asset) => asset.name);
 }
 
+function verifyDraftAssets(release, files, verifiedAssets) {
+  assert(release.draft, "Release was published concurrently; stopped before further mutation");
+  assert(!release.prerelease, "Stable pipeline cannot publish a prerelease");
+  const unexpected = unexpectedDraftAssets(release.assets, files);
+  assert(unexpected.length === 0, `Draft has assets outside the verified release inventory: ${unexpected.join(", ")}. Remove them before publishing.`);
+  assert(release.assets.length === files.length, "Draft asset inventory differs from the verified release inventory");
+  const assets = files.map((file) => {
+    const asset = release.assets.find((entry) => entry.name === basename(file));
+    assert(asset?.state === "uploaded", `Uploaded asset is not ready: ${basename(file)}`);
+    return { name: asset.name, state: asset.state, size: asset.size, digest: asset.digest };
+  });
+  if (verifiedAssets) {
+    assert(JSON.stringify(assets) === JSON.stringify(verifiedAssets), "Verified release assets changed before publishing");
+    return assets;
+  }
+  for (const [index, file] of files.entries()) {
+    assert(assets[index].size === readFileSync(file).length && assets[index].digest === `sha256:${digest(file).toString("hex")}`, `Uploaded asset did not match: ${basename(file)}`);
+  }
+  return assets;
+}
+
 const platforms = {
   "darwin-arm64": { runner: "macos-15", cgo: "1" },
   "windows-amd64": { runner: "windows-2025", cgo: "0" },
@@ -163,13 +184,12 @@ async function main() {
   assert(stable.every((item) => compare(app.version, item.tag_name.slice(1)) > 0), "A newer or equal stable release already exists");
   gh("release", "upload", tag, ...files, "--clobber", "--repo", repository);
   const uploaded = api(`repos/${repository}/releases/${release.id}`);
-  assert(uploaded.draft, "Release was published concurrently; stopped before further mutation");
-  const unexpected = unexpectedDraftAssets(uploaded.assets, files);
-  assert(unexpected.length === 0, `Draft has assets outside the verified release inventory: ${unexpected.join(", ")}. Remove them before publishing.`);
-  for (const file of files) {
-    const asset = uploaded.assets.find((entry) => entry.name === basename(file));
-    assert(asset?.state === "uploaded" && asset.size === readFileSync(file).length && asset.digest === `sha256:${digest(file).toString("hex")}`, `Uploaded asset did not match: ${basename(file)}`);
-  }
+  const verifiedAssets = verifyDraftAssets(uploaded, files);
+  // Recheck as late as possible: releases/{id} is a snapshot, and other writers
+  // can change the draft while local hashes and the asset inventory are checked.
+  const beforePublish = api(`repos/${repository}/releases/${release.id}`);
+  assert(beforePublish.id === uploaded.id, "Release identity changed before publishing");
+  verifyDraftAssets(beforePublish, files, verifiedAssets);
   gh("release", "edit", tag, "--draft=false", "--latest", "--repo", repository);
   console.log(`Published ${tag}: ${files.length} verified assets from ${sha}.`);
 }

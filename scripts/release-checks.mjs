@@ -58,6 +58,14 @@ if (args[0] === 'api' && args[1].endsWith('/releases?per_page=100')) {
   console.log(JSON.stringify([release]));
 } else if (args[0] === 'api' && args[1].endsWith('/releases/101')) {
   console.log(JSON.stringify(release));
+  const reads = Number(fs.existsSync('release-reads') ? fs.readFileSync('release-reads','utf8') : 0) + 1;
+  fs.writeFileSync('release-reads',String(reads));
+  if (reads === 1 && process.env.RELEASE_FIXTURE_MUTATION) {
+    if (process.env.RELEASE_FIXTURE_MUTATION === 'late-asset') release.assets.push({name:'late.zip',state:'uploaded',size:1,digest:'sha256:late'});
+    if (process.env.RELEASE_FIXTURE_MUTATION === 'published') release.draft = false;
+    if (process.env.RELEASE_FIXTURE_MUTATION === 'changed-asset') release.assets[0].digest = 'sha256:changed';
+    fs.writeFileSync('release.json',JSON.stringify(release));
+  }
 } else if (args[0] === 'release' && args[1] === 'upload') {
   release.assets = args.slice(3).filter(x => path.isAbsolute(x)).map(file => ({name:path.basename(file), state:'uploaded', size:fs.statSync(file).size, digest:'sha256:'+crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')}));
   fs.writeFileSync('release.json',JSON.stringify(release));
@@ -161,6 +169,18 @@ test("publishing finds drafts through the release list, verifies by ID, and retr
     fixture.run("source");
     assert.match(readFileSync(join(fixture.dir, "outputs"), "utf8"), /published=true/);
   } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+});
+
+test("publishing rechecks the release after asset verification before making it public", () => {
+  for (const mutation of ["late-asset", "published", "changed-asset"]) {
+    const fixture = releaseCLI();
+    try {
+      assert.throws(() => fixture.run("publish", { RELEASE_FIXTURE_MUTATION: mutation }));
+      const requests = readFileSync(join(fixture.dir, "requests.log"), "utf8");
+      assert.equal(requests.match(/"edit"/g)?.length ?? 0, 0, `${mutation}: release was edited`);
+      assert.equal(requests.match(/releases\/101/g)?.length, 2, `${mutation}: final release state was not fetched`);
+    } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
+  }
 });
 test("release notes select only the requested section in Release Please format", () => {
   const text = "# Changelog\n\n## [1.10.0](https://example.test)\n\nnewer\n\n## [1.1.0](https://example.test) (2026-11-14)\n\n### Features\n- update\n\n## 1.0.0\nold";
