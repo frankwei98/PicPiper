@@ -224,6 +224,47 @@ describe("S3GalleryPage", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
   });
 
+  it("keeps fresh upload metadata when a pending next page returns an older copy", async () => {
+    const user = userEvent.setup();
+    const first = { key: "images/first.png", fileName: "First page.png", size: 100, isImage: true };
+    const uploaded = {
+      key: "images/new.png",
+      fileName: "Fresh local upload.png",
+      size: 300,
+      isImage: true,
+      publicUrl: "https://cdn.example.com/images/new.png",
+    };
+    let finishNextPage!: (value: unknown) => void;
+    listObjects
+      .mockResolvedValueOnce({ objects: [first], nextContinuationToken: "next" })
+      .mockImplementationOnce(() => new Promise((resolve) => { finishNextPage = resolve; }));
+    generateObjectKey.mockResolvedValueOnce({ objectKey: uploaded.key });
+    uploadObject.mockResolvedValueOnce(uploaded);
+    mockDialogOpen.mockResolvedValueOnce("/tmp/new.png");
+    render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+
+    await screen.findByText(first.fileName);
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    expect(listObjects).toHaveBeenNthCalledWith(2, { profile, prefix: "images", continuationToken: "next" });
+    await user.click(screen.getByRole("button", { name: "Upload local images" }));
+    await screen.findByText(uploaded.fileName);
+
+    await act(async () => finishNextPage({
+      objects: [
+        { ...first, fileName: "Updated first page.png" },
+        { ...uploaded, fileName: "Stale listing.png", size: 100 },
+        { key: "images/next.png", size: 200, isImage: true },
+      ],
+      nextContinuationToken: null,
+    }));
+
+    expect(screen.getByText(uploaded.fileName)).toBeInTheDocument();
+    expect(screen.queryByText("Stale listing.png")).not.toBeInTheDocument();
+    expect(screen.getAllByText(uploaded.key)).toHaveLength(1);
+    expect(screen.getByText("Updated first page.png")).toBeInTheDocument();
+    expect(screen.getByText("images/next.png")).toBeInTheDocument();
+  });
+
   it("accumulates unverified counts across pages and refresh resets the warning", async () => {
     listObjects
       .mockResolvedValueOnce({ objects: [{ key: "page-one.png", size: 1, isImage: true }], nextContinuationToken: "next", unverifiedCount: 2 })
