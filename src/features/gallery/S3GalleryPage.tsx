@@ -82,6 +82,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [nextContinuationToken, setNextContinuationToken] = useState<string | null>(null);
   const [loadedScope, setLoadedScope] = useState<{ profileId: string; prefix: string } | null>(null);
   const loadGenerationRef = useRef(0);
+  const pendingAppendUploadsRef = useRef<Set<GalleryObject> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paginationError, setPaginationError] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<GallerySort>("time-desc");
@@ -196,6 +197,8 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     if (!selectedProfile) return;
     const generation = ++loadGenerationRef.current;
     const requestedPrefix = debouncedPrefix;
+    const uploadsDuringAppend = append ? new Set<GalleryObject>() : null;
+    pendingAppendUploadsRef.current = uploadsDuringAppend;
     setLoading(!append);
     setLoadingMore(append);
     if (!append) {
@@ -214,10 +217,12 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       const page: ListGalleryObjectsResponse = await galleryApi.listObjects(request);
       if (generation !== loadGenerationRef.current) return;
       setObjects((current) => {
-        // A first-page request cleared the old list before awaiting. Preserve
-        // uploads added since then, including their newer metadata for duplicates.
-        const localUploads = current.filter((object) => object.key.startsWith(requestedPrefix));
-        const merged = append ? [...current, ...page.objects] : [...page.objects, ...localUploads];
+        // The first page starts with an empty list. An appended page keeps
+        // existing records, so give precedence only to uploads added while it was pending.
+        const localUploads = current.filter((object) =>
+          uploadsDuringAppend ? uploadsDuringAppend.has(object) : object.key.startsWith(requestedPrefix),
+        );
+        const merged = [...(append ? current : []), ...page.objects, ...localUploads];
         return sortGalleryObjects([...new Map(merged.map((object) => [object.key, object])).values()], sortOrder);
       });
       setUnverifiedCount((current) => append ? current + (page.unverifiedCount ?? 0) : (page.unverifiedCount ?? 0));
@@ -235,6 +240,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       }
     } finally {
       if (generation === loadGenerationRef.current) {
+        pendingAppendUploadsRef.current = null;
         setLoading(false);
         setLoadingMore(false);
       }
@@ -247,6 +253,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       // Invalidate the request associated with the previous profile/prefix
       // before the next effect starts or the component unmounts.
       loadGenerationRef.current += 1;
+      pendingAppendUploadsRef.current = null;
     };
   }, [focusRevision, loadObjects]);
 
@@ -321,6 +328,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
 
       if (newKeys.length > 0 && isCurrentScope(uploadScope)) {
         const visibleNewObjects = newObjects.filter((object) => object.key.startsWith(uploadScope.prefix));
+        for (const object of visibleNewObjects) {
+          pendingAppendUploadsRef.current?.add(object);
+        }
         setLocalHighlights({ ...uploadScope, keys: visibleNewObjects.map((object) => object.key) });
         const newKeySet = new Set(newKeys);
         setObjects((current) => sortGalleryObjects([
