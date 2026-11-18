@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.3.1](https://github.com/frankwei98/PicPiper/compare/v1.3.0...v1.3.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **ci:** revalidate edited pull request titles ([b584476](https://github.com/frankwei98/PicPiper/commit/b584476ce18b1c23a60f890893b41e4b593c3707))
+* **cloud:** fit download collision names within filesystem limits ([119119d](https://github.com/frankwei98/PicPiper/commit/119119dc4b5bbcc37210576ecb15c1e79e43e552))
+* **cloud:** preserve concurrent uploads after gallery deletion ([25d9b05](https://github.com/frankwei98/PicPiper/commit/25d9b05c6b3d701734fec73ebab78e10f848781b))
+* **cloud:** reject invalid default upload prefixes ([4c89336](https://github.com/frankwei98/PicPiper/commit/4c8933696210b7e7bfc08309c675529b121086d7))
+* **desktop:** reveal the main window when opening images ([f287c6b](https://github.com/frankwei98/PicPiper/commit/f287c6ba3ccbbb667374f0fa6798d2409c17cf51))
+* **gallery:** preserve uploads during initial listing ([6242472](https://github.com/frankwei98/PicPiper/commit/6242472c1709add597a4cca042c73a7b34fff037))
+* **gallery:** preserve uploads during pagination ([1e0f0cf](https://github.com/frankwei98/PicPiper/commit/1e0f0cf5cddfed4f878626d95fbb43a29189b933))
+* **gallery:** refresh unchanged scopes after uploads ([8bafbd3](https://github.com/frankwei98/PicPiper/commit/8bafbd3dbce9cd51672122ed0003481d8e95c26d))
+* **imaging:** contain malformed codec metadata panics ([75de786](https://github.com/frankwei98/PicPiper/commit/75de78691a2f89a4c85cd2fd766872f8fb075c06))
+* **imaging:** detect JPEG XL animation before still export ([1fce80b](https://github.com/frankwei98/PicPiper/commit/1fce80bbc4b125fa14598e38b9fc88f61c5f709d))
+* **imaging:** reject repeated APNG headers ([0c9fe30](https://github.com/frankwei98/PicPiper/commit/0c9fe30239d5e70af076a1d3495b7856d4689e43))
+* **imaging:** retain queued outputs for the session ([a208884](https://github.com/frankwei98/PicPiper/commit/a208884c785ccfc266967073754556f0f39ee205))
+* **mini:** ignore stale queue polling errors ([8b92d7e](https://github.com/frankwei98/PicPiper/commit/8b92d7eb9fc8afa6330c62800f5bcef6ca298341))
+* **mini:** validate confirmed upload bucket identity ([229fd67](https://github.com/frankwei98/PicPiper/commit/229fd67f13cc41391751e2a2ece7049d79493571))
+* **optimize:** ignore clamped comparison scroll echoes ([106781b](https://github.com/frankwei98/PicPiper/commit/106781b72e04c3d1a7e56d70c642c99967b40f35))
+* **optimize:** preserve empty profile upload prefixes ([8e6bcdf](https://github.com/frankwei98/PicPiper/commit/8e6bcdfe211c6d1df38991df669cd786817f1b99))
+* **optimize:** queue native opens during output operations ([48ec9f8](https://github.com/frankwei98/PicPiper/commit/48ec9f8f8cc35cc7b1192223e3489382f4362b47))
+* **settings:** preserve storage drafts when saving general preferences ([1bbef75](https://github.com/frankwei98/PicPiper/commit/1bbef75e63b29a11f0147e598aa77ad798b2fd99))
+
 ## [1.3.0](https://github.com/frankwei98/PicPiper/compare/v1.2.1...v1.3.0) (2026-11-17)
 
 
