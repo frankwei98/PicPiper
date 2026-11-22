@@ -94,6 +94,24 @@ func TestLargeResizeFiltersFineStripesAt1920Preset(t *testing.T) {
 	}
 }
 
+func TestLargeResizeRejectsStripeAliasingAtFractionalScale(t *testing.T) {
+	// A box filter leaks this pattern into the passband at 5100:1920.
+	// Offset source bounds and cross a strip boundary as well.
+	source := image.NewNRGBA(image.Rect(10, 20, 5110, 320))
+	for y := source.Rect.Min.Y; y < source.Rect.Max.Y; y++ {
+		for x := source.Rect.Min.X; x < source.Rect.Max.X; x++ {
+			grey := uint8(x % 2 * 255)
+			source.SetNRGBA(x, y, color.NRGBA{R: grey, G: grey, B: grey, A: 255})
+		}
+	}
+	result := resize(source, 1920, 113)
+	for x := 16; x < 1904; x++ {
+		if grey := result.NRGBAAt(x, 56).R; grey < 125 || grey > 130 {
+			t.Fatalf("fractional resize aliased fine detail at column %d: %d", x, grey)
+		}
+	}
+}
+
 func TestLargeThumbnailResizeDoesNotAllocateAnIntermediateImage(t *testing.T) {
 	source := image.NewNRGBA(image.Rect(0, 0, 6000, 6000))
 	var before, after runtime.MemStats
