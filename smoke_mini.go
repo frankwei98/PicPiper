@@ -113,7 +113,7 @@ func smokeMini(backend *Backend, dir string, bucket *smokeBucket) (resultErr err
 	if attempts, writes, _ := counts(); attempts != beforeAttempts || writes != beforeWrites {
 		return fmt.Errorf("drop uploaded without an upload click")
 	}
-	if err := smokeWait(panel, `document.querySelectorAll('.mini-item').length===1`, 5*time.Second); err != nil {
+	if err := smokeWait(panel, `document.querySelectorAll('.mini-item').length===1 && document.querySelector('.mini-thumb img')?.naturalWidth > 0 && document.querySelector('.mini-thumb img').naturalWidth <= 96`, 5*time.Second); err != nil {
 		return err
 	}
 	if err := smokeCapture(panel, dir, "mini-image-copied.png"); err != nil {

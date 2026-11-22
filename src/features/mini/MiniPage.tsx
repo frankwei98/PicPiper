@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, ChevronDown, Clock3, CloudUpload, Copy, ExternalLink, ImageDown, Images, Link, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { defaultMiniSettings, miniApi, settingsApi, type MiniCompressionChanges, type MiniItem, type MiniSettings, type MiniState } from "@/api/backend";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -7,6 +7,7 @@ import { errorMessage } from "@/lib/error";
 import { extensionsFor, writableImageFormats } from "@/lib/imageFormats";
 import { t, useLocale, type MessageKey } from "@/i18n";
 import { MiniUploadDialog } from "./MiniUploadDialog";
+import { MiniThumbnail } from "./MiniThumbnail";
 import logo from "../../../resources/logo-ui.png";
 import "./mini.css";
 
@@ -20,7 +21,7 @@ export function MiniPage() {
   const [loaded, setLoaded] = useState(false);
   const [config, setConfig] = useState<MiniSettings>(defaultMiniSettings);
   const [draft, setDraft] = useState<MiniSettings>(defaultMiniSettings);
-  const [state, setState] = useState<MiniState>({ items: [], busy: false, copied: "", error: "" });
+  const [state, setState] = useState<MiniState>({ revision: 0, items: [], busy: false, copied: "", error: "" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [uploadIds, setUploadIds] = useState<string[] | null>(null);
   const [compressionOpen, setCompressionOpen] = useState(false);
@@ -32,8 +33,14 @@ export function MiniPage() {
   const [toast, setToast] = useState<{ message: MessageKey; values?: Record<string, string | number>; undo?: boolean }>();
   const alive = useRef(true);
   const stateVersion = useRef(0);
+  const stateRevision = useRef<number>(undefined);
   const configVersion = useRef(0);
   const compressionBase = useRef<MiniSettings>(defaultMiniSettings);
+  const acceptState = useCallback((snapshot: MiniState) => {
+    if (stateRevision.current !== undefined && snapshot.revision < stateRevision.current) return;
+    stateRevision.current = snapshot.revision;
+    setState(snapshot);
+  }, []);
 
   useEffect(() => {
     alive.current = true;
@@ -56,19 +63,22 @@ export function MiniPage() {
       if (running) return;
       running = true;
       const version = stateVersion.current;
-      try { const snapshot = await miniApi.state(); if (alive.current && version === stateVersion.current) setState(snapshot); }
+      try {
+        const snapshot = await miniApi.state(stateRevision.current);
+        if (snapshot && alive.current && version === stateVersion.current) acceptState(snapshot);
+      }
       catch (cause) { if (alive.current && version === stateVersion.current) setError(errorMessage(cause, t("Mini could not load its queue."))); }
       finally { running = false; }
     };
     void poll();
     const timer = window.setInterval(() => void poll(), 500);
     return () => { alive.current = false; configVersion.current++; offSettings?.(); window.clearInterval(timer); };
-  }, []);
+  }, [acceptState]);
 
   const update = async (action: () => Promise<MiniState>) => {
     stateVersion.current++;
     const snapshot = await action();
-    if (alive.current) { stateVersion.current++; setState(snapshot); }
+    if (alive.current) { stateVersion.current++; acceptState(snapshot); }
     return snapshot;
   };
   const add = async (paths: string[]) => {
@@ -179,7 +189,7 @@ export function MiniPage() {
           const pending = item.uploadStatus === "queued" || item.uploadStatus === "uploading";
           return <article className={`mini-item ${selected.has(item.id) ? "is-selected" : ""}`} key={item.id}>
             <input type="checkbox" aria-label={t("Select {{name}}", { name: item.outputName || item.name })} checked={selected.has(item.id)} disabled={!ready(item)} onChange={(event) => setChecked(item.id, event.target.checked)} />
-            {item.thumbnail ? <img src={item.thumbnail} alt="" /> : <span className="mini-thumb"><ImageDown /></span>}
+            <MiniThumbnail id={item.status === "completed" ? item.id : undefined} />
             <div className="mini-item-info"><strong title={item.outputName || item.name}>{item.outputName || item.name}</strong><span>{pending ? t("Uploading...") : item.status === "completed" ? `${bytes(item.originalBytes)} → ${bytes(item.outputBytes)}` : t(statusLabels[item.status] ?? "Processing images...")}</span>{item.error && <p className="mini-item-error">{item.error}</p>}{item.uploadError && <p className="mini-item-error">{item.uploadError}</p>}{item.warning && <p className="mini-item-warning">{item.warning}</p>}</div>
             {item.status === "completed" ? <div className="mini-item-actions">
               <button aria-label={t("Copy image {{name}}", { name: item.outputName })} title={t("Copy image")} disabled={Boolean(copying)} onClick={() => void copy(item, true)}>{copying === `image-${item.id}` ? <LoaderCircle className="mini-spin" /> : <Copy />}</button>
