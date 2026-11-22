@@ -70,8 +70,8 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
   const busy = selected && ["inspecting", "queued", "compressing"].includes(selected.status);
   const outputPath = props.active && preview === "compressed" && selected?.status === "compressed" ? selected.outputPath : undefined;
   // Keep the selected original available for a later toggle, even if the source is moved.
-  const originalPath = props.active && selected?.originalBytes ? selected.sourcePath : undefined;
-  const original = useOptimizePreview(props.previews, selected?.id, originalPath, STAGE_PREVIEW_EDGE);
+  const originalPath = selected?.originalBytes ? selected.sourcePath : undefined;
+  const original = useOptimizePreview(props.previews, selected?.id, originalPath, STAGE_PREVIEW_EDGE, props.active);
   const output = useOptimizePreview(props.previews, selected?.id, outputPath, STAGE_PREVIEW_EDGE);
   const previewUrl = output.url ?? original.url;
   const width = selected && preview === "compressed" && selected.status === "compressed" ? selected.outputWidth ?? selected.originalWidth : selected?.originalWidth;
