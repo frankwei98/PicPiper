@@ -3,6 +3,7 @@ package cloud
 import (
 	"container/list"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/frankwei98/PicPiper/internal/filelock"
 )
 
 const maxThumbnailSourceBytes int64 = 128 << 20
@@ -20,12 +23,14 @@ const maxThumbnailBytes int64 = 2 << 20
 const thumbnailCacheBytes int64 = 128 << 20
 const thumbnailSourceLifetime = time.Hour
 
-// The thumbnail cache mutex protects the index and the corresponding file changes.
+// The mutex protects this index; the file lock coordinates access to the
+// shared directory with other running instances.
 type thumbnailCache struct {
-	entries map[string]*list.Element
-	recency list.List
-	bytes   int64
-	scanned time.Time
+	entries    map[string]*list.Element
+	recency    list.List
+	bytes      int64
+	scanned    time.Time
+	generation [16]byte
 }
 
 type thumbnailCacheEntry struct {
@@ -58,7 +63,13 @@ func (c *thumbnailCache) forget(name string) {
 func NewWithThumbnails(dataDir string, render func(context.Context, string) (string, error)) *Service {
 	s := New(dataDir)
 	s.renderThumbnail = render
-	s.refreshThumbnailCacheLocked(filepath.Join(dataDir, "gallery-thumbnails"))
+	dir := filepath.Join(dataDir, "gallery-thumbnails")
+	if guard, err := s.lockThumbnailCache(dir); err == nil {
+		if s.thumbnails.bytes > thumbnailCacheBytes && s.invalidateThumbnailIndex(guard) == nil {
+			s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
+		}
+		_ = guard.Close()
+	}
 	return s
 }
 
@@ -164,11 +175,7 @@ func (s *Service) readGalleryThumbnail(ctx context.Context, p thumbnailRequest) 
 	// Deletion never waits for network/rendering. A deletion during this miss
 	// invalidates its publication, so an in-flight renderer cannot undo it.
 	if epoch == s.thumbnailEpoch {
-		err = atomicWrite(cachePath, []byte(dataURL), 0600, "thumbnailCacheFailed")
-		if err == nil {
-			s.thumbnails.touch(filepath.Base(cachePath), int64(len(dataURL)))
-			s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
-		}
+		err = s.storeThumbnailLocked(dir, cachePath, dataURL)
 	}
 	s.thumbnailCacheMu.Unlock()
 	if err != nil {
@@ -177,18 +184,71 @@ func (s *Service) readGalleryThumbnail(ctx context.Context, p thumbnailRequest) 
 	return map[string]string{"dataUrl": dataURL}, nil
 }
 
-func (s *Service) refreshThumbnailCacheLocked(dir string) {
+// Byte zero is reserved for the Windows file lock. The remaining bytes hold
+// the generation of the index, including other instances' recency updates.
+const thumbnailGenerationOffset = 1
+
+func (s *Service) lockThumbnailCache(dir string) (*os.File, error) {
+	guard, err := filelock.Open(dir+".lock", true)
+	if err != nil {
+		return nil, err
+	}
+	var generation [16]byte
+	_, err = guard.ReadAt(generation[:], thumbnailGenerationOffset)
+	if err == nil || err == io.EOF {
+		if s.thumbnails.generation != generation {
+			s.thumbnails.scanned = time.Time{}
+		}
+		err = s.refreshThumbnailCacheLocked(dir)
+		if err == nil {
+			s.thumbnails.generation = generation
+			return guard, nil
+		}
+	}
+	_ = guard.Close()
+	return nil, err
+}
+
+func (s *Service) invalidateThumbnailIndex(guard *os.File) error {
+	// Publish before touching files so the next lock holder reconciles even if
+	// this instance exits before completing the change.
+	var generation [16]byte
+	rand.Read(generation[:])
+	if _, err := guard.WriteAt(generation[:], thumbnailGenerationOffset); err != nil {
+		return err
+	}
+	s.thumbnails.generation = generation
+	return nil
+}
+
+func (s *Service) storeThumbnailLocked(dir, path, dataURL string) error {
+	guard, err := s.lockThumbnailCache(dir)
+	if err != nil {
+		return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
+	}
+	defer guard.Close()
+	if err := s.invalidateThumbnailIndex(guard); err != nil {
+		return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
+	}
+	if err := atomicWrite(path, []byte(dataURL), 0600, "thumbnailCacheFailed"); err != nil {
+		return err
+	}
+	s.thumbnails.touch(filepath.Base(path), int64(len(dataURL)))
+	s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
+	return nil
+}
+
+func (s *Service) refreshThumbnailCacheLocked(dir string) error {
 	now := s.now()
 	cache := &s.thumbnails
-	if cache.entries != nil && now.Sub(cache.scanned) < thumbnailSourceLifetime {
-		return
+	if cache.entries != nil && !cache.scanned.IsZero() && now.Sub(cache.scanned) < thumbnailSourceLifetime {
+		return nil
 	}
-	// Reconcile files left by earlier app runs and occasionally clean abandoned
+	// Reconcile other instances' changes and occasionally clean abandoned
 	// downloads. Normal hits and writes only update one index entry.
 	entries, err := os.ReadDir(dir)
-	if err != nil && !os.IsNotExist(err) && cache.entries != nil {
-		cache.scanned = now
-		return
+	if err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	type cached struct {
 		name     string
@@ -220,7 +280,7 @@ func (s *Service) refreshThumbnailCacheLocked(dir string) {
 	for _, file := range files {
 		cache.touch(file.name, file.size)
 	}
-	s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
+	return nil
 }
 
 func (s *Service) pruneThumbnailsLocked(dir string, budget int64) {
@@ -243,6 +303,14 @@ func (s *Service) removeGalleryThumbnails(ctx context.Context, p profile, key st
 	defer s.thumbnailCacheMu.Unlock()
 	s.thumbnailEpoch++
 	dir := filepath.Join(s.dataDir, "gallery-thumbnails")
+	guard, err := s.lockThumbnailCache(dir)
+	if err != nil {
+		return
+	}
+	defer guard.Close()
+	if s.invalidateThumbnailIndex(guard) != nil {
+		return
+	}
 	prefix := thumbnailIdentity(p, key) + "-"
 	for name := range s.thumbnails.entries {
 		if strings.HasPrefix(name, prefix) {
@@ -263,7 +331,11 @@ func (s *Service) cachedThumbnail(path string) (string, bool) {
 	s.thumbnailCacheMu.Lock()
 	defer s.thumbnailCacheMu.Unlock()
 	dir, name := filepath.Dir(path), filepath.Base(path)
-	s.refreshThumbnailCacheLocked(dir)
+	guard, err := s.lockThumbnailCache(dir)
+	if err != nil {
+		return "", false
+	}
+	defer guard.Close()
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -274,11 +346,15 @@ func (s *Service) cachedThumbnail(path string) (string, bool) {
 	data, readErr := io.ReadAll(io.LimitReader(file, maxThumbnailBytes+1))
 	file.Close()
 	if readErr == nil && validThumbnail(data) {
-		_ = os.Chtimes(path, s.now(), s.now())
-		s.thumbnails.touch(name, int64(len(data)))
-		s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
+		if s.invalidateThumbnailIndex(guard) == nil {
+			_ = os.Chtimes(path, s.now(), s.now())
+			s.thumbnails.touch(name, int64(len(data)))
+			s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
+		}
 		return string(data), true
 	}
-	s.removeCachedThumbnailLocked(dir, name)
+	if s.invalidateThumbnailIndex(guard) == nil {
+		s.removeCachedThumbnailLocked(dir, name)
+	}
 	return "", false
 }

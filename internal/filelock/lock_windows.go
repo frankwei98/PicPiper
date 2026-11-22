@@ -1,4 +1,4 @@
-package imaging
+package filelock
 
 import (
 	"os"
@@ -6,7 +6,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func lockPreviewLease(file *os.File, wait bool) error {
+func lock(file *os.File, wait bool) error {
 	flags := uint32(windows.LOCKFILE_EXCLUSIVE_LOCK)
 	if !wait {
 		flags |= windows.LOCKFILE_FAIL_IMMEDIATELY

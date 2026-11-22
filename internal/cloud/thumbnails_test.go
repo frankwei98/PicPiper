@@ -167,6 +167,64 @@ func TestThumbnailCacheEvictsLeastRecentlyUsedAndDeletionClearsVersions(t *testi
 	}
 }
 
+func TestGalleryThumbnailCacheSharesBudgetAcrossInstances(t *testing.T) {
+	dataDir := t.TempDir()
+	dir := filepath.Join(dataDir, "gallery-thumbnails")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Seed 126 MiB without writing that much fixture data. Each service will
+	// see room for one more entry in its initial index.
+	for i := range 63 {
+		path := filepath.Join(dir, fmt.Sprintf("seed-%02d.thumb", i))
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		truncateErr := file.Truncate(maxThumbnailBytes)
+		if err := file.Close(); err != nil || truncateErr != nil {
+			t.Fatalf("could not seed cache entry: %v, %v", truncateErr, err)
+		}
+		modified := time.Unix(int64(i+1), 0)
+		if err := os.Chtimes(path, modified, modified); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const prefix = "data:image/png;base64,"
+	data := prefix + strings.Repeat("A", int(maxThumbnailBytes)-len(prefix))
+	render := func(context.Context, string) (string, error) { return data, nil }
+	first, second := NewWithThumbnails(dataDir, render), NewWithThumbnails(dataDir, render)
+	p := testProfile("https://s3.example.test")
+	if _, err := first.saveSecret(p.ID, "fake-secret"); err != nil {
+		t.Fatal(err)
+	}
+	for i, service := range []*Service{first, second} {
+		service.client.Transport = r2Transport(func(*http.Request) (*http.Response, error) { return r2Response(200, "synthetic-image"), nil })
+		req := thumbnailRequest{Profile: p, Key: fmt.Sprintf("image-%d.png", i)}
+		if _, err := service.readGalleryThumbnail(context.Background(), req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var total int64
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		total += info.Size()
+	}
+	if total != thumbnailCacheBytes {
+		t.Fatalf("shared cache holds %d bytes, want %d", total, thumbnailCacheBytes)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "seed-00.thumb")); !os.IsNotExist(err) {
+		t.Fatalf("oldest shared cache entry was not evicted: %v", err)
+	}
+}
+
 func TestThumbnailCacheReplacesCorruptFilesAndForgetsMissingFiles(t *testing.T) {
 	dataDir := t.TempDir()
 	dir := filepath.Join(dataDir, "gallery-thumbnails")
