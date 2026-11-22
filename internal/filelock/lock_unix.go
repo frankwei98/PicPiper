@@ -1,6 +1,6 @@
 //go:build unix
 
-package imaging
+package filelock
 
 import (
 	"os"
@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func lockPreviewLease(file *os.File, wait bool) error {
+func lock(file *os.File, wait bool) error {
 	flags := unix.LOCK_EX
 	if !wait {
 		flags |= unix.LOCK_NB

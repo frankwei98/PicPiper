@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/frankwei98/PicPiper/internal/apperror"
+	"github.com/frankwei98/PicPiper/internal/filelock"
 )
 
 const ComparisonScheme = "picpiper-preview"
@@ -41,7 +42,7 @@ func (files *comparisonFiles) newPath() (string, error) {
 			return "", err
 		}
 		// Serialize creating and locking a session with startup cleanup.
-		guard, err := openPreviewLease(filepath.Join(files.root, ".lock"), true)
+		guard, err := filelock.Open(filepath.Join(files.root, ".lock"), true)
 		if err != nil {
 			return "", err
 		}
@@ -50,7 +51,7 @@ func (files *comparisonFiles) newPath() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		lease, err := openPreviewLease(filepath.Join(dir, ".lease"), false)
+		lease, err := filelock.Open(filepath.Join(dir, ".lease"), false)
 		if err != nil {
 			_ = os.RemoveAll(dir)
 			return "", err
@@ -61,20 +62,8 @@ func (files *comparisonFiles) newPath() (string, error) {
 	return filepath.Join(files.dir, rand.Text()+".png"), nil
 }
 
-func openPreviewLease(path string, wait bool) (*os.File, error) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return nil, err
-	}
-	if err = lockPreviewLease(file, wait); err != nil {
-		_ = file.Close()
-		return nil, err
-	}
-	return file, nil
-}
-
 func (files *comparisonFiles) removeAbandoned() {
-	guard, err := openPreviewLease(filepath.Join(files.root, ".lock"), false)
+	guard, err := filelock.Open(filepath.Join(files.root, ".lock"), false)
 	if err != nil {
 		return
 	}
@@ -88,7 +77,7 @@ func (files *comparisonFiles) removeAbandoned() {
 			continue
 		}
 		dir := filepath.Join(files.root, entry.Name())
-		lease, err := openPreviewLease(filepath.Join(dir, ".lease"), false)
+		lease, err := filelock.Open(filepath.Join(dir, ".lease"), false)
 		if err != nil {
 			continue
 		}
