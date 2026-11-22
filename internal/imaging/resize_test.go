@@ -4,6 +4,7 @@ import (
 	"context"
 	"image"
 	"image/color"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -74,5 +75,33 @@ func TestLargeResizePreserves16BitColorAndAlpha(t *testing.T) {
 	}
 	if result := got.NRGBA64At(1000, 100); result.A != 0 {
 		t.Fatalf("bounded resize changed transparent area: %+v", result)
+	}
+}
+
+func TestLargeResizeFiltersFineStripesAt1920Preset(t *testing.T) {
+	source := image.NewNRGBA(image.Rect(0, 0, 3648, 1824))
+	for y := range source.Bounds().Dy() {
+		for x := range source.Bounds().Dx() {
+			grey := uint8(x % 2 * 255)
+			source.SetNRGBA(x, y, color.NRGBA{R: grey, G: grey, B: grey, A: 255})
+		}
+	}
+	result := resize(source, 1920, 960)
+	for x := 16; x < 1904; x++ {
+		if grey := result.NRGBAAt(x, 480).R; grey < 110 || grey > 145 {
+			t.Fatalf("large resize aliased fine detail at column %d: %d", x, grey)
+		}
+	}
+}
+
+func TestLargeThumbnailResizeDoesNotAllocateAnIntermediateImage(t *testing.T) {
+	source := image.NewNRGBA(image.Rect(0, 0, 6000, 6000))
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	thumbnail := resize(source, 96, 96)
+	runtime.ReadMemStats(&after)
+	runtime.KeepAlive(thumbnail)
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 4<<20 {
+		t.Fatalf("96px resize allocated %d bytes for an already decoded image", allocated)
 	}
 }
