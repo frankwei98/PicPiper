@@ -65,6 +65,32 @@ describe("ImageComparison", () => {
     expect(compressedPane.scrollTop).toBe(220);
   });
 
+  it("reuses both preview sizes across zoom toggles and releases them on close", async () => {
+    const fit = { url: "picpiper-preview://localhost/fit", width: 2400, height: 1600 };
+    const actual = { ...fit, url: "picpiper-preview://localhost/actual" };
+    readComparisonImage
+      .mockResolvedValueOnce(fit).mockResolvedValueOnce(fit)
+      .mockResolvedValueOnce(actual).mockResolvedValueOnce(actual)
+      .mockRejectedValue(new Error("Source file no longer exists"));
+    const user = userEvent.setup();
+    const view = render(<ImageComparison originalPath="source.jpg" compressedPath="output.webp" />);
+    expect(await screen.findByAltText("Original")).toHaveAttribute("src", fit.url);
+    await user.click(screen.getByRole("button", { name: "100%" }));
+    expect(await screen.findByAltText("Original full-resolution preview")).toHaveAttribute("src", actual.url);
+
+    await user.click(screen.getByRole("button", { name: "Fit" }));
+    expect(screen.getByAltText("Original")).toHaveAttribute("src", fit.url);
+    await user.click(screen.getByRole("button", { name: "100%" }));
+    expect(screen.getByAltText("Original full-resolution preview")).toHaveAttribute("src", actual.url);
+    expect(readComparisonImage).toHaveBeenCalledTimes(4);
+    expect(imageApi.cancelImageTask).not.toHaveBeenCalled();
+
+    view.unmount();
+    expect(imageApi.cancelImageTask).toHaveBeenCalledTimes(2);
+    expect(imageApi.cancelImageTask).toHaveBeenCalledWith({ taskId: readComparisonImage.mock.calls[0][0].taskId });
+    expect(imageApi.cancelImageTask).toHaveBeenCalledWith({ taskId: readComparisonImage.mock.calls[2][0].taskId });
+  });
+
   it("ignores clamped scroll echoes while allowing either pane to drive scrolling", async () => {
     readComparisonImage
       .mockResolvedValueOnce({ url: "picpiper-preview://localhost/original", width: 2400, height: 1600 })

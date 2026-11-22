@@ -19,18 +19,13 @@ interface LoadedImages {
   compressed: ReadComparisonImageResponse;
 }
 
-export function ImageComparison({ originalPath, compressedPath }: ImageComparisonProps) {
-  useLocale();
-  const [mode, setMode] = useState<ComparisonMode>("fit");
+function useComparisonImages({ originalPath, compressedPath }: ImageComparisonProps, maxSize?: number, requested = true) {
   const [images, setImages] = useState<LoadedImages | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const originalPaneRef = useRef<HTMLDivElement>(null);
-  const compressedPaneRef = useRef<HTMLDivElement>(null);
-  const pendingScrolls = useRef(new Map<HTMLDivElement, { left: number; top: number }>());
-  const loadingLabel = mode === "actual" ? t("Loading full-resolution images…") : t("Updating preview…");
 
   useEffect(() => {
+    if (!requested) return;
     let active = true;
     let cancelled = false;
     const taskId = `comparison:${crypto.randomUUID()}`;
@@ -41,13 +36,10 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
         // Closing the app may also close the bridge; ignore late results below.
       });
     };
-    setImages(null);
-    setLoadError(null);
 
-    const size = mode === "fit" ? { maxSize: 1280 } : {};
     Promise.all([
-      imageApi.readComparisonImage({ taskId, path: originalPath, ...size }),
-      imageApi.readComparisonImage({ taskId, path: compressedPath, ...size }),
+      imageApi.readComparisonImage({ taskId, path: originalPath, maxSize }),
+      imageApi.readComparisonImage({ taskId, path: compressedPath, maxSize }),
     ]).then(
       ([original, compressed]) => {
         if (active) setImages({ original, compressed });
@@ -62,7 +54,31 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
       active = false;
       cancelReads();
     };
-  }, [compressedPath, loadAttempt, mode, originalPath]);
+  }, [compressedPath, loadAttempt, maxSize, originalPath, requested]);
+
+  const retry = () => {
+    setLoadError(null);
+    setLoadAttempt((value) => value + 1);
+  };
+  return { images, loadError, retry };
+}
+
+export function ImageComparison(props: ImageComparisonProps) {
+  return <ComparisonSession key={JSON.stringify([props.originalPath, props.compressedPath])} {...props} />;
+}
+
+function ComparisonSession(props: ImageComparisonProps) {
+  useLocale();
+  const [mode, setMode] = useState<ComparisonMode>("fit");
+  const [requestedActual, setRequestedActual] = useState(false);
+  const originalPaneRef = useRef<HTMLDivElement>(null);
+  const compressedPaneRef = useRef<HTMLDivElement>(null);
+  const pendingScrolls = useRef(new Map<HTMLDivElement, { left: number; top: number }>());
+  const fit = useComparisonImages(props, 1280);
+  const actual = useComparisonImages(props, undefined, requestedActual);
+  // Keep both sizes available until this pair changes or the dialog closes.
+  const { images, loadError, retry } = mode === "fit" ? fit : actual;
+  const loadingLabel = mode === "actual" ? t("Loading full-resolution images…") : t("Updating preview…");
 
   useEffect(() => {
     pendingScrolls.current.clear();
@@ -107,7 +123,10 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
             size="sm"
             variant={mode === "actual" ? "secondary" : "ghost"}
             aria-pressed={mode === "actual"}
-            onClick={() => setMode("actual")}
+            onClick={() => {
+              setRequestedActual(true);
+              setMode("actual");
+            }}
           >
             100%
           </Button>
@@ -129,7 +148,7 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
           <div>
             <strong>{t("Could not load the comparison")}</strong>
             <p>{loadError}</p>
-            <Button type="button" size="sm" variant="outline" onClick={() => setLoadAttempt((value) => value + 1)}>
+            <Button type="button" size="sm" variant="outline" onClick={retry}>
               {t("Try again")}
             </Button>
           </div>
