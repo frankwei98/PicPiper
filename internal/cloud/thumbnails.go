@@ -26,16 +26,25 @@ const thumbnailSourceLifetime = time.Hour
 // The mutex protects this index; the file lock coordinates access to the
 // shared directory with other running instances.
 type thumbnailCache struct {
-	entries    map[string]*list.Element
-	recency    list.List
-	bytes      int64
-	scanned    time.Time
-	generation [16]byte
+	entries           map[string]*list.Element
+	recency           list.List
+	bytes             int64
+	scanned           time.Time
+	generation        thumbnailGeneration
+	recencyGeneration thumbnailGeneration
+	recencyStale      bool
 }
 
 type thumbnailCacheEntry struct {
 	name string
 	size int64
+}
+
+func (c *thumbnailCache) size(name string) int64 {
+	if element := c.entries[name]; element != nil {
+		return element.Value.(*thumbnailCacheEntry).size
+	}
+	return 0
 }
 
 func (c *thumbnailCache) touch(name string, size int64) {
@@ -184,24 +193,34 @@ func (s *Service) readGalleryThumbnail(ctx context.Context, p thumbnailRequest) 
 	return map[string]string{"dataUrl": dataURL}, nil
 }
 
-// Byte zero is reserved for the Windows file lock. The remaining bytes hold
-// the generation of the index, including other instances' recency updates.
-const thumbnailGenerationOffset = 1
+// Byte zero is reserved for the Windows file lock. Byte-count changes require
+// a fresh index; recency changes matter only when choosing what to evict.
+const (
+	thumbnailGenerationSize   = 16
+	thumbnailGenerationOffset = 1
+	thumbnailRecencyOffset    = thumbnailGenerationOffset + thumbnailGenerationSize
+)
+
+type thumbnailGeneration [thumbnailGenerationSize]byte
 
 func (s *Service) lockThumbnailCache(dir string) (*os.File, error) {
 	guard, err := filelock.Open(dir+".lock", true)
 	if err != nil {
 		return nil, err
 	}
-	var generation [16]byte
-	_, err = guard.ReadAt(generation[:], thumbnailGenerationOffset)
+	var versions [2 * thumbnailGenerationSize]byte
+	_, err = guard.ReadAt(versions[:], thumbnailGenerationOffset)
 	if err == nil || err == io.EOF {
-		if s.thumbnails.generation != generation {
-			s.thumbnails.scanned = time.Time{}
+		generation := thumbnailGeneration(versions[:thumbnailGenerationSize])
+		recency := thumbnailGeneration(versions[thumbnailGenerationSize:])
+		cache := &s.thumbnails
+		if cache.generation != generation {
+			cache.scanned = time.Time{}
 		}
+		cache.recencyStale = cache.recencyStale || cache.recencyGeneration != recency
 		err = s.refreshThumbnailCacheLocked(dir)
 		if err == nil {
-			s.thumbnails.generation = generation
+			cache.generation, cache.recencyGeneration = generation, recency
 			return guard, nil
 		}
 	}
@@ -209,16 +228,20 @@ func (s *Service) lockThumbnailCache(dir string) (*os.File, error) {
 	return nil, err
 }
 
-func (s *Service) invalidateThumbnailIndex(guard *os.File) error {
+func updateThumbnailGeneration(guard *os.File, offset int64, current *thumbnailGeneration) error {
 	// Publish before touching files so the next lock holder reconciles even if
 	// this instance exits before completing the change.
-	var generation [16]byte
+	var generation thumbnailGeneration
 	rand.Read(generation[:])
-	if _, err := guard.WriteAt(generation[:], thumbnailGenerationOffset); err != nil {
+	if _, err := guard.WriteAt(generation[:], offset); err != nil {
 		return err
 	}
-	s.thumbnails.generation = generation
+	*current = generation
 	return nil
+}
+
+func (s *Service) invalidateThumbnailIndex(guard *os.File) error {
+	return updateThumbnailGeneration(guard, thumbnailGenerationOffset, &s.thumbnails.generation)
 }
 
 func (s *Service) storeThumbnailLocked(dir, path, dataURL string) error {
@@ -227,15 +250,29 @@ func (s *Service) storeThumbnailLocked(dir, path, dataURL string) error {
 		return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
 	}
 	defer guard.Close()
+	name, size := filepath.Base(path), int64(len(dataURL))
+	if s.thumbnails.bytes-s.thumbnails.size(name)+size > thumbnailCacheBytes {
+		if err := s.refreshThumbnailRecencyLocked(dir); err != nil {
+			return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
+		}
+	}
 	if err := s.invalidateThumbnailIndex(guard); err != nil {
 		return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
 	}
 	if err := atomicWrite(path, []byte(dataURL), 0600, "thumbnailCacheFailed"); err != nil {
 		return err
 	}
-	s.thumbnails.touch(filepath.Base(path), int64(len(dataURL)))
+	s.thumbnails.touch(name, size)
 	s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
 	return nil
+}
+
+func (s *Service) refreshThumbnailRecencyLocked(dir string) error {
+	if !s.thumbnails.recencyStale {
+		return nil
+	}
+	s.thumbnails.scanned = time.Time{}
+	return s.refreshThumbnailCacheLocked(dir)
 }
 
 func (s *Service) refreshThumbnailCacheLocked(dir string) error {
@@ -274,6 +311,7 @@ func (s *Service) refreshThumbnailCacheLocked(dir string) error {
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].modified.Before(files[j].modified) })
 	cache.scanned = now
+	cache.recencyStale = false
 	cache.entries = make(map[string]*list.Element, len(files))
 	cache.recency.Init()
 	cache.bytes = 0
@@ -346,9 +384,20 @@ func (s *Service) cachedThumbnail(path string) (string, bool) {
 	data, readErr := io.ReadAll(io.LimitReader(file, maxThumbnailBytes+1))
 	file.Close()
 	if readErr == nil && validThumbnail(data) {
-		if s.invalidateThumbnailIndex(guard) == nil {
-			_ = os.Chtimes(path, s.now(), s.now())
-			s.thumbnails.touch(name, int64(len(data)))
+		cache, size := &s.thumbnails, int64(len(data))
+		if cache.size(name) != size {
+			// An older instance may have written without updating the index generation.
+			cache.scanned = time.Time{}
+			if err := s.refreshThumbnailCacheLocked(dir); err != nil {
+				return string(data), true
+			}
+		}
+		if updateThumbnailGeneration(guard, thumbnailRecencyOffset, &cache.recencyGeneration) == nil {
+			if now := s.now(); os.Chtimes(path, now, now) == nil {
+				cache.touch(name, size)
+			}
+		}
+		if cache.bytes > thumbnailCacheBytes && s.refreshThumbnailRecencyLocked(dir) == nil && s.invalidateThumbnailIndex(guard) == nil {
 			s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
 		}
 		return string(data), true
