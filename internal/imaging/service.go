@@ -48,6 +48,7 @@ func New(dataDir string) *Service {
 		dataDir: dataDir, cacheDir: filepath.Join(dataDir, "optimizer-cache"),
 		workers: newOperationLimit(defaultConcurrency(runtime.NumCPU())), largeImages: make(chan struct{}, 2),
 		lifetime: lifetime, stop: stop,
+		previews: comparisonFiles{root: filepath.Join(dataDir, "comparison-previews")},
 	}
 }
 

@@ -17,6 +17,8 @@ import (
 
 const ComparisonScheme = "picpiper-preview"
 
+const comparisonSessionPrefix = "session-"
+
 type ComparisonImage struct {
 	URL    string `json:"url,omitempty"`
 	Width  int    `json:"width"`
@@ -25,7 +27,9 @@ type ComparisonImage struct {
 
 type comparisonFiles struct {
 	mu     sync.Mutex
+	root   string
 	dir    string
+	lease  *os.File
 	owners map[string]string
 }
 
@@ -33,14 +37,66 @@ func (files *comparisonFiles) newPath() (string, error) {
 	files.mu.Lock()
 	defer files.mu.Unlock()
 	if files.dir == "" {
-		dir, err := os.MkdirTemp("", "picpiper-preview-")
+		if err := os.MkdirAll(files.root, 0700); err != nil {
+			return "", err
+		}
+		// Serialize creating and locking a session with startup cleanup.
+		guard, err := openPreviewLease(filepath.Join(files.root, ".lock"), true)
 		if err != nil {
 			return "", err
 		}
-		files.dir = dir
+		defer guard.Close()
+		dir, err := os.MkdirTemp(files.root, comparisonSessionPrefix)
+		if err != nil {
+			return "", err
+		}
+		lease, err := openPreviewLease(filepath.Join(dir, ".lease"), false)
+		if err != nil {
+			_ = os.RemoveAll(dir)
+			return "", err
+		}
+		files.dir, files.lease = dir, lease
 		files.owners = make(map[string]string)
 	}
 	return filepath.Join(files.dir, rand.Text()+".png"), nil
+}
+
+func openPreviewLease(path string, wait bool) (*os.File, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err = lockPreviewLease(file, wait); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	return file, nil
+}
+
+func (files *comparisonFiles) removeAbandoned() {
+	guard, err := openPreviewLease(filepath.Join(files.root, ".lock"), false)
+	if err != nil {
+		return
+	}
+	defer guard.Close()
+	entries, err := os.ReadDir(files.root)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), comparisonSessionPrefix) {
+			continue
+		}
+		dir := filepath.Join(files.root, entry.Name())
+		lease, err := openPreviewLease(filepath.Join(dir, ".lease"), false)
+		if err != nil {
+			continue
+		}
+		// Only a session whose owner released the lease can reach this point.
+		// Close the handle before removing its directory on Windows.
+		_ = lease.Close()
+		_ = os.RemoveAll(dir)
+	}
 }
 
 func (files *comparisonFiles) release(taskID string) {
@@ -58,8 +114,9 @@ func (files *comparisonFiles) close() {
 	files.mu.Lock()
 	defer files.mu.Unlock()
 	if files.dir != "" {
+		_ = files.lease.Close()
 		_ = os.RemoveAll(files.dir)
-		files.dir, files.owners = "", nil
+		files.dir, files.lease, files.owners = "", nil, nil
 	}
 }
 
