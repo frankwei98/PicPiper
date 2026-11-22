@@ -31,6 +31,7 @@ import {
 } from "./optimizeQueue";
 import { CompressionResults } from "./CompressionResults";
 import { ImageComparison } from "./ImageComparison";
+import { OptimizePreviews } from "./optimizePreviews";
 import { useOptimizeUploads } from "./useOptimizeUploads";
 import { useUpdateActivity } from "@/api/updates";
 
@@ -71,6 +72,7 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
   const uploadProfile = availableProfiles.find((profile) => profile.id === uploadProfileId) ?? activeProfile ?? availableProfiles[0];
   const [uploadedFocus, setUploadedFocus] = useState<(GalleryFocus & { destination: string }) | null>(null);
   const [items, setItems] = useState<OptimizeItem[]>([]);
+  const [previews] = useState(() => new OptimizePreviews());
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const [quality, setQuality] = useState(DEFAULT_SETTINGS.quality);
@@ -111,13 +113,14 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
   });
 
   const canMutateQueue = useCallback(() => !saving && !copying && uploads.canMutateQueue(), [saving, copying, uploads.canMutateQueue]);
-  useUpdateActivity("optimize", importing || saving || copying || uploads.isUploading || items.some((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)));
+  useUpdateActivity("optimize", importing || saving || copying || uploads.isUploading || items.some((item) => ["inspecting", "queued", "compressing"].includes(item.status)));
 
   useEffect(() => {
     return () => {
       itemsRef.current.forEach(cancelBackendTask);
+      previews.clear();
     };
-  }, []);
+  }, [previews]);
 
   const removeItem = (id: string) => {
     if (!canMutateQueue()) return;
@@ -178,18 +181,6 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
         ),
       );
 
-      try {
-        const thumb = await imageApi.readThumbnail({ taskId: `${itemId}:${capturedVersion}`, path: sourcePath, maxSize: 1024 });
-        setItems((current) =>
-          current.map((ci) =>
-            ci.id === itemId && (ci.taskVersion ?? 0) === capturedVersion
-              ? { ...ci, originalPreviewUrl: thumb.dataUrl }
-              : ci,
-          ),
-        );
-      } catch {
-        // Thumbnails are best-effort
-      }
     } catch (err) {
       setItems((current) =>
         current.map((ci) =>
@@ -346,14 +337,6 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
 
     try {
       const outputDir = await getOutputDir();
-      if (capturedVersion > 0 && !item.originalPreviewUrl) {
-        try {
-          const original = await imageApi.readThumbnail({ taskId: `${itemId}:${capturedVersion}`, path: item.sourcePath, maxSize: 1024 });
-          setItem((ci) => (ci.taskVersion ?? 0) === capturedVersion && !ci.cancelling ? { ...ci, originalPreviewUrl: original.dataUrl } : ci);
-        } catch {
-          // A source preview remains optional; full-resolution comparison can retry.
-        }
-      }
       const result = await imageApi.compressImage({
         taskId: `${itemId}:${capturedVersion}`,
         sourcePath: item.sourcePath,
@@ -367,7 +350,7 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
         if (ci.cancelling || (ci.taskVersion ?? 0) !== capturedVersion) return ci;
         return {
           ...ci,
-          status: "loadingPreview",
+          status: "compressed",
           outputBytes: result.outputBytes,
           outputPath: result.outputPath,
           outputFileName: result.outputFileName,
@@ -377,23 +360,6 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
         };
       });
 
-      // Load compressed preview
-      try {
-        const thumb = await imageApi.readThumbnail({ taskId: `${itemId}:${capturedVersion}`, path: result.outputPath, maxSize: 1024 });
-        setItem((ci) => {
-          if (ci.cancelling || (ci.taskVersion ?? 0) !== capturedVersion) return ci;
-          return {
-            ...ci,
-            status: "compressed",
-            compressedPreviewUrl: thumb.dataUrl,
-          };
-        });
-      } catch {
-        setItem((ci) => {
-          if (ci.cancelling || (ci.taskVersion ?? 0) !== capturedVersion) return ci;
-          return { ...ci, status: "compressed" };
-        });
-      }
     } catch (err) {
       setItem((ci) => {
         if ((ci.taskVersion ?? 0) !== capturedVersion) return ci;
@@ -414,14 +380,14 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
     if (availableSlots <= 0) return;
 
     // Filter out items already being processed to prevent duplicate dispatch
-    const queuedItems = items.filter(
+    const nextItems = items.filter(
       (item) => item.status === "queued" && !activeTasks.current.has(item.id),
-    );
+    ).slice(0, availableSlots);
 
-    if (queuedItems.length === 0) return;
+    if (nextItems.length === 0) return;
 
     const outputNames = makeUniqueOutputFileNames(
-      queuedItems.map((item) => ({
+      nextItems.map((item) => ({
         id: item.id,
         fileName: item.fileName,
         targetFormat: item.settings.targetFormat,
@@ -429,7 +395,6 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
       preferredNameCounts.current,
     );
 
-    const nextItems = queuedItems.slice(0, availableSlots);
     // Track preferred name counts only for items actually dispatched, so
     // subsequent scheduler runs produce correct suffixes.
     trackDispatchedNames(
@@ -471,7 +436,6 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
           outputBytes: undefined,
           outputPath: undefined,
           outputFileName: undefined,
-          compressedPreviewUrl: undefined,
           error: undefined,
           cancelling: false,
           taskVersion: (item.taskVersion ?? 0) + 1,
@@ -530,6 +494,7 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
     if (!canMutateQueue()) return;
     importGeneration.current += 1;
     importedPaths.current.clear();
+    previews.clear();
     itemsRef.current.forEach(cancelBackendTask);
     setItems([]);
     setSelectedItemId(null);
@@ -571,7 +536,6 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
               outputBytes: undefined,
               outputPath: undefined,
               outputFileName: undefined,
-              compressedPreviewUrl: undefined,
               error: undefined,
               taskVersion: (item.taskVersion ?? 0) + 1,
               settings: { ...item.settings, targetFormat, animationMode: mode, quality, maxDimension: maxDimensionRef.current || undefined, removeGps: true },
@@ -707,6 +671,8 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
 
       <OptimizeWorkspace
         items={items}
+        previews={previews}
+        active={isActive}
         selectedId={selectedItemId}
         onSelect={setSelectedItemId}
         quality={quality}
@@ -757,10 +723,10 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
                 {availableProfiles.map((profile) => <NativeSelectOption key={profile.id} value={profile.id}>{profile.name}</NativeSelectOption>)}
               </NativeSelect>}
               {!uploads.uploadProfile && <p className="action-destination">{t("Set an upload destination in Settings. Your compressed images will stay here.")}</p>}
-              {items.some((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)) && <Button type="button" size="sm" variant="ghost" disabled={saving || uploads.isUploading} onClick={() => {
+              {items.some((item) => ["inspecting", "queued", "compressing"].includes(item.status)) && <Button type="button" size="sm" variant="ghost" disabled={saving || uploads.isUploading} onClick={() => {
                 importGeneration.current += 1;
-                itemsRef.current.filter((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status)).forEach(cancelBackendTask);
-                setItems((current) => current.map((item) => ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status) ? { ...item, status: "cancelled", cancelling: true, taskVersion: (item.taskVersion ?? 0) + 1 } : item));
+                itemsRef.current.filter((item) => ["inspecting", "queued", "compressing"].includes(item.status)).forEach(cancelBackendTask);
+                setItems((current) => current.map((item) => ["inspecting", "queued", "compressing"].includes(item.status) ? { ...item, status: "cancelled", cancelling: true, taskVersion: (item.taskVersion ?? 0) + 1 } : item));
               }}>{t("Stop batch")}</Button>}
               {items.some((item) => item.status === "failed" || item.status === "cancelled") && <Button type="button" size="sm" variant="ghost" disabled={saving || uploads.isUploading} onClick={() => items.filter((item) => item.status === "failed" || item.status === "cancelled").forEach((item) => retryItem(item.id))}>{t("Retry unfinished")}</Button>}
               {items.some((item) => isCurrentCompressionOutput(item, quality)) && (
@@ -811,6 +777,7 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
       )}
 
       {resultsOpen && readyItems.length > 0 && <CompressionResults
+        previews={previews}
         open={!compareItem && isActive}
         items={readyItems} locked={saving || copying || uploads.isUploading}
         profiles={availableProfiles} profileId={uploadProfile?.id}

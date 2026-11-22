@@ -6,9 +6,12 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { OptimizeItem } from "../../types";
 import { formatBytes, sizeChangeLabel } from "./optimizeQueue";
+import { CARD_PREVIEW_EDGE, useOptimizePreview, type OptimizePreviews } from "./optimizePreviews";
 
 interface OptimizeItemCardProps {
   item: OptimizeItem;
+  previews: OptimizePreviews;
+  active: boolean;
   selected?: boolean;
   onSelect?: (itemId: string) => void;
   mutationLocked: boolean;
@@ -20,10 +23,10 @@ interface OptimizeItemCardProps {
   onRetry: (itemId: string) => void;
 }
 
-export function OptimizeItemCard({ item, selected, onSelect, mutationLocked, uploadFailure, uploading, onCancel, onCompare, onRemove, onRetry }: OptimizeItemCardProps) {
+export function OptimizeItemCard({ item, previews, active, selected, onSelect, mutationLocked, uploadFailure, uploading, onCancel, onCompare, onRemove, onRetry }: OptimizeItemCardProps) {
   useLocale();
-  const busy = ["inspecting", "queued", "compressing", "loadingPreview"].includes(item.status);
-  const preview = item.compressedPreviewUrl ?? item.originalPreviewUrl;
+  const busy = ["inspecting", "queued", "compressing"].includes(item.status);
+  const preview = useOptimizePreview(previews, item.id, active && item.status === "compressed" ? item.outputPath : undefined, CARD_PREVIEW_EDGE);
   return (
     <article className={cn("batch-item", selected && "selected")} aria-label={item.fileName} data-output-format={item.settings.targetFormat}>
       <div className="item-main">
@@ -34,7 +37,7 @@ export function OptimizeItemCard({ item, selected, onSelect, mutationLocked, upl
           aria-label={item.status === "compressed" ? t("Compare {{value0}}", { value0: item.fileName }) : t("Preview {{value0}}", { value0: item.fileName })}
           onClick={() => item.status === "compressed" ? onCompare(item.id) : onSelect?.(item.id)}
         >
-          {preview ? <ImageWithSkeleton src={preview} alt="" loading="lazy" /> : busy ? <Skeleton className="image-skeleton" role="status" aria-label={t("Updating preview…")} /> : <span>{item.sourceFormat === "unknown" ? "…" : item.sourceFormat.toUpperCase()}</span>}
+          {preview.url ? <ImageWithSkeleton src={preview.url} alt="" loading="lazy" /> : busy || preview.loading ? <Skeleton className="image-skeleton" role="status" aria-label={t("Updating preview…")} /> : <span>{item.sourceFormat === "unknown" ? "…" : item.sourceFormat.toUpperCase()}</span>}
         </Button>
         <Button type="button" variant="ghost" className="item-name" aria-label={t("Select {{value0}}", { value0: item.fileName })} aria-pressed={Boolean(selected)} onClick={() => onSelect?.(item.id)}>
           <strong title={item.fileName}>{item.fileName}</strong>
