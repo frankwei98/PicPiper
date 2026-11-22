@@ -148,9 +148,11 @@ func TestLargeImageOperationsWaitWithoutTakingAWorkerAndCanCancel(t *testing.T) 
 	}
 	largeSource := filepath.Join(t.TempDir(), "large.png")
 	header := make([]byte, 13)
-	binary.BigEndian.PutUint32(header[:4], 6000)
-	binary.BigEndian.PutUint32(header[4:8], 6000)
-	header[8], header[9] = 16, 6 // 16-bit RGBA PNG dimensions, without allocating pixels.
+	// 16-bit RGBA at this size exceeds the budget during profile conversion,
+	// even though the decoded image and a resized output alone fit.
+	binary.BigEndian.PutUint32(header[:4], 4096)
+	binary.BigEndian.PutUint32(header[4:8], 4096)
+	header[8], header[9] = 16, 6
 	prefix := append([]byte("\x89PNG\r\n\x1a\n"), pngChunk("IHDR", header)...)
 	if err := os.WriteFile(largeSource, append(prefix, pngChunk("IDAT", nil)...), 0600); err != nil {
 		t.Fatal(err)
