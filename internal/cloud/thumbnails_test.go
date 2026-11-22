@@ -121,7 +121,7 @@ func TestGalleryThumbnailConcurrentMissesDownloadOnce(t *testing.T) {
 	}
 }
 
-func TestThumbnailCacheEvictsOldestAndDeletionClearsVersions(t *testing.T) {
+func TestThumbnailCacheEvictsLeastRecentlyUsedAndDeletionClearsVersions(t *testing.T) {
 	s := New(t.TempDir())
 	dir := filepath.Join(s.dataDir, "gallery-thumbnails")
 	if err := os.MkdirAll(dir, 0700); err != nil {
@@ -129,9 +129,10 @@ func TestThumbnailCacheEvictsOldestAndDeletionClearsVersions(t *testing.T) {
 	}
 	p := testProfile("https://s3.example.test")
 	prefix := thumbnailIdentity(p, "image.png")
+	data := "data:image/png;base64,c3ludGhldGlj"
 	for i := range 3 {
 		path := filepath.Join(dir, fmt.Sprintf("%s-%d.thumb", prefix, i))
-		if err := os.WriteFile(path, []byte("12345678"), 0600); err != nil {
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 			t.Fatal(err)
 		}
 		modified := time.Unix(int64(i), 0)
@@ -139,9 +140,19 @@ func TestThumbnailCacheEvictsOldestAndDeletionClearsVersions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	s.pruneThumbnails(dir, 16)
-	if _, err := os.Stat(filepath.Join(dir, prefix+"-0.thumb")); !os.IsNotExist(err) {
-		t.Fatal("oldest thumbnail retained")
+	s.refreshThumbnailCacheLocked(dir)
+	if cached, ok := s.cachedThumbnail(filepath.Join(dir, prefix+"-0.thumb")); !ok || cached != data {
+		t.Fatal("oldest thumbnail missing before eviction")
+	}
+	s.pruneThumbnailsLocked(dir, 2*int64(len(data)))
+	if _, err := os.Stat(filepath.Join(dir, prefix+"-1.thumb")); !os.IsNotExist(err) {
+		t.Fatal("least recently used thumbnail retained")
+	}
+	if _, err := os.Stat(filepath.Join(dir, prefix+"-0.thumb")); err != nil {
+		t.Fatal("recently accessed thumbnail was evicted")
+	}
+	if err := os.WriteFile(filepath.Join(dir, prefix+"-external.thumb"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := s.saveSecret(p.ID, "fake-secret"); err != nil {
 		t.Fatal(err)
@@ -151,8 +162,53 @@ func TestThumbnailCacheEvictsOldestAndDeletionClearsVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries, _ := os.ReadDir(dir)
-	if len(entries) != 0 {
+	if len(entries) != 0 || s.thumbnails.bytes != 0 {
 		t.Fatal("deleted object left cached thumbnails")
+	}
+}
+
+func TestThumbnailCacheReplacesCorruptFilesAndForgetsMissingFiles(t *testing.T) {
+	dataDir := t.TempDir()
+	dir := filepath.Join(dataDir, "gallery-thumbnails")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	p := testProfile("https://s3.example.test")
+	const data = "data:image/png;base64,c3ludGhldGlj"
+	corrupt := filepath.Join(dir, "corrupt.thumb")
+	missing := filepath.Join(dir, "missing.thumb")
+	for _, path := range []string{corrupt, missing} {
+		if err := os.WriteFile(path, []byte("corrupt"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := NewWithThumbnails(dataDir, func(context.Context, string) (string, error) { return data, nil })
+	if err := os.Remove(missing); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{corrupt, missing} {
+		if _, ok := s.cachedThumbnail(path); ok {
+			t.Fatal("bad cache file was treated as a hit")
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("bad cache file remains: %v", err)
+		}
+	}
+	if s.thumbnails.bytes != 0 {
+		t.Fatalf("bad cache files are still counted: %d bytes", s.thumbnails.bytes)
+	}
+	if _, err := s.saveSecret(p.ID, "fake-secret"); err != nil {
+		t.Fatal(err)
+	}
+	s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) { return r2Response(200, "image"), nil })
+	req := thumbnailRequest{Profile: p, Key: "recovered.png"}
+	for range 2 {
+		if _, err := s.readGalleryThumbnail(context.Background(), req); err != nil {
+			t.Fatal(err)
+		}
+		if s.thumbnails.bytes != int64(len(data)) {
+			t.Fatalf("cache write or hit miscounted the file: %d bytes", s.thumbnails.bytes)
+		}
 	}
 }
 

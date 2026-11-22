@@ -31,6 +31,7 @@ type Service struct {
 	thumbnailSlot    chan struct{}
 	thumbnailCacheMu sync.Mutex
 	thumbnailEpoch   uint64
+	thumbnails       thumbnailCache
 	dataDir          string
 	oauthMu          sync.Mutex
 	oauth            *r2Session
