@@ -62,7 +62,7 @@ func serveWorker(input io.Reader, output io.Writer, call func(context.Context, s
 		var value any
 		response := workerReply{}
 		err := json.Unmarshal(requests.Bytes(), &req)
-		if err != nil || !workerOperation(req.Operation) {
+		if err != nil || !workerOperation(req.Operation) || req.Operation == "copy_image_png" {
 			err = apperror.New("invalidRequest", "The image worker request is invalid.")
 		} else {
 			value, err = call(context.Background(), req.Operation, req.Payload)
@@ -81,7 +81,7 @@ func serveWorker(input io.Reader, output io.Writer, call func(context.Context, s
 
 func workerOperation(operation string) bool {
 	switch operation {
-	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image":
+	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "render_preview_png", "copy_image_png":
 		return true
 	}
 	return false
@@ -131,6 +131,11 @@ func (s *Service) isolated(ctx context.Context, operation string, req request) (
 	s.trimIdleWorkers()
 	if response.Error != nil {
 		return nil, response.Error
+	}
+	if operation == "render_preview_png" {
+		var preview ComparisonImage
+		err := json.Unmarshal(response.Data, &preview)
+		return preview, err
 	}
 	var value any
 	if err := json.Unmarshal(response.Data, &value); err != nil {

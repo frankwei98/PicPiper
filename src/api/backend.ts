@@ -66,10 +66,11 @@ export interface ReadThumbnailResponse {
 export interface ReadComparisonImageRequest {
   taskId: string;
   path: string;
+  maxSize?: number;
 }
 
 export interface ReadComparisonImageResponse {
-  dataUrl: string;
+  url: string;
   width: number;
   height: number;
 }

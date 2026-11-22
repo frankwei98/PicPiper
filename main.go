@@ -284,6 +284,9 @@ func main() {
 		dataDir = filepath.Join(smokeDir, "data")
 	}
 	backend := newBackend(dataDir)
+	if err := mygo.Protocol.HandleFunc(imaging.ComparisonScheme, backend.images.ServeComparison); err != nil {
+		log.Fatal(err)
+	}
 	backend.mini = mini.New(backend.images, backend.cloud, mygo.Clipboard.WriteImage, func(text string) error { mygo.Clipboard.WriteText(text); return nil })
 	backend.desktop = &desktopController{backend: backend}
 	backend.setupUpdates(smokeDir != "")

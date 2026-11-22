@@ -96,13 +96,14 @@ func runPackageSmoke(win *mygo.Window, dir string) {
 		outputs = append(outputs, result.OutputPath)
 	}
 	report.Steps = append(report.Steps, "Native bridge encoded and decoded JPEG, PNG, WebP, AVIF and JPEG XL through isolated workers")
-	var pngResult struct {
-		DataURL string `json:"dataUrl"`
+	var preview imaging.ComparisonImage
+	call("read_comparison_image", map[string]any{"path": outputs[1], "taskId": "package-smoke-comparison"}, &preview)
+	pixels, err := smokeEval(win, `const img = new Image(); img.crossOrigin = "anonymous"; img.src = `+smokeJSON(preview.URL)+`; await img.decode(); return img.naturalWidth * img.naturalHeight;`)
+	must(err)
+	if fmt.Sprint(pixels) != "512" {
+		must(fmt.Errorf("native comparison returned incorrect pixels: %v", pixels))
 	}
-	call("read_comparison_image", map[string]any{"path": outputs[1]}, &pngResult)
-	if pngResult.DataURL == "" {
-		must(fmt.Errorf("native comparison returned no image"))
-	}
+	call("cancel_image_task", map[string]any{"taskId": "package-smoke-comparison"}, new(any))
 	exportDir := filepath.Join(dir, "exports")
 	must(os.MkdirAll(exportDir, 0700))
 	var first, second []string

@@ -4,7 +4,6 @@ package mini
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -592,19 +591,13 @@ func (s *Service) CopyImage(id string) error {
 	if i.Status != "completed" {
 		return apperror.New("miniNotReady", "This image has not finished processing.")
 	}
-	var png struct {
-		DataURL string `json:"dataUrl"`
-	}
-	if err = s.imageCall("read_comparison_image", map[string]any{"path": i.outputPath, "taskId": "copy-" + id}, &png); err != nil {
-		return err
-	}
-	encoded, ok := strings.CutPrefix(png.DataURL, "data:image/png;base64,")
-	if !ok {
-		return apperror.New("clipboardFailed", "Could not prepare the clipboard image.")
-	}
-	data, err := base64.StdEncoding.DecodeString(encoded)
+	value, err := s.images.Call(s.ctx, "copy_image_png", mustJSON(map[string]any{"path": i.outputPath, "taskId": "copy-" + id}))
 	if err != nil {
 		return err
+	}
+	data, ok := value.([]byte)
+	if !ok {
+		return apperror.New("clipboardFailed", "Could not prepare the clipboard image.")
 	}
 	if err = s.copyImage(data); err == nil {
 		s.setCopied("image")

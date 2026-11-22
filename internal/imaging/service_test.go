@@ -3,7 +3,6 @@ package imaging
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"hash/crc32"
@@ -131,14 +130,10 @@ func TestTransparentPNGAndJPEGWhiteBackground(t *testing.T) {
 			t.Fatalf("PNG lost transparency: %+v", pixel)
 		}
 	}
-	response := call(t, service, "read_comparison_image", request{Path: source}).(map[string]any)
-	payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(response["dataUrl"].(string), "data:image/png;base64,"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, err := png.Decode(bytes.NewReader(payload))
-	if err != nil || decoded.Bounds() != img.Bounds() {
-		t.Fatalf("comparison changed dimensions: %v", err)
+	t.Cleanup(service.Close)
+	response := call(t, service, "read_comparison_image", request{Path: source}).(ComparisonImage)
+	if decoded := decodeComparison(t, service, response); decoded.Bounds() != img.Bounds() {
+		t.Fatalf("comparison changed dimensions: %v", decoded.Bounds())
 	}
 }
 

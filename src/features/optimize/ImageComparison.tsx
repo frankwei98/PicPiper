@@ -28,6 +28,7 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
   const originalPaneRef = useRef<HTMLDivElement>(null);
   const compressedPaneRef = useRef<HTMLDivElement>(null);
   const pendingScrolls = useRef(new Map<HTMLDivElement, { left: number; top: number }>());
+  const loadingLabel = mode === "actual" ? t("Loading full-resolution images…") : t("Updating preview…");
 
   useEffect(() => {
     let active = true;
@@ -43,9 +44,10 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
     setImages(null);
     setLoadError(null);
 
+    const size = mode === "fit" ? { maxSize: 1280 } : {};
     Promise.all([
-      imageApi.readComparisonImage({ taskId, path: originalPath }),
-      imageApi.readComparisonImage({ taskId, path: compressedPath }),
+      imageApi.readComparisonImage({ taskId, path: originalPath, ...size }),
+      imageApi.readComparisonImage({ taskId, path: compressedPath, ...size }),
     ]).then(
       ([original, compressed]) => {
         if (active) setImages({ original, compressed });
@@ -60,7 +62,7 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
       active = false;
       cancelReads();
     };
-  }, [compressedPath, loadAttempt, originalPath]);
+  }, [compressedPath, loadAttempt, mode, originalPath]);
 
   useEffect(() => {
     pendingScrolls.current.clear();
@@ -113,8 +115,8 @@ export function ImageComparison({ originalPath, compressedPath }: ImageCompariso
       </div>
 
       {!images && !loadError && (
-        <div role="status" aria-label={t("Loading full-resolution images…")} aria-busy="true">
-          <span className="sr-only">{t("Loading full-resolution images…")}</span>
+        <div role="status" aria-label={loadingLabel} aria-busy="true">
+          <span className="sr-only">{loadingLabel}</span>
           <div className="compare-grid" aria-hidden="true">{[0, 1].map((index) => <section key={index}>
             <Skeleton className="h-4 w-24 mb-2" />
             <Skeleton className="compare-pane" />
@@ -181,8 +183,9 @@ function ComparisonPane({ ref, label, image, mode, onScroll }: ComparisonPanePro
         onScroll={onScroll}
       >
         <ImageWithSkeleton
-          src={image.dataUrl}
-          alt={t("{{label}} full-resolution preview", { label: t(label) })}
+          src={image.url}
+          crossOrigin="anonymous"
+          alt={mode === "actual" ? t("{{label}} full-resolution preview", { label: t(label) }) : t(label)}
           width={image.width}
           height={image.height}
           draggable={false}
