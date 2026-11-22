@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -78,7 +79,14 @@ func needsLargeImageSlot(operation string, req request) bool {
 		outputPixels = outputWidth * outputHeight
 	}
 	// A decode may normalize colors or orientation to a 16-bit pixel buffer.
-	return 8*sourcePixels+outputBytesPerPixel*outputPixels >= largeImageBytes
+	peakBytes := 8*sourcePixels + outputBytesPerPixel*outputPixels
+	switch config.ColorModel {
+	case color.Gray16Model, color.RGBA64Model, color.NRGBA64Model:
+		// Profile conversion can have a decoded image and two full-size
+		// 16-bit RGBA conversion buffers before any resize takes place.
+		peakBytes = max(peakBytes, 3*8*sourcePixels)
+	}
+	return peakBytes >= largeImageBytes
 }
 
 // These are the three first-chunk layouts that carry the WebP canvas size.
