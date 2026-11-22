@@ -14,11 +14,14 @@ import { cn } from "@/lib/utils";
 import type { OptimizeItem, WritableImageFormat } from "../../types";
 import { AVAILABLE_OUTPUT_FORMATS, formatBytes, sizeChangeLabel } from "./optimizeQueue";
 import { OptimizeItemCard } from "./OptimizeItemCard";
+import { STAGE_PREVIEW_EDGE, useOptimizePreview, type OptimizePreviews } from "./optimizePreviews";
 
 export type CompressionPreset = "original" | "balanced" | "small" | "lossless" | "custom";
 
 interface OptimizeWorkspaceProps {
   items: OptimizeItem[];
+  previews: OptimizePreviews;
+  active: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
   quality: number;
@@ -64,8 +67,12 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
     return qualityDraft.trim() && Number.isFinite(parsed) ? Math.max(1, Math.min(100, parsed)) : props.quality;
   })();
   const selected = props.items.find((item) => item.id === props.selectedId) ?? props.items[0];
-  const previewUrl = selected && (preview === "original" ? selected.originalPreviewUrl : selected.compressedPreviewUrl ?? selected.originalPreviewUrl);
-  const busy = selected && ["inspecting", "queued", "compressing", "loadingPreview"].includes(selected.status);
+  const busy = selected && ["inspecting", "queued", "compressing"].includes(selected.status);
+  const outputPath = props.active && preview === "compressed" && selected?.status === "compressed" ? selected.outputPath : undefined;
+  const output = useOptimizePreview(props.previews, selected?.id, outputPath, STAGE_PREVIEW_EDGE);
+  const showSource = props.active && selected?.originalBytes && (preview === "original" || (!busy && !output.loading && !output.url));
+  const original = useOptimizePreview(props.previews, selected?.id, showSource ? selected?.sourcePath : undefined, STAGE_PREVIEW_EDGE);
+  const previewUrl = output.url ?? original.url;
   const width = selected && preview === "compressed" && selected.status === "compressed" ? selected.outputWidth ?? selected.originalWidth : selected?.originalWidth;
   const height = selected && preview === "compressed" && selected.status === "compressed" ? selected.outputHeight ?? selected.originalHeight : selected?.originalHeight;
 
@@ -106,7 +113,7 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
           </div>
         </div>
         <div className="batch-list" role="list">
-          {props.items.map((item, index) => <LazyRender key={item.id} label={item.fileName} placeholder={<OptimizeItemSkeleton />} position={index + 1} total={props.items.length}>{() => <OptimizeItemCard item={item} selected={selected?.id === item.id} onSelect={props.onSelect} mutationLocked={props.locked} uploadFailure={props.uploadFailure(item.id)} uploading={props.isUploading(item.id)} onCancel={props.onCancel} onCompare={props.onCompare} onRemove={props.onRemove} onRetry={props.onRetry} />}</LazyRender>)}
+          {props.items.map((item, index) => <LazyRender key={item.id} label={item.fileName} placeholder={<OptimizeItemSkeleton />} position={index + 1} total={props.items.length}>{() => <OptimizeItemCard item={item} previews={props.previews} active={props.active} selected={selected?.id === item.id} onSelect={props.onSelect} mutationLocked={props.locked} uploadFailure={props.uploadFailure(item.id)} uploading={props.isUploading(item.id)} onCancel={props.onCancel} onCompare={props.onCompare} onRemove={props.onRemove} onRetry={props.onRetry} />}</LazyRender>)}
           {!props.items.length && (
             <div className="rail-empty">
               <strong>{t("No images yet")}</strong>
@@ -143,8 +150,8 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
               <span className="drop-formats">JPEG, PNG, WebP, AVIF, JPEG XL, HEIC</span>
             </Button>
           ) : previewUrl ? (
-            <ImageWithSkeleton src={previewUrl} alt={preview === "original" || !selected.compressedPreviewUrl ? t("Original preview of {{filename}}", { filename: selected.fileName }) : t("Compressed preview of {{filename}}", { filename: selected.fileName })} draggable={false} />
-          ) : busy ? (
+            <ImageWithSkeleton src={previewUrl} alt={!output.url ? t("Original preview of {{filename}}", { filename: selected.fileName }) : t("Compressed preview of {{filename}}", { filename: selected.fileName })} draggable={false} />
+          ) : busy || output.loading || original.loading ? (
             <Skeleton className="image-skeleton" role="status" aria-label={t("Preparing your image")} />
           ) : (
             <div className="stage-empty">

@@ -381,16 +381,32 @@ describe("OptimizePage", () => {
     expect(await screen.findByText(/HDR original shown with the same SDR tone mapping/)).toBeVisible();
   });
 
-  it("reloads the original preview when a setting change cancels its first read", async () => {
+  it("compresses while hidden and requests large previews for the active image", async () => {
+    const user = userEvent.setup();
+    const view = render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" isActive={false} />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
+    expect(readThumbnail).not.toHaveBeenCalled();
+
+    view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await screen.findByAltText("Compressed preview of real-photo.jpg");
+    expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ maxSize: 96 }));
+    expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ maxSize: 1024 }));
+    expect(readThumbnail).not.toHaveBeenCalledWith(expect.objectContaining({ path: "/tmp/real-photo.jpg" }));
+  });
+
+  it("ignores a late original preview after switching away", async () => {
     let finishOriginal!: (value: { dataUrl: string }) => void;
-    readThumbnail.mockImplementationOnce(() => new Promise((resolve) => { finishOriginal = resolve; }));
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{slug}.{ext}" />);
     await user.click(screen.getByTestId("image-drop-zone"));
-    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
-    await user.selectOptions(screen.getByRole("combobox", { name: "Batch preset" }), "balanced");
-    await screen.findByRole("button", { name: "Compare real-photo.jpg" });
-    await user.click(within(screen.getByRole("group", { name: "Preview version" })).getByRole("button", { name: "Original" }));
+    await screen.findByAltText("Compressed preview of real-photo.jpg");
+    const toggle = within(screen.getByRole("group", { name: "Preview version" }));
+    readThumbnail.mockImplementationOnce(() => new Promise((resolve) => { finishOriginal = resolve; }));
+    await user.click(toggle.getByRole("button", { name: "Original" }));
+    await user.click(toggle.getByRole("button", { name: "Compressed" }));
+    await user.click(toggle.getByRole("button", { name: "Original" }));
     expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
     await act(async () => { finishOriginal({ dataUrl: "data:image/jpeg;base64,LATE" }); });
     expect(screen.getByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
