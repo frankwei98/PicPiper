@@ -58,3 +58,21 @@ func TestDownsamplingFiltersFineDetailAndPreservesTransparentColors(t *testing.T
 		t.Fatalf("transparent edge gained a dark fringe: %+v", edge)
 	}
 }
+
+func TestLargeResizePreserves16BitColorAndAlpha(t *testing.T) {
+	source := image.NewNRGBA64(image.Rect(0, 0, 1400, 800))
+	pixel := color.NRGBA64{R: 60001, G: 32019, B: 12345, A: 34827}
+	for y := range 800 {
+		for x := range 700 {
+			source.SetNRGBA64(x, y, pixel)
+		}
+	}
+	got := resizePreservingDepth(source, 1300, 743).(*image.NRGBA64)
+	if result := got.NRGBA64At(100, 100); abs(int(result.R)-int(pixel.R)) > 4 ||
+		abs(int(result.G)-int(pixel.G)) > 4 || abs(int(result.B)-int(pixel.B)) > 4 || result.A != pixel.A {
+		t.Fatalf("bounded resize lost color precision or alpha: %+v", result)
+	}
+	if result := got.NRGBA64At(1000, 100); result.A != 0 {
+		t.Fatalf("bounded resize changed transparent area: %+v", result)
+	}
+}

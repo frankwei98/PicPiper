@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -134,5 +135,27 @@ func TestLiveConcurrencyIncreaseAndDecreasePreserveRunningWorkers(t *testing.T) 
 	raw, _ := json.Marshal(request{Path: "worker-pid"})
 	if _, err := s.Call(context.Background(), "inspect_image", raw); !errors.Is(err, context.Canceled) {
 		t.Fatal("closed service admitted a new worker", err)
+	}
+}
+
+func TestLargeResizeWaitsWithoutTakingAWorkerAndCanCancel(t *testing.T) {
+	service := New(t.TempDir())
+	t.Cleanup(service.Close)
+	service.SetConcurrency(1)
+	for range cap(service.largeResizes) {
+		service.largeResizes <- struct{}{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	payload, _ := json.Marshal(request{Settings: settings{MaxDimension: 3840}})
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.Call(ctx, "compress_image", payload)
+		done <- err
+	}()
+	source := fixture(t, image.NewNRGBA(image.Rect(0, 0, 16, 8)))
+	call(t, service, "inspect_image", request{Path: source})
+	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("large resize did not wait for its memory budget: %v", err)
 	}
 }

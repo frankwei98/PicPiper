@@ -20,7 +20,6 @@ import (
 	"unicode"
 
 	"github.com/frankwei98/PicPiper/internal/apperror"
-	imagedraw "golang.org/x/image/draw"
 )
 
 const maxPixels = 40_000_000
@@ -30,6 +29,7 @@ type Service struct {
 	dataDir       string
 	cacheDir      string
 	workers       *operationLimit
+	largeResizes  chan struct{}
 	jobs          imageJobs
 	workerMu      sync.Mutex
 	idleWorkers   []*imageWorker
@@ -44,7 +44,11 @@ type Service struct {
 
 func New(dataDir string) *Service {
 	lifetime, stop := context.WithCancel(context.Background())
-	return &Service{dataDir: dataDir, cacheDir: filepath.Join(dataDir, "optimizer-cache"), workers: newOperationLimit(defaultConcurrency(runtime.NumCPU())), lifetime: lifetime, stop: stop}
+	return &Service{
+		dataDir: dataDir, cacheDir: filepath.Join(dataDir, "optimizer-cache"),
+		workers: newOperationLimit(defaultConcurrency(runtime.NumCPU())), largeResizes: make(chan struct{}, 2),
+		lifetime: lifetime, stop: stop,
+	}
 }
 
 func (s *Service) Close() {
@@ -141,6 +145,16 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 	case "copy_outputs_to_dir":
 		return s.copyOutputs(ctx, req)
 	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "render_preview_png", "copy_image_png":
+		// A large requested output can still require two large pixel buffers
+		// after bounding the scaler's working memory. Wait before taking a worker.
+		if operation == "compress_image" && req.Settings.MaxDimension > 2560 {
+			select {
+			case s.largeResizes <- struct{}{}:
+				defer func() { <-s.largeResizes }()
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		if err := s.workers.acquire(ctx); err != nil {
 			return nil, err
 		}
@@ -535,29 +549,12 @@ func thumbnail(ctx context.Context, req request) (any, error) {
 	return map[string]string{"dataUrl": "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(buffer.Bytes())}, nil
 }
 
-// Catmull-Rom filters the complete source footprint and interpolates premultiplied
-// colors, retaining detail without aliasing or dark fringes at alpha edges.
 func highBitDepth(img image.Image) bool {
 	switch img.(type) {
 	case *image.NRGBA64, *image.RGBA64, *image.Gray16, *image.Alpha16:
 		return true
 	}
 	return false
-}
-
-func resizePreservingDepth(src image.Image, width, height int) image.Image {
-	if highBitDepth(src) {
-		dst := image.NewNRGBA64(image.Rect(0, 0, width, height))
-		imagedraw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), imagedraw.Src, nil)
-		return dst
-	}
-	return resize(src, width, height)
-}
-
-func resize(src image.Image, width, height int) *image.NRGBA {
-	dst := image.NewNRGBA(image.Rect(0, 0, width, height))
-	imagedraw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), imagedraw.Src, nil)
-	return dst
 }
 
 func (s *Service) copyOutputs(ctx context.Context, req request) ([]string, error) {
