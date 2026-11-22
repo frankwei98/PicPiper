@@ -118,6 +118,12 @@ func TestWebPAnimationPreservesFramesTimingLoopsAndResize(t *testing.T) {
 	if err != nil || info.FrameCount != 2 {
 		t.Fatalf("animation was not detected: %+v %v", info, err)
 	}
+	for _, mode := range []string{"", "preserve", "firstFrame"} {
+		req := request{SourcePath: source, Settings: settings{TargetFormat: "webp", AnimationMode: mode}}
+		if got, want := needsLargeImageSlot("compress_image", req), mode != "firstFrame"; got != want {
+			t.Errorf("animation mode %q: large-image slot = %t, want %t", mode, got, want)
+		}
+	}
 	service := New(t.TempDir())
 	run := call(t, service, "create_optimizer_run", request{}).(map[string]string)
 	for _, format := range []string{"webp"} {

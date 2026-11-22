@@ -48,6 +48,13 @@ func needsLargeImageSlot(operation string, req request) bool {
 	case len(magic) >= 3 && string(magic[:3]) == "\xff\xd8\xff":
 		config, err = jpeg.DecodeConfig(header)
 	case len(magic) == 30 && string(magic[:4]) == "RIFF" && string(magic[8:12]) == "WEBP":
+		// Preserving an animation retains every decoded frame and the encoder's
+		// packed copy. The VP8X canvas size alone cannot bound those buffers.
+		const animationFlag = 0x02
+		if operation == "compress_image" && req.Settings.TargetFormat == "webp" && req.Settings.AnimationMode != "firstFrame" &&
+			string(magic[12:16]) == "VP8X" && magic[20]&animationFlag != 0 {
+			return true
+		}
 		config.Width, config.Height = webpHeaderSize(magic)
 		if config.Width == 0 || config.Height == 0 {
 			return true
