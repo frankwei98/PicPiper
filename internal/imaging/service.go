@@ -29,7 +29,7 @@ type Service struct {
 	dataDir       string
 	cacheDir      string
 	workers       *operationLimit
-	largeResizes  chan struct{}
+	largeImages   chan struct{}
 	jobs          imageJobs
 	workerMu      sync.Mutex
 	idleWorkers   []*imageWorker
@@ -46,7 +46,7 @@ func New(dataDir string) *Service {
 	lifetime, stop := context.WithCancel(context.Background())
 	return &Service{
 		dataDir: dataDir, cacheDir: filepath.Join(dataDir, "optimizer-cache"),
-		workers: newOperationLimit(defaultConcurrency(runtime.NumCPU())), largeResizes: make(chan struct{}, 2),
+		workers: newOperationLimit(defaultConcurrency(runtime.NumCPU())), largeImages: make(chan struct{}, 2),
 		lifetime: lifetime, stop: stop,
 	}
 }
@@ -145,12 +145,12 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 	case "copy_outputs_to_dir":
 		return s.copyOutputs(ctx, req)
 	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "render_preview_png", "copy_image_png":
-		// A large requested output can still require two large pixel buffers
-		// after bounding the scaler's working memory. Wait before taking a worker.
-		if operation == "compress_image" && req.Settings.MaxDimension > 2560 {
+		// Admit high-memory work in the desktop process before reserving a
+		// worker. Each isolated child runs requests serially.
+		if s.executable != "" && needsLargeImageSlot(operation, req) {
 			select {
-			case s.largeResizes <- struct{}{}:
-				defer func() { <-s.largeResizes }()
+			case s.largeImages <- struct{}{}:
+				defer func() { <-s.largeImages }()
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
@@ -519,16 +519,19 @@ func opaque(img image.Image) bool {
 	return false
 }
 
+func thumbnailEdge(requested int) int {
+	if requested == 0 {
+		return 256
+	}
+	return min(1024, max(16, requested))
+}
+
 func thumbnail(ctx context.Context, req request) (any, error) {
 	img, _, err := decode(ctx, req.Path)
 	if err != nil {
 		return nil, err
 	}
-	limit := req.MaxSize
-	if limit == 0 {
-		limit = 256
-	}
-	limit = min(1024, max(16, limit))
+	limit := thumbnailEdge(req.MaxSize)
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 	if max(width, height) > limit {

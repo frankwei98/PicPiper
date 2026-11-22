@@ -2,6 +2,7 @@ package imaging
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"image"
@@ -138,24 +139,76 @@ func TestLiveConcurrencyIncreaseAndDecreasePreserveRunningWorkers(t *testing.T) 
 	}
 }
 
-func TestLargeResizeWaitsWithoutTakingAWorkerAndCanCancel(t *testing.T) {
-	service := New(t.TempDir())
+func TestLargeImageOperationsWaitWithoutTakingAWorkerAndCanCancel(t *testing.T) {
+	service := NewIsolated(t.TempDir())
 	t.Cleanup(service.Close)
 	service.SetConcurrency(1)
-	for range cap(service.largeResizes) {
-		service.largeResizes <- struct{}{}
+	for range cap(service.largeImages) {
+		service.largeImages <- struct{}{}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
-	defer cancel()
-	payload, _ := json.Marshal(request{Settings: settings{MaxDimension: 3840}})
-	done := make(chan error, 1)
-	go func() {
-		_, err := service.Call(ctx, "compress_image", payload)
-		done <- err
-	}()
+	largeSource := filepath.Join(t.TempDir(), "large.png")
+	header := make([]byte, 13)
+	binary.BigEndian.PutUint32(header[:4], 6000)
+	binary.BigEndian.PutUint32(header[4:8], 6000)
+	header[8], header[9] = 16, 6 // 16-bit RGBA PNG dimensions, without allocating pixels.
+	prefix := append([]byte("\x89PNG\r\n\x1a\n"), pngChunk("IHDR", header)...)
+	if err := os.WriteFile(largeSource, append(prefix, pngChunk("IDAT", nil)...), 0600); err != nil {
+		t.Fatal(err)
+	}
 	source := fixture(t, image.NewNRGBA(image.Rect(0, 0, 16, 8)))
-	call(t, service, "inspect_image", request{Path: source})
-	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("large resize did not wait for its memory budget: %v", err)
+	for _, test := range []struct {
+		operation string
+		request   request
+	}{
+		{"compress_image", request{SourcePath: largeSource, Settings: settings{MaxDimension: 2560}}},
+		{"read_thumbnail", request{Path: largeSource, MaxSize: 96}},
+		{"read_comparison_image", request{Path: largeSource, MaxSize: 1280}},
+	} {
+		t.Run(test.operation, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			payload, _ := json.Marshal(test.request)
+			done := make(chan error, 1)
+			go func() {
+				_, err := service.Call(ctx, test.operation, payload)
+				done <- err
+			}()
+			call(t, service, "read_thumbnail", request{Path: source, MaxSize: 96})
+			if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("large operation did not wait for its memory budget: %v", err)
+			}
+		})
+	}
+}
+
+func TestWebPHeaderSizeReadsAllCanvasLayouts(t *testing.T) {
+	for _, test := range []struct {
+		chunk  string
+		width  int
+		height int
+		write  func([]byte)
+	}{
+		{"VP8 ", 6000, 5000, func(header []byte) {
+			copy(header[23:], "\x9d\x01\x2a")
+			binary.LittleEndian.PutUint16(header[26:], 6000)
+			binary.LittleEndian.PutUint16(header[28:], 5000)
+		}},
+		{"VP8L", 6000, 5000, func(header []byte) {
+			header[20] = 0x2f
+			binary.LittleEndian.PutUint32(header[21:], 5999|(4999<<14))
+		}},
+		{"VP8X", 70000, 480, func(header []byte) {
+			binary.LittleEndian.PutUint32(header[23:], 69999<<8)
+			binary.LittleEndian.PutUint32(header[26:], uint32(header[26])|(479<<8))
+		}},
+	} {
+		t.Run(test.chunk, func(t *testing.T) {
+			var header [30]byte
+			copy(header[12:], test.chunk)
+			test.write(header[:])
+			if width, height := webpHeaderSize(header[:]); width != test.width || height != test.height {
+				t.Fatalf("canvas = %d × %d, want %d × %d", width, height, test.width, test.height)
+			}
+		})
 	}
 }
