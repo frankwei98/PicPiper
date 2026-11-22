@@ -57,6 +57,24 @@ it("opens results only on request and copies one image or selected files", async
   const restored = within(await screen.findByRole("dialog", { name: "Compression results" }));
   expect(restored.getByRole("checkbox", { name: "Select one.png" })).not.toBeChecked();
 });
+it("replaces a failed result thumbnail's skeleton with a static fallback", async () => {
+  let fail!: (error: Error) => void;
+  const reading = new Promise<{ dataUrl: string }>((_, reject) => { fail = reject; });
+  const read = vi.mocked(imageApi.readThumbnail);
+  const normalRead = read.getMockImplementation()!;
+  read.mockImplementation((request) => request.path === "/cache/run/one.png" && request.maxSize === 96 ? reading : normalRead(request));
+  try {
+    const { dialog } = await start();
+    const row = dialog.getByRole("button", { name: "one.png" });
+    expect(row.querySelector('[data-slot="skeleton"]')).toBeInTheDocument();
+    await act(async () => { fail(new Error("Output file no longer exists")); });
+    expect(row.querySelector('[data-slot="skeleton"]')).not.toBeInTheDocument();
+    expect(row.querySelector('span[aria-hidden="true"]')).toBeInTheDocument();
+    expect(row).toBeEnabled();
+  } finally {
+    read.mockImplementation(normalRead);
+  }
+});
 it("saves only the current image and uploads only selected images", async () => {
   const { user, dialog } = await start();
   await user.click(dialog.getByRole("button", { name: "Save image" }));

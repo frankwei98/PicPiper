@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ImageOff } from "lucide-react";
 import { t, useLocale } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -80,6 +81,8 @@ export function CompressionResults(props: Props) {
 }
 
 function ResultThumbnail({ previews, item, active }: { previews: OptimizePreviews; item: OptimizeItem; active: boolean }) {
-  const { url } = useOptimizePreview(previews, item.id, active ? item.outputPath : undefined, CARD_PREVIEW_EDGE);
-  return url ? <img className="size-12 shrink-0 object-contain" src={url} alt="" /> : <Skeleton className="size-12 shrink-0" />;
+  const { url, loading } = useOptimizePreview(previews, item.id, active ? item.outputPath : undefined, CARD_PREVIEW_EDGE);
+  if (url) return <img className="size-12 shrink-0 object-contain" src={url} alt="" />;
+  if (loading) return <Skeleton className="size-12 shrink-0" />;
+  return <span className="grid size-12 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground" aria-hidden="true"><ImageOff className="size-4" /></span>;
 }
