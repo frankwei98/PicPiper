@@ -78,6 +78,7 @@ type Service struct {
 	revision          uint64
 	prunedRevision    uint64
 	nextExpiry        time.Time
+	thumbnails        thumbCache
 }
 
 const resultLifetime = 12 * time.Hour
@@ -142,6 +143,7 @@ func (s *Service) pruneLocked() {
 			expiry := i.CompletedAt.Add(resultLifetime)
 			if !current.Before(expiry) {
 				delete(s.lastHidden, i.ID)
+				s.thumbnails.forget(i.ID)
 				continue
 			}
 			if s.nextExpiry.IsZero() || expiry.Before(s.nextExpiry) {
@@ -517,23 +519,6 @@ func (s *Service) process(id, path string, plan cloud.MiniPlan) error {
 		i.CompletedAt = s.now()
 	})
 	return nil
-}
-
-func (s *Service) Thumbnail(ctx context.Context, id, taskID string) (any, error) {
-	s.mu.Lock()
-	s.pruneLocked()
-	path := ""
-	for _, item := range s.items {
-		if item.ID == id && item.Status == "completed" && !item.hidden {
-			path = item.outputPath
-			break
-		}
-	}
-	s.mu.Unlock()
-	if path == "" {
-		return nil, apperror.New("miniItemMissing", "This Mini result is no longer available.")
-	}
-	return s.images.Call(ctx, "read_thumbnail", mustJSON(map[string]any{"path": path, "taskId": taskID, "maxSize": 96}))
 }
 
 func miniImageError(err error) error {
