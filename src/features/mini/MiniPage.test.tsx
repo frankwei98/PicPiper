@@ -322,6 +322,43 @@ it("shows errors from the current queue poll", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("current poll failure");
 });
 
+it("preloads thumbnails relative to the scroll list and reuses them on return", async () => {
+  let notify!: IntersectionObserverCallback;
+  const observe = vi.fn();
+  const disconnect = vi.fn();
+  const configure = vi.fn();
+  vi.stubGlobal("IntersectionObserver", class {
+    constructor(callback: IntersectionObserverCallback, options: IntersectionObserverInit) {
+      notify = callback;
+      configure(options);
+    }
+    observe = observe;
+    disconnect = disconnect;
+  });
+  try {
+    const view = await renderReady(defaultSettings, resultState);
+    const thumbnail = view.container.querySelector(".mini-thumb");
+    expect(configure).toHaveBeenCalledWith({ root: screen.getByTestId("mini-results-scroll"), rootMargin: "160px 0px" });
+    expect(observe).toHaveBeenCalledWith(thumbnail);
+    expect(mockApi.thumbnail).not.toHaveBeenCalled();
+
+    const intersect = (isIntersecting: boolean) => act(async () => {
+      notify([{ isIntersecting } as IntersectionObserverEntry], {} as IntersectionObserver);
+    });
+    await intersect(true);
+    expect(thumbnail?.querySelector("img")).toHaveAttribute("src", "data:image/png;base64,AA==");
+    await intersect(false);
+    expect(thumbnail?.querySelector("img")).toBeNull();
+    await intersect(true);
+    expect(thumbnail?.querySelector("img")).toHaveAttribute("src", "data:image/png;base64,AA==");
+    expect(mockApi.thumbnail).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(disconnect).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("polls with the current revision and leaves a loaded thumbnail in place for an unchanged reply", async () => {
   vi.useFakeTimers();
   try {

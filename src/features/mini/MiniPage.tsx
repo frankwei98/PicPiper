@@ -34,6 +34,8 @@ export function MiniPage() {
   const alive = useRef(true);
   const stateVersion = useRef(0);
   const stateRevision = useRef<number>(undefined);
+  const resultsScroll = useRef<HTMLDivElement>(null);
+  const [thumbnails] = useState(() => new Map<string, string>());
   const configVersion = useRef(0);
   const compressionBase = useRef<MiniSettings>(defaultMiniSettings);
   const acceptState = useCallback((snapshot: MiniState) => {
@@ -182,14 +184,14 @@ export function MiniPage() {
         <strong>{t("Recent results")}</strong><span>{selected.size ? t("Selected {{count}}", { count: selected.size }) : state.items.length}</span>
         <div className="mini-list-actions">{selected.size > 0 && <><button className="mini-selected-upload" aria-label={t("Save to local folder")} title={t("Save selected images")} disabled={saving} onClick={() => void exportImages([...selected])}><ImageDown /></button><button className="mini-selected-upload" aria-label={t("Upload selected")} disabled={state.busy} onClick={() => openUpload([...selected])}><CloudUpload />{t("Upload")}</button></>}<button className="mini-clear" disabled={!state.items.length || clearing} title={t("Only hides Mini records. Images and S3 history are kept.")} onClick={() => void clear()}>{t("Clear list")}</button></div>
       </div>
-      <div className="mini-results-scroll" data-testid="mini-results-scroll">
+      <div className="mini-results-scroll" data-testid="mini-results-scroll" ref={resultsScroll}>
         {!state.items.length && <div className="mini-empty"><Images /><strong>{t("No recent images")}</strong><span>{t("Drop images to compress and copy")}</span></div>}
         {state.items.map((item) => {
           const uploaded = Boolean(item.url) || Object.keys(item.uploads ?? {}).length > 0;
           const pending = item.uploadStatus === "queued" || item.uploadStatus === "uploading";
           return <article className={`mini-item ${selected.has(item.id) ? "is-selected" : ""}`} key={item.id}>
             <input type="checkbox" aria-label={t("Select {{name}}", { name: item.outputName || item.name })} checked={selected.has(item.id)} disabled={!ready(item)} onChange={(event) => setChecked(item.id, event.target.checked)} />
-            <MiniThumbnail id={item.status === "completed" ? item.id : undefined} />
+            <MiniThumbnail id={item.status === "completed" ? item.id : undefined} scrollContainer={resultsScroll} cache={thumbnails} />
             <div className="mini-item-info"><strong title={item.outputName || item.name}>{item.outputName || item.name}</strong><span>{pending ? t("Uploading...") : item.status === "completed" ? `${bytes(item.originalBytes)} → ${bytes(item.outputBytes)}` : t(statusLabels[item.status] ?? "Processing images...")}</span>{item.error && <p className="mini-item-error">{item.error}</p>}{item.uploadError && <p className="mini-item-error">{item.uploadError}</p>}{item.warning && <p className="mini-item-warning">{item.warning}</p>}</div>
             {item.status === "completed" ? <div className="mini-item-actions">
               <button aria-label={t("Copy image {{name}}", { name: item.outputName })} title={t("Copy image")} disabled={Boolean(copying)} onClick={() => void copy(item, true)}>{copying === `image-${item.id}` ? <LoaderCircle className="mini-spin" /> : <Copy />}</button>
