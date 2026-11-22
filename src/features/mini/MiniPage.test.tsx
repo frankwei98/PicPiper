@@ -337,8 +337,9 @@ it("preloads thumbnails relative to the scroll list and reuses them on return", 
   });
   try {
     const view = await renderReady(defaultSettings, resultState);
+    await screen.findByText(completedItem.outputName);
     const thumbnail = view.container.querySelector(".mini-thumb");
-    expect(configure).toHaveBeenCalledWith({ root: screen.getByTestId("mini-results-scroll"), rootMargin: "160px 0px" });
+    await waitFor(() => expect(configure).toHaveBeenCalledWith({ root: screen.getByTestId("mini-results-scroll"), rootMargin: "160px 0px" }));
     expect(observe).toHaveBeenCalledWith(thumbnail);
     expect(mockApi.thumbnail).not.toHaveBeenCalled();
 
