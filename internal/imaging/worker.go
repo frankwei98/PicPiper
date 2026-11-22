@@ -35,6 +35,7 @@ type imageWorker struct {
 func NewIsolated(dataDir string) *Service {
 	service := New(dataDir)
 	service.executable, service.executableErr = os.Executable()
+	service.previews.removeAbandoned()
 	return service
 }
 

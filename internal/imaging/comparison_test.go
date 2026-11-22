@@ -57,8 +57,50 @@ func TestIsolatedComparisonBoundsPreviewAndReleasesPrivateFiles(t *testing.T) {
 			t.Fatalf("unpublished image is accessible: %s (%d)", url, recorder.Code)
 		}
 	}
-	entries, err := os.ReadDir(service.previews.dir)
+	entries, err := filepath.Glob(filepath.Join(service.previews.dir, "*.png"))
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("comparison cancellation did not free files: %v (%v)", entries, err)
+	}
+}
+
+func TestComparisonStartupReapsAbandonedSessionsAndPreservesActiveOnes(t *testing.T) {
+	dataDir := t.TempDir()
+	newPreview := func() (*Service, string) {
+		t.Helper()
+		s := NewIsolated(dataDir)
+		t.Cleanup(s.Close)
+		path, err := s.previews.newPath()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("synthetic preview"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return s, path
+	}
+	live, activePath := newPreview()
+	abandoned, abandonedPath := newPreview()
+	// The OS releases the session lease on process exit without removing PNGs.
+	if err := abandoned.previews.lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	unrelated := filepath.Join(live.previews.root, "keep.txt")
+	if err := os.WriteFile(unrelated, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := NewIsolated(dataDir)
+	t.Cleanup(restarted.Close)
+	if _, err := os.Stat(filepath.Dir(abandonedPath)); !os.IsNotExist(err) {
+		t.Fatalf("abandoned session survived restart: %v", err)
+	}
+	for _, path := range []string{activePath, unrelated} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("startup removed %s: %v", path, err)
+		}
+	}
+	live.Close()
+	if _, err := os.Stat(filepath.Dir(activePath)); !os.IsNotExist(err) {
+		t.Fatalf("normal close left an active session behind: %v", err)
 	}
 }
