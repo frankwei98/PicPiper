@@ -69,9 +69,10 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
   const selected = props.items.find((item) => item.id === props.selectedId) ?? props.items[0];
   const busy = selected && ["inspecting", "queued", "compressing"].includes(selected.status);
   const outputPath = props.active && preview === "compressed" && selected?.status === "compressed" ? selected.outputPath : undefined;
+  // Keep the selected original available for a later toggle, even if the source is moved.
+  const originalPath = props.active && selected?.originalBytes ? selected.sourcePath : undefined;
+  const original = useOptimizePreview(props.previews, selected?.id, originalPath, STAGE_PREVIEW_EDGE);
   const output = useOptimizePreview(props.previews, selected?.id, outputPath, STAGE_PREVIEW_EDGE);
-  const showSource = props.active && selected?.originalBytes && (preview === "original" || (!busy && !output.loading && !output.url));
-  const original = useOptimizePreview(props.previews, selected?.id, showSource ? selected?.sourcePath : undefined, STAGE_PREVIEW_EDGE);
   const previewUrl = output.url ?? original.url;
   const width = selected && preview === "compressed" && selected.status === "compressed" ? selected.outputWidth ?? selected.originalWidth : selected?.originalWidth;
   const height = selected && preview === "compressed" && selected.status === "compressed" ? selected.outputHeight ?? selected.originalHeight : selected?.originalHeight;
@@ -151,8 +152,10 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
             </Button>
           ) : previewUrl ? (
             <ImageWithSkeleton src={previewUrl} alt={!output.url ? t("Original preview of {{filename}}", { filename: selected.fileName }) : t("Compressed preview of {{filename}}", { filename: selected.fileName })} draggable={false} />
-          ) : busy || output.loading || original.loading ? (
+          ) : output.loading || original.loading || (busy && !originalPath) ? (
             <Skeleton className="image-skeleton" role="status" aria-label={t("Preparing your image")} />
+          ) : (originalPath || outputPath) && !selected.error ? (
+            <span className="image-load-error" role="status">{t("The image could not be decoded.")}</span>
           ) : (
             <div className="stage-empty">
               <ImageIcon className="drop-mark size-7" aria-hidden="true" />

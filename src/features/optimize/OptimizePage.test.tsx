@@ -392,24 +392,40 @@ describe("OptimizePage", () => {
     view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" />);
     await screen.findByAltText("Compressed preview of real-photo.jpg");
     expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ maxSize: 96 }));
-    expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ maxSize: 1024 }));
-    expect(readThumbnail).not.toHaveBeenCalledWith(expect.objectContaining({ path: "/tmp/real-photo.jpg" }));
+    expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ path: "/tmp/real-photo.jpg", maxSize: 1024 }));
   });
 
-  it("ignores a late original preview after switching away", async () => {
+  it("keeps the current original preview after its source is moved", async () => {
+    const normalRead = readThumbnail.getMockImplementation()!;
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByAltText("Compressed preview of real-photo.jpg");
+    readThumbnail.mockImplementation((request) => request.path === "/tmp/real-photo.jpg"
+      ? Promise.reject(new Error("Source file no longer exists")) : normalRead(request));
+    const toggle = within(screen.getByRole("group", { name: "Preview version" }));
+    await user.click(toggle.getByRole("button", { name: "Original" }));
+    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
+    expect(readThumbnail.mock.calls.filter(([request]) => request.path === "/tmp/real-photo.jpg")).toHaveLength(1);
+  });
+
+  it("keeps a pending original read across preview toggles without replacing the compressed image", async () => {
     let finishOriginal!: (value: { dataUrl: string }) => void;
+    const original = new Promise<{ dataUrl: string }>((resolve) => { finishOriginal = resolve; });
+    const normalRead = readThumbnail.getMockImplementation()!;
+    readThumbnail.mockImplementation((request) => request.path === "/tmp/real-photo.jpg" ? original : normalRead(request));
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{slug}.{ext}" />);
     await user.click(screen.getByTestId("image-drop-zone"));
     await screen.findByAltText("Compressed preview of real-photo.jpg");
     const toggle = within(screen.getByRole("group", { name: "Preview version" }));
-    readThumbnail.mockImplementationOnce(() => new Promise((resolve) => { finishOriginal = resolve; }));
     await user.click(toggle.getByRole("button", { name: "Original" }));
     await user.click(toggle.getByRole("button", { name: "Compressed" }));
+    await act(async () => { finishOriginal({ dataUrl: "data:image/jpeg;base64,ORIGINAL" }); });
+    expect(screen.getByAltText("Compressed preview of real-photo.jpg")).toBeInTheDocument();
     await user.click(toggle.getByRole("button", { name: "Original" }));
-    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
-    await act(async () => { finishOriginal({ dataUrl: "data:image/jpeg;base64,LATE" }); });
     expect(screen.getByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
+    expect(readThumbnail.mock.calls.filter(([request]) => request.path === "/tmp/real-photo.jpg")).toHaveLength(1);
   });
 
   it("retries failed images with the latest batch preset", async () => {
