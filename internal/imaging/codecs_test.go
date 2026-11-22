@@ -3,11 +3,9 @@ package imaging
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"image"
 	"image/color"
-	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +23,7 @@ func TestModernFormatsRoundTripThroughInspectionPreviewComparisonAndExport(t *te
 	}
 	source := fixture(t, img)
 	service := New(t.TempDir())
+	t.Cleanup(service.Close)
 	run := call(t, service, "create_optimizer_run", request{}).(map[string]string)
 	for _, format := range []string{"webp", "avif", "jxl"} {
 		t.Run(format, func(t *testing.T) {
@@ -78,14 +77,9 @@ func TestModernFormatsRoundTripThroughInspectionPreviewComparisonAndExport(t *te
 			if !strings.HasPrefix(thumb["dataUrl"], "data:image/png;base64,") {
 				t.Fatal("transparent preview must remain PNG")
 			}
-			comparison := call(t, service, "read_comparison_image", request{Path: unknown}).(map[string]any)
-			payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(comparison["dataUrl"].(string), "data:image/png;base64,"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			preview, err := png.Decode(bytes.NewReader(payload))
-			if err != nil || preview.Bounds() != img.Bounds() {
-				t.Fatalf("comparison did not retain dimensions: %v", err)
+			comparison := call(t, service, "read_comparison_image", request{Path: unknown}).(ComparisonImage)
+			if preview := decodeComparison(t, service, comparison); preview.Bounds() != img.Bounds() {
+				t.Fatalf("comparison did not retain dimensions: %v", preview.Bounds())
 			}
 			// New formats must work as sources for another encode, not just previews.
 			converted := call(t, service, "compress_image", request{SourcePath: unknown, OutputDir: run["outputDir"], OutputFileName: "roundtrip-" + format + ".png", Settings: settings{TargetFormat: "png"}}).(Result)
@@ -134,8 +128,9 @@ func TestHEICImportsAndConvertsWithoutNativeTools(t *testing.T) {
 	if info.SourceFormat != "heif" || info.Width != 64 || info.Height != 48 {
 		t.Fatalf("incorrect HEIC inspection: %+v", info)
 	}
-	comparison := call(t, service, "read_comparison_image", request{Path: path}).(map[string]any)
-	if comparison["width"] != 64 || comparison["height"] != 48 {
+	t.Cleanup(service.Close)
+	comparison := call(t, service, "read_comparison_image", request{Path: path}).(ComparisonImage)
+	if comparison.Width != 64 || comparison.Height != 48 {
 		t.Fatalf("incorrect HEIC comparison: %+v", comparison)
 	}
 	run := call(t, service, "create_optimizer_run", request{}).(map[string]string)

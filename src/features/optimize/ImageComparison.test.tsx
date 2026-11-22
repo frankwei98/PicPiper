@@ -20,38 +20,39 @@ describe("ImageComparison", () => {
     Element.prototype.scrollTo = vi.fn();
   });
 
-  it("loads both full-resolution images only when mounted", async () => {
+  it("loads both bounded previews on mount", async () => {
     readComparisonImage
-      .mockResolvedValueOnce({ dataUrl: "data:image/png;base64,original", width: 4000, height: 3000 })
-      .mockResolvedValueOnce({ dataUrl: "data:image/png;base64,compressed", width: 4000, height: 3000 });
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/original", width: 4000, height: 3000 })
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/compressed", width: 4000, height: 3000 });
 
     render(<ImageComparison originalPath="/photos/source.jpg" compressedPath="/cache/output.webp" />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Loading full-resolution images");
+    expect(screen.getByRole("status")).toHaveTextContent("Updating preview");
     expect(document.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(4);
     const taskId = readComparisonImage.mock.calls[0][0].taskId;
     expect(taskId).toEqual(expect.stringMatching(/^comparison:/));
-    expect(readComparisonImage).toHaveBeenNthCalledWith(1, { taskId, path: "/photos/source.jpg" });
-    expect(readComparisonImage).toHaveBeenNthCalledWith(2, { taskId, path: "/cache/output.webp" });
-    expect(await screen.findByAltText("Original full-resolution preview")).toHaveAttribute(
+    expect(readComparisonImage).toHaveBeenNthCalledWith(1, { taskId, path: "/photos/source.jpg", maxSize: 1280 });
+    expect(readComparisonImage).toHaveBeenNthCalledWith(2, { taskId, path: "/cache/output.webp", maxSize: 1280 });
+    expect(await screen.findByAltText("Original")).toHaveAttribute(
       "src",
-      "data:image/png;base64,original",
+      "picpiper-preview://localhost/original",
     );
     expect(screen.getAllByText("4000 × 3000 px")).toHaveLength(2);
   });
 
   it("switches to native pixel dimensions and keeps both panes in sync", async () => {
     readComparisonImage.mockResolvedValue({
-      dataUrl: "data:image/png;base64,pixels",
+      url: "picpiper-preview://localhost/pixels",
       width: 2400,
       height: 1600,
     });
     const user = userEvent.setup();
     render(<ImageComparison originalPath="source.jpg" compressedPath="output.webp" />);
-    await screen.findByAltText("Original full-resolution preview");
+    await screen.findByAltText("Original");
 
     await user.click(screen.getByRole("button", { name: "100%" }));
-    const originalImage = screen.getByAltText("Original full-resolution preview");
+    const originalImage = await screen.findByAltText("Original full-resolution preview");
+    expect(readComparisonImage.mock.calls.slice(2).map(([request]) => request.maxSize)).toEqual([undefined, undefined]);
     expect(originalImage).toHaveStyle({ width: "2400px", height: "1600px" });
     expect(screen.getByText("100% scale. Scroll either image to compare details.")).toBeInTheDocument();
 
@@ -66,12 +67,15 @@ describe("ImageComparison", () => {
 
   it("ignores clamped scroll echoes while allowing either pane to drive scrolling", async () => {
     readComparisonImage
-      .mockResolvedValueOnce({ dataUrl: "data:image/png;base64,original", width: 2400, height: 1600 })
-      .mockResolvedValueOnce({ dataUrl: "data:image/png;base64,compressed", width: 800, height: 600 });
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/original", width: 2400, height: 1600 })
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/compressed", width: 800, height: 600 })
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/full-original", width: 2400, height: 1600 })
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/full-compressed", width: 800, height: 600 });
     const user = userEvent.setup();
     render(<ImageComparison originalPath="source.jpg" compressedPath="output.webp" />);
-    await screen.findByAltText("Original full-resolution preview");
+    await screen.findByAltText("Original");
     await user.click(screen.getByRole("button", { name: "100%" }));
+    await screen.findByAltText("Original full-resolution preview");
     const originalPane = screen.getByTestId("original-comparison-pane");
     const compressedPane = screen.getByTestId("compressed-comparison-pane");
     let compressedLeft = 0;
@@ -143,12 +147,12 @@ describe("ImageComparison", () => {
     expect(newTaskId).not.toBe(oldTaskId);
     expect(readComparisonImage.mock.calls[3][0].taskId).toBe(newTaskId);
     await act(async () => {
-      const stale = { dataUrl: "data:image/png;base64,stale", width: 1, height: 1 };
+      const stale = { url: "picpiper-preview://localhost/stale", width: 1, height: 1 };
       finishOriginal(stale);
       finishCompressed(stale);
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Loading full-resolution");
-    expect(screen.queryByAltText("Original full-resolution preview")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Updating preview");
+    expect(screen.queryByAltText("Original")).not.toBeInTheDocument();
     view.unmount();
     expect(imageApi.cancelImageTask).toHaveBeenCalledWith({ taskId: newTaskId });
   });
@@ -161,7 +165,7 @@ describe("ImageComparison", () => {
     const failedTaskId = readComparisonImage.mock.calls[0][0].taskId;
     expect(imageApi.cancelImageTask).toHaveBeenCalledExactlyOnceWith({ taskId: failedTaskId });
     readComparisonImage.mockResolvedValue({
-      dataUrl: "data:image/png;base64,recovered",
+      url: "picpiper-preview://localhost/recovered",
       width: 800,
       height: 600,
     });
@@ -170,6 +174,6 @@ describe("ImageComparison", () => {
     await waitFor(() => expect(readComparisonImage).toHaveBeenCalledTimes(4));
     expect(readComparisonImage.mock.calls[2][0].taskId).not.toBe(failedTaskId);
     expect(readComparisonImage.mock.calls[3][0].taskId).toBe(readComparisonImage.mock.calls[2][0].taskId);
-    expect(await screen.findByAltText("Compressed full-resolution preview")).toBeInTheDocument();
+    expect(await screen.findByAltText("Compressed")).toBeInTheDocument();
   });
 });

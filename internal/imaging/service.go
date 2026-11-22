@@ -39,6 +39,7 @@ type Service struct {
 	stop          context.CancelFunc
 	closeOnce     sync.Once
 	cleanupOnce   sync.Once
+	previews      comparisonFiles
 }
 
 func New(dataDir string) *Service {
@@ -53,6 +54,7 @@ func (s *Service) Close() {
 		// Reap child processes after cancellation has released all image slots.
 		s.workers.wait()
 		s.closeIdleWorkers()
+		s.previews.close()
 	})
 }
 
@@ -72,6 +74,7 @@ type request struct {
 	OutputPaths    []string `json:"outputPaths"`
 	TargetDir      string   `json:"targetDir"`
 	MaxSize        int      `json:"maxSize"`
+	PreviewOutput  string   `json:"previewOutput,omitempty"`
 	Settings       settings `json:"settings"`
 }
 
@@ -108,7 +111,11 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 		return nil, apperror.New("invalidRequest", "The image request could not be read.")
 	}
 	if operation == "cancel_image_task" {
-		return nil, s.jobs.cancel(req.TaskID)
+		if err := s.jobs.cancel(req.TaskID); err != nil {
+			return nil, err
+		}
+		s.previews.release(req.TaskID)
+		return nil, nil
 	}
 	if workerOperation(operation) {
 		workerContext, cancel := context.WithCancel(ctx)
@@ -133,13 +140,24 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 		return s.createRun()
 	case "copy_outputs_to_dir":
 		return s.copyOutputs(ctx, req)
-	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image":
+	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "render_preview_png", "copy_image_png":
 		if err := s.workers.acquire(ctx); err != nil {
 			return nil, err
 		}
 		defer s.workers.release()
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		switch operation {
+		case "read_comparison_image":
+			return s.comparison(ctx, req)
+		case "copy_image_png":
+			return s.clipboardPNG(ctx, req.Path)
+		case "render_preview_png":
+			if s.executable == "" && s.executableErr == nil {
+				return renderPreviewPNG(ctx, req)
+			}
+			return nil, apperror.New("unknownOperation", "This image operation is unavailable.")
 		}
 		if s.executable != "" || s.executableErr != nil {
 			return s.isolated(ctx, operation, req)
@@ -149,10 +167,8 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 			return inspect(req.Path)
 		case "compress_image":
 			return s.compress(ctx, req)
-		case "read_thumbnail":
-			return thumbnail(ctx, req)
 		default:
-			return comparison(ctx, req.Path)
+			return thumbnail(ctx, req)
 		}
 	default:
 		return nil, apperror.New("unknownOperation", "This image operation is unavailable.")
@@ -519,18 +535,6 @@ func thumbnail(ctx context.Context, req request) (any, error) {
 	return map[string]string{"dataUrl": "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(buffer.Bytes())}, nil
 }
 
-func comparison(ctx context.Context, path string) (any, error) {
-	img, _, err := decode(ctx, path)
-	if err != nil {
-		return nil, err
-	}
-	var buffer bytes.Buffer
-	if err := encodePNG(&buffer, img); err != nil {
-		return nil, err
-	}
-	return map[string]any{"dataUrl": "data:image/png;base64," + base64.StdEncoding.EncodeToString(buffer.Bytes()), "width": img.Bounds().Dx(), "height": img.Bounds().Dy()}, nil
-}
-
 // Catmull-Rom filters the complete source footprint and interpolates premultiplied
 // colors, retaining detail without aliasing or dark fringes at alpha edges.
 func highBitDepth(img image.Image) bool {
@@ -627,32 +631,4 @@ func (s *Service) OutputPaths(outputPaths []string) ([]string, error) {
 		paths = append(paths, resolved)
 	}
 	return paths, nil
-}
-
-// ClipboardPNG uses the same bounded decoding and color handling as comparison.
-func (s *Service) ClipboardPNG(ctx context.Context, path string) ([]byte, error) {
-	paths, err := s.OutputPaths([]string{path})
-	if err != nil {
-		return nil, err
-	}
-	payload, _ := json.Marshal(request{Path: paths[0]})
-	result, err := s.Call(ctx, "read_comparison_image", payload)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := json.Marshal(result)
-	if err != nil {
-		return nil, err
-	}
-	var preview struct {
-		DataURL string `json:"dataUrl"`
-	}
-	if err = json.Unmarshal(raw, &preview); err != nil {
-		return nil, err
-	}
-	encoded, ok := strings.CutPrefix(preview.DataURL, "data:image/png;base64,")
-	if !ok {
-		return nil, apperror.New("clipboardFailed", "Could not prepare the clipboard image.")
-	}
-	return base64.StdEncoding.DecodeString(encoded)
 }

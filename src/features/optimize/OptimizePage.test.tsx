@@ -65,7 +65,7 @@ vi.mock("../../api/backend", async () => ({
     compressImage,
     copyOutputsToDir,
     readThumbnail,
-    readComparisonImage: vi.fn(async () => ({ dataUrl: "data:image/png;base64,comparison", width: 1200, height: 800 })),
+    readComparisonImage: vi.fn(async () => ({ url: "picpiper-preview://localhost/preview.png", width: 1200, height: 800 })),
   },
   uploadApi: {
     uploadObject,

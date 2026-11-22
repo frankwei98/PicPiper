@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 			if req.Path == "worker-exit" {
 				os.Exit(7)
 			}
-			if operation == "read_comparison_image" && filepath.Ext(req.Path) == ".blocked-comparison" {
+			if operation == "render_preview_png" && filepath.Ext(req.Path) == ".blocked-comparison" {
 				_ = os.WriteFile(req.Path+".started", []byte("started"), 0600)
 				for {
 					time.Sleep(time.Second)

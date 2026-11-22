@@ -87,9 +87,9 @@ func TestHDRPNGPreviewComparisonAndExport(t *testing.T) {
 				t.Fatal("export differs from the displayed tone mapping")
 			}
 			thumbnail := call(t, service, "read_thumbnail", request{Path: path}).(map[string]string)
-			comparison := call(t, service, "read_comparison_image", request{Path: path}).(map[string]any)
-			for _, url := range []string{thumbnail["dataUrl"], comparison["dataUrl"].(string)} {
-				preview := decodePreview(t, url)
+			t.Cleanup(service.Close)
+			comparison := call(t, service, "read_comparison_image", request{Path: path}).(ComparisonImage)
+			for _, preview := range []image.Image{decodePreview(t, thumbnail["dataUrl"]), decodeComparison(t, service, comparison)} {
 				got := color.NRGBAModel.Convert(preview.At(0, 0)).(color.NRGBA)
 				if abs(int(got.R)-int(test.want)) > 1 {
 					t.Fatalf("preview did not use export's tone mapping: %+v", got)
