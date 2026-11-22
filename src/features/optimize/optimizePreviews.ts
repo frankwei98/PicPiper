@@ -72,20 +72,23 @@ export class OptimizePreviews {
   }
 }
 
-export function useOptimizePreview(cache: OptimizePreviews, id: string | undefined, path: string | undefined, maxSize: number) {
+export function useOptimizePreview(cache: OptimizePreviews, id: string | undefined, path: string | undefined, maxSize: number, active = true) {
   const key = path ? JSON.stringify([id, path, maxSize]) : undefined;
   const [response, setResponse] = useState<{ key: string; url: string | undefined }>();
+  const current = response?.key === key ? response : undefined;
+  const loaded = current?.url !== undefined;
   useEffect(() => {
+    if (loaded) return;
     setResponse(undefined);
-    if (!key || !path) return;
+    if (!active || !key || !path) return;
     let live = true;
     const read = cache.read(key, path, maxSize);
     void read.result.then((url) => { if (live) setResponse({ key, url }); });
     return () => { live = false; read.release(); };
-  }, [cache, key, path, maxSize]);
+  }, [active, cache, key, loaded, maxSize, path]);
 
   return {
-    url: key && response?.key === key ? response.url : undefined,
-    loading: Boolean(key && response?.key !== key),
+    url: active ? current?.url : undefined,
+    loading: Boolean(active && key && !current),
   };
 }
