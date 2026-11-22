@@ -101,7 +101,20 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 				value, err = b.updates.call(operation, []byte(payload))
 			}
 		case "mini_state":
-			value = b.mini.Snapshot()
+			var req struct {
+				Revision *uint64 `json:"revision"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				value = b.mini.SnapshotSince(req.Revision)
+			}
+		case "mini_thumbnail":
+			var req struct {
+				ID     string `json:"id"`
+				TaskID string `json:"taskId"`
+			}
+			if err = json.Unmarshal([]byte(payload), &req); err == nil {
+				value, err = b.mini.Thumbnail(ctx, req.ID, req.TaskID)
+			}
 		case "mini_upload_targets":
 			value, err = b.cloud.MiniUploadTargets()
 		case "mini_clear":

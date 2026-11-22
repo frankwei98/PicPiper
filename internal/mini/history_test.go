@@ -41,6 +41,9 @@ func TestClearUndoAndTwelveHourExpiryKeepFilesAndPendingWork(t *testing.T) {
 		t.Fatal("result hidden before twelve hours")
 	}
 	snapshot := s.Snapshot()
+	if changed := s.SnapshotSince(&snapshot.Revision); changed != nil {
+		t.Fatalf("unchanged history returned another snapshot: %+v", changed)
+	}
 	snapshot.Items[0].Uploads["bucket"] = "tampered"
 	snapshot.Items[0].Links["url"] = "tampered"
 	if s.Snapshot().Items[0].Uploads["bucket"] == "tampered" || s.Snapshot().Items[0].Links["url"] == "tampered" {
@@ -48,6 +51,9 @@ func TestClearUndoAndTwelveHourExpiryKeepFilesAndPendingWork(t *testing.T) {
 	}
 	s.Clear()
 	cleared := s.Snapshot()
+	if changed := s.SnapshotSince(&snapshot.Revision); changed == nil || changed.Revision != cleared.Revision {
+		t.Fatalf("clear did not change the history revision: %+v", changed)
+	}
 	if len(cleared.Items) != 0 || !cleared.CanUndoClear || !cleared.Busy {
 		t.Fatal("clear must hide records, preserve work, and allow undo")
 	}
@@ -68,11 +74,12 @@ func TestClearUndoAndTwelveHourExpiryKeepFilesAndPendingWork(t *testing.T) {
 	// A queued result starts its retention clock only after it completes.
 	s.update("pending", func(i *Item) { i.Status = "completed"; i.pending = false; i.CompletedAt = s.now() })
 	clock.Store(base.Add(2*resultLifetime - time.Nanosecond).UnixNano())
-	if len(s.Snapshot().Items) != 1 {
+	beforeExpiry := s.Snapshot()
+	if len(beforeExpiry.Items) != 1 {
 		t.Fatal("newly completed result inherited an older expiry")
 	}
 	clock.Store(base.Add(2 * resultLifetime).UnixNano())
-	if len(s.Snapshot().Items) != 0 {
+	if expired := s.SnapshotSince(&beforeExpiry.Revision); expired == nil || len(expired.Items) != 0 {
 		t.Fatal("result did not expire at the boundary")
 	}
 	if bytes, err := os.ReadFile(output); err != nil || string(bytes) != "cached image must remain" {
@@ -117,6 +124,11 @@ func TestRecentHistoryIsIndependentOfTheActiveQueueLimit(t *testing.T) {
 	if len(s.Snapshot().Items) != 40 {
 		t.Fatal("recent completed results were evicted by the active queue limit")
 	}
+	firstID := s.Snapshot().Items[0].ID
+	thumbnail, err := s.Thumbnail(context.Background(), firstID, "visible-mini-thumbnail")
+	if err != nil || !strings.HasPrefix(thumbnail.(map[string]string)["dataUrl"], "data:image/") {
+		t.Fatalf("visible result could not load its thumbnail: %v", err)
+	}
 	// Selecting the entire history must also work when it exceeds the maximum
 	// number of compression jobs. All these objects already exist in the bucket.
 	var requests atomic.Int32
@@ -152,6 +164,9 @@ func TestRecentHistoryIsIndependentOfTheActiveQueueLimit(t *testing.T) {
 		t.Fatal("large selection reuploaded existing objects or lost links")
 	}
 	s.Clear()
+	if _, err := s.Thumbnail(context.Background(), firstID, "hidden-mini-thumbnail"); err == nil {
+		t.Fatal("hidden result served a thumbnail")
+	}
 	if len(s.Snapshot().Items) != 0 {
 		t.Fatal("clear did not hide all recent history")
 	}

@@ -30,7 +30,6 @@ type Item struct {
 	OutputName    string            `json:"outputName"`
 	OriginalBytes int64             `json:"originalBytes"`
 	OutputBytes   int64             `json:"outputBytes"`
-	Thumbnail     string            `json:"thumbnail"`
 	URL           string            `json:"url"`
 	Links         map[string]string `json:"links,omitempty"`
 	Error         string            `json:"error"`
@@ -45,6 +44,7 @@ type Item struct {
 	outputPath    string
 }
 type State struct {
+	Revision     uint64 `json:"revision"`
 	Items        []Item `json:"items"`
 	Busy         bool   `json:"busy"`
 	Copied       string `json:"copied"`
@@ -75,26 +75,42 @@ type Service struct {
 	now               func() time.Time
 	lastHidden        map[string]bool
 	copySequence      uint64
+	revision          uint64
+	prunedRevision    uint64
+	nextExpiry        time.Time
 }
 
 const resultLifetime = 12 * time.Hour
 
 func New(images imageCaller, storage *cloud.Service, copyImage func([]byte) error, copyText func(string) error) *Service {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{images: images, cloud: storage, copyImage: copyImage, copyText: copyText, ctx: ctx, cancel: cancel, done: make(chan struct{}), queue: make(chan batch, 32), items: []Item{}, now: time.Now}
+	s := &Service{images: images, cloud: storage, copyImage: copyImage, copyText: copyText, ctx: ctx, cancel: cancel, done: make(chan struct{}), queue: make(chan batch, 32), items: []Item{}, now: time.Now, revision: 1}
 	go s.work()
 	return s
 }
 func (s *Service) Close() { s.cancel(); <-s.done }
 
 // Stop is nonblocking because native quit handlers run on the UI thread.
-func (s *Service) Stop()            { s.cancel() }
-func (s *Service) Report(err error) { s.mu.Lock(); s.lastError = safeError(err); s.mu.Unlock() }
+func (s *Service) Stop() { s.cancel() }
+func (s *Service) Report(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastError = safeError(err)
+	s.revision++
+}
 func (s *Service) Snapshot() State {
+	return *s.SnapshotSince(nil)
+}
+
+// SnapshotSince returns nil when the caller already has the current state.
+func (s *Service) SnapshotSince(revision *uint64) *State {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.pruneLocked()
-	v := State{Items: []Item{}, Copied: s.copied, Error: s.lastError, Busy: s.working, CopySequence: s.copySequence}
+	if revision != nil && *revision == s.revision {
+		return nil
+	}
+	v := &State{Revision: s.revision, Items: []Item{}, Copied: s.copied, Error: s.lastError, Busy: s.working, CopySequence: s.copySequence}
 	for _, i := range s.items {
 		if activeItem(i) {
 			v.Busy = true
@@ -116,15 +132,30 @@ func cloneItem(i Item) Item {
 
 func (s *Service) pruneLocked() {
 	current := s.now()
+	if s.prunedRevision == s.revision && (s.nextExpiry.IsZero() || current.Before(s.nextExpiry)) {
+		return
+	}
+	s.nextExpiry = time.Time{}
 	kept := s.items[:0]
 	for _, i := range s.items {
-		if !activeItem(i) && !i.CompletedAt.IsZero() && current.Sub(i.CompletedAt) >= resultLifetime {
-			continue
+		if !activeItem(i) && !i.CompletedAt.IsZero() {
+			expiry := i.CompletedAt.Add(resultLifetime)
+			if !current.Before(expiry) {
+				delete(s.lastHidden, i.ID)
+				continue
+			}
+			if s.nextExpiry.IsZero() || expiry.Before(s.nextExpiry) {
+				s.nextExpiry = expiry
+			}
 		}
 		kept = append(kept, i)
 	}
+	if len(kept) != len(s.items) {
+		s.revision++
+	}
 	clear(s.items[len(kept):])
 	s.items = kept
+	s.prunedRevision = s.revision
 }
 
 // Clear only hides Drawer records. Cached files, queued work and the S3 gallery
@@ -141,6 +172,7 @@ func (s *Service) Clear() {
 		}
 	}
 	s.copied, s.lastError = "", ""
+	s.revision++
 }
 
 func (s *Service) Restore() {
@@ -153,6 +185,7 @@ func (s *Service) Restore() {
 		}
 	}
 	s.lastHidden = nil
+	s.revision++
 }
 func (s *Service) Add(paths []string) error {
 	if len(paths) == 0 || len(paths) > 20 {
@@ -190,6 +223,7 @@ func (s *Service) Add(paths []string) error {
 	}
 	s.copied = ""
 	s.lastError = ""
+	s.revision++
 	s.queue <- b
 	return nil
 }
@@ -254,6 +288,7 @@ func (s *Service) Upload(ids []string, profileID, format, bucketKey string) erro
 		s.items[n].UploadError = ""
 	}
 	s.copied, s.lastError = "", ""
+	s.revision++
 	s.queue <- batch{ids: append([]string{}, ids...), plan: plan, uploadOnly: true}
 	return nil
 }
@@ -309,6 +344,7 @@ func (s *Service) update(id string, fn func(*Item)) {
 	for n := range s.items {
 		if s.items[n].ID == id {
 			fn(&s.items[n])
+			s.revision++
 			return
 		}
 	}
@@ -322,6 +358,7 @@ func (s *Service) work() {
 		case b := <-s.queue:
 			s.mu.Lock()
 			s.working = true
+			s.revision++
 			s.mu.Unlock()
 			var processErrors []error
 			if !b.uploadOnly {
@@ -362,6 +399,7 @@ func (s *Service) work() {
 				s.lastError = safeError(err)
 			}
 			s.working = false
+			s.revision++
 			for n := range s.items {
 				for _, id := range b.ids {
 					if s.items[n].ID == id {
@@ -469,22 +507,33 @@ func (s *Service) process(id, path string, plan cloud.MiniPlan) error {
 	if err := s.imageCall("compress_image", map[string]any{"taskId": id, "sourcePath": path, "outputDir": run.OutputDir, "outputFileName": name, "settings": map[string]any{"targetFormat": plan.Settings.TargetFormat, "quality": plan.Settings.Quality, "animationMode": "preserve"}}, &result); err != nil {
 		return miniImageError(err)
 	}
-	thumb, _ := s.images.Call(s.ctx, "read_thumbnail", mustJSON(map[string]any{"path": result.OutputPath, "maxSize": 96}))
-	var preview struct {
-		DataURL string `json:"dataUrl"`
-	}
-	raw, _ := json.Marshal(thumb)
-	_ = json.Unmarshal(raw, &preview)
 	s.update(id, func(i *Item) {
 		i.OutputName = result.OutputFileName
 		i.outputPath = result.OutputPath
 		i.OriginalBytes = result.OriginalBytes
 		i.OutputBytes = result.OutputBytes
-		i.Thumbnail = preview.DataURL
 		i.Warning = strings.TrimSpace(strings.ReplaceAll(result.Warning, "Metadata, including GPS, was removed.", ""))
+		i.Status = "completed"
+		i.CompletedAt = s.now()
 	})
-	s.update(id, func(i *Item) { i.Status = "completed"; i.CompletedAt = s.now() })
 	return nil
+}
+
+func (s *Service) Thumbnail(ctx context.Context, id, taskID string) (any, error) {
+	s.mu.Lock()
+	s.pruneLocked()
+	path := ""
+	for _, item := range s.items {
+		if item.ID == id && item.Status == "completed" && !item.hidden {
+			path = item.outputPath
+			break
+		}
+	}
+	s.mu.Unlock()
+	if path == "" {
+		return nil, apperror.New("miniItemMissing", "This Mini result is no longer available.")
+	}
+	return s.images.Call(ctx, "read_thumbnail", mustJSON(map[string]any{"path": path, "taskId": taskID, "maxSize": 96}))
 }
 
 func miniImageError(err error) error {
@@ -560,6 +609,7 @@ func (s *Service) setCopied(kind string) {
 	s.copied = kind
 	s.copySequence++
 	s.lastError = ""
+	s.revision++
 	s.mu.Unlock()
 }
 func (s *Service) Copy(id, format string) error {

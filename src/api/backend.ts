@@ -183,16 +183,24 @@ export type MiniCompressionChanges = Partial<Pick<MiniSettings, "targetFormat" |
 
 export interface MiniItem {
   id: string; name: string; status: "queued" | "compressing" | "uploading" | "completed" | "failed";
-  outputName: string; originalBytes: number; outputBytes: number; thumbnail: string;
+  outputName: string; originalBytes: number; outputBytes: number;
   url: string; links?: Record<MiniSettings["linkFormat"], string>; error: string; warning: string;
   uploadStatus?: "queued" | "uploading" | "completed" | "failed"; uploadError?: string;
   uploads?: Record<string, string>; linkFormat?: MiniSettings["linkFormat"]; completedAt?: string;
 }
-export interface MiniState { items: MiniItem[]; busy: boolean; copied: "" | "image" | "links"; error: string; canUndoClear?: boolean; copySequence?: number }
+export interface MiniState { revision: number; items: MiniItem[]; busy: boolean; copied: "" | "image" | "links"; error: string; canUndoClear?: boolean; copySequence?: number }
 export interface MiniUploadTarget { profileId: string; name: string; bucket: string; bucketKey: string }
+
+function loadMiniState(): Promise<MiniState>;
+function loadMiniState(revision: number | undefined): Promise<MiniState | null>;
+function loadMiniState(revision?: number): Promise<MiniState | null> {
+  return invoke("mini_state", { request: { revision } });
+}
+
 export const miniApi = {
   export: (ids: string[], targetDir: string) => invoke<string[]>("mini_export", { request: { ids, targetDir } }),
-  state: () => invoke<MiniState>("mini_state"),
+  state: loadMiniState,
+  thumbnail: (id: string, taskId: string) => invoke<ReadThumbnailResponse>("mini_thumbnail", { request: { id, taskId } }),
   add: (paths: string[]) => invoke<MiniState>("mini_add", { request: { paths } }),
   upload: (ids: string[], profileId: string, linkFormat: MiniSettings["linkFormat"], bucketKey: string) => invoke<MiniState>("mini_upload", { request: { ids, profileId, linkFormat, bucketKey } }),
   targets: () => invoke<MiniUploadTarget[]>("mini_upload_targets"),

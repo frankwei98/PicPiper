@@ -7,6 +7,7 @@ const mockApi = vi.hoisted(() => ({
   loadSettings: vi.fn(),
   onChanged: vi.fn(),
   state: vi.fn(),
+  thumbnail: vi.fn(),
   add: vi.fn(),
   upload: vi.fn(),
   targets: vi.fn(),
@@ -27,8 +28,10 @@ const mockDesktop = vi.hoisted(() => ({
 vi.mock("@/api/backend", () => ({
   defaultMiniSettings: { enabled: false, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
   settingsApi: { loadSettings: mockApi.loadSettings, onChanged: mockApi.onChanged },
+  imageApi: { cancelImageTask: vi.fn(async () => {}) },
   miniApi: {
     state: mockApi.state,
+    thumbnail: mockApi.thumbnail,
     add: mockApi.add,
     upload: mockApi.upload,
     targets: mockApi.targets,
@@ -56,10 +59,10 @@ const profile = { id: "profile-1", name: "Public bucket", endpoint: "https://s3.
 const defaultSettings: AppSettings = { profiles: [profile], namingTemplate: "{slug}.{ext}", mini: { enabled: true, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" } };
 const defaultTarget: MiniUploadTarget = { profileId: profile.id, name: profile.name, bucket: profile.bucket, bucketKey: "images" };
 const secondTarget: MiniUploadTarget = { profileId: "profile-2", name: "Archive", bucket: "archive", bucketKey: "archive" };
-const emptyState: MiniState = { items: [], busy: false, copied: "", error: "" };
+const emptyState: MiniState = { revision: 1, items: [], busy: false, copied: "", error: "" };
 const completedItem: MiniItem = {
   id: "item-1", name: "source.png", status: "completed", outputName: "result.webp", originalBytes: 20_000, outputBytes: 10_000,
-  thumbnail: "data:image/png;base64,AA==", url: "https://cdn.example.test/result.webp", error: "", warning: "", completedAt: "2026-11-14T10:00:00Z",
+  url: "https://cdn.example.test/result.webp", error: "", warning: "", completedAt: "2026-11-14T10:00:00Z",
   links: {
     url: "https://cdn.example.test/result.webp",
     html: '<img src="https://cdn.example.test/result.webp">',
@@ -74,6 +77,7 @@ const resultWithoutURLState: MiniState = { ...emptyState, items: [completedWitho
 function prepare(settings: AppSettings = defaultSettings, state: MiniState = emptyState, targets: MiniUploadTarget[] = [defaultTarget]) {
   mockApi.loadSettings.mockResolvedValue(settings);
   mockApi.state.mockResolvedValue(state);
+  mockApi.thumbnail.mockResolvedValue({ dataUrl: "data:image/png;base64,AA==" });
   mockApi.add.mockResolvedValue(state);
   mockApi.upload.mockResolvedValue(state);
   mockApi.targets.mockResolvedValue(targets);
@@ -316,6 +320,25 @@ it("shows errors from the current queue poll", async () => {
   render(<MiniPage />);
 
   expect(await screen.findByRole("alert")).toHaveTextContent("current poll failure");
+});
+
+it("polls with the current revision and leaves a loaded thumbnail in place for an unchanged reply", async () => {
+  vi.useFakeTimers();
+  try {
+    prepare(defaultSettings, resultState);
+    mockApi.state.mockResolvedValueOnce({ ...resultState, revision: 17 }).mockResolvedValue(null);
+    const view = render(<MiniPage />);
+    await act(async () => {});
+    const image = view.container.querySelector(".mini-thumb img");
+    expect(image).toHaveAttribute("src", "data:image/png;base64,AA==");
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(mockApi.state).toHaveBeenLastCalledWith(17);
+    expect(mockApi.thumbnail).toHaveBeenCalledTimes(1);
+    expect(view.container.querySelector(".mini-thumb img")).toBe(image);
+    view.unmount();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("restores results from Mini state after closing and remounting", async () => {
