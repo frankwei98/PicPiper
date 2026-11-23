@@ -32,7 +32,7 @@ export function CompressionResults(props: Props) {
   const [selected, setSelected] = useState(() => new Set(props.items.map((item) => item.id)));
   const [currentId, setCurrentId] = useState(props.items[0]?.id);
   const current = props.items.find((item) => item.id === currentId) ?? props.items[0];
-  const preview = useOptimizePreview(props.previews, current?.id, props.open ? current?.outputPath : undefined, STAGE_PREVIEW_EDGE);
+  const preview = useOptimizePreview(props.previews, current?.id, current?.outputPath, STAGE_PREVIEW_EDGE, props.open);
   const ids = props.items.filter((item) => selected.has(item.id)).map((item) => item.id);
   const actions = (itemIds: string[], batch: boolean) => <div className="flex flex-wrap gap-2">
     <Button variant="outline" disabled={props.locked || !itemIds.length} onClick={() => props.onCopy(itemIds)}>{t(batch ? "Copy selected images" : "Copy image")}</Button>
@@ -57,7 +57,7 @@ export function CompressionResults(props: Props) {
           >{() => <>
             <input type="checkbox" aria-label={t("Select {{name}}", { name: item.outputFileName ?? item.fileName })} checked={selected.has(item.id)} onChange={(event) => setSelected((previous) => { const next = new Set(previous); if (event.target.checked) next.add(item.id); else next.delete(item.id); return next; })} />
             <button className="flex min-w-0 items-center gap-2 text-left" aria-pressed={current?.id === item.id} onClick={() => setCurrentId(item.id)}>
-              <ResultThumbnail previews={props.previews} item={item} active={props.open} /><span className="truncate text-sm">{item.outputFileName ?? item.fileName}</span>
+              <ResultThumbnail previews={props.previews} item={item} active={props.open} edge={current?.id === item.id ? STAGE_PREVIEW_EDGE : CARD_PREVIEW_EDGE} /><span className="truncate text-sm">{item.outputFileName ?? item.fileName}</span>
             </button>
           </>}</LazyRender>)}
         </div>
@@ -80,8 +80,8 @@ export function CompressionResults(props: Props) {
   </Dialog>;
 }
 
-function ResultThumbnail({ previews, item, active }: { previews: OptimizePreviews; item: OptimizeItem; active: boolean }) {
-  const { url, loading } = useOptimizePreview(previews, item.id, active ? item.outputPath : undefined, CARD_PREVIEW_EDGE);
+function ResultThumbnail({ previews, item, active, edge }: { previews: OptimizePreviews; item: OptimizeItem; active: boolean; edge: number }) {
+  const { url, loading } = useOptimizePreview(previews, item.id, item.outputPath, edge, active);
   if (url) return <img className="size-12 shrink-0 object-contain" src={url} alt="" />;
   if (loading) return <Skeleton className="size-12 shrink-0" />;
   return <span className="grid size-12 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground" aria-hidden="true"><ImageOff className="size-4" /></span>;

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { OptimizeItem } from "../../types";
 import { formatBytes, sizeChangeLabel } from "./optimizeQueue";
-import { CARD_PREVIEW_EDGE, useOptimizePreview, type OptimizePreviews } from "./optimizePreviews";
+import { CARD_PREVIEW_EDGE, STAGE_PREVIEW_EDGE, useOptimizePreview, type OptimizePreviews } from "./optimizePreviews";
 
 interface OptimizeItemCardProps {
   item: OptimizeItem;
@@ -26,7 +26,7 @@ interface OptimizeItemCardProps {
 export function OptimizeItemCard({ item, previews, active, selected, onSelect, mutationLocked, uploadFailure, uploading, onCancel, onCompare, onRemove, onRetry }: OptimizeItemCardProps) {
   useLocale();
   const busy = ["inspecting", "queued", "compressing"].includes(item.status);
-  const preview = useOptimizePreview(previews, item.id, active && item.status === "compressed" ? item.outputPath : undefined, CARD_PREVIEW_EDGE);
+  const preview = useOptimizePreview(previews, item.id, item.status === "compressed" ? item.outputPath : undefined, selected ? STAGE_PREVIEW_EDGE : CARD_PREVIEW_EDGE, active);
   return (
     <article className={cn("batch-item", selected && "selected")} aria-label={item.fileName} data-output-format={item.settings.targetFormat}>
       <div className="item-main">
