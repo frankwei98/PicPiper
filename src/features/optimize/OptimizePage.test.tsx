@@ -443,7 +443,7 @@ describe("OptimizePage", () => {
     const inspect = inspectImage.getMockImplementation()!;
     inspectImage.mockImplementation(async (...args: unknown[]) => {
       const { path } = args[0] as { path: string };
-      return { ...await inspect(...args), sourcePath: path, fileName: path.split("/").pop()! };
+      return { ...await inspect(), sourcePath: path, fileName: path.split("/").pop()! };
     });
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{slug}.{ext}" />);
