@@ -208,8 +208,33 @@ func TestPNGMemoryAdmissionIncludesHDRAndAnimation(t *testing.T) {
 			if err := os.WriteFile(path, data, 0600); err != nil {
 				t.Fatal(err)
 			}
-			if got := needsLargeImageSlot("read_thumbnail", request{Path: path, MaxSize: 96}); got != tt.large {
+			if got := needsLargeImageSlot("read_thumbnail", request{Path: path, MaxSize: 96}, nil); got != tt.large {
 				t.Fatalf("large slot = %t, want %t", got, tt.large)
+			}
+		})
+	}
+}
+
+func TestSmallModernImagesDoNotWaitForLargeSlots(t *testing.T) {
+	s := NewIsolated(t.TempDir())
+	t.Cleanup(s.Close)
+	s.SetConcurrency(3)
+	for range cap(s.largeImages) {
+		s.largeImages <- struct{}{}
+	}
+	encoder := New(t.TempDir())
+	t.Cleanup(encoder.Close)
+	run := call(t, encoder, "create_optimizer_run", request{}).(map[string]string)
+	jxl := call(t, encoder, "compress_image", request{
+		SourcePath: fixture(t, image.NewNRGBA(image.Rect(0, 0, 32, 24))),
+		OutputDir:  run["outputDir"], OutputFileName: "small.jxl", Settings: settings{TargetFormat: "jxl", Quality: 85},
+	}).(Result).OutputPath
+	for _, path := range []string{filepath.Join("testdata", "sample.heic"), filepath.Join("testdata", "rotation.avif"), jxl} {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if data, err := s.ThumbnailDataURL(ctx, path, 96); err != nil || data == "" {
+				t.Fatalf("small image waited for a large-image slot or failed to render: %v", err)
 			}
 		})
 	}
