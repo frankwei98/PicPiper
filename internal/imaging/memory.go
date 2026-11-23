@@ -43,9 +43,15 @@ func needsLargeImageSlot(operation string, req request) bool {
 	header := bufio.NewReader(io.LimitReader(file, 256<<10))
 	magic, _ := header.Peek(30)
 	var config image.Config
+	var hdr, animatedPNG bool
 	switch {
 	case len(magic) >= 8 && string(magic[:8]) == "\x89PNG\r\n\x1a\n":
 		config, err = png.DecodeConfig(header)
+		var complete bool
+		hdr, animatedPNG, complete = pngMemoryProperties(file, info.Size())
+		if !complete {
+			return true
+		}
 	case len(magic) >= 3 && string(magic[:3]) == "\xff\xd8\xff":
 		config, err = jpeg.DecodeConfig(header)
 	case len(magic) == 30 && string(magic[:4]) == "RIFF" && string(magic[8:12]) == "WEBP":
@@ -80,13 +86,52 @@ func needsLargeImageSlot(operation string, req request) bool {
 	}
 	// A decode may normalize colors or orientation to a 16-bit pixel buffer.
 	peakBytes := 8*sourcePixels + outputBytesPerPixel*outputPixels
-	switch config.ColorModel {
-	case color.Gray16Model, color.RGBA64Model, color.NRGBA64Model:
-		// Profile conversion can have a decoded image and two full-size
-		// 16-bit RGBA conversion buffers before any resize takes place.
+	if hdr || config.ColorModel == color.Gray16Model || config.ColorModel == color.RGBA64Model || config.ColorModel == color.NRGBA64Model {
+		// HDR can create 16-bit pixels from an 8-bit source. Color conversion
+		// and orientation can overlap full-sized decode and conversion buffers.
 		peakBytes = max(peakBytes, 3*8*sourcePixels)
 	}
+	if animatedPNG {
+		// First-frame extraction holds the decoded frame, its canvas, and
+		// compressed bytes while rebuilding the frame's PNG stream.
+		peakBytes = max(peakBytes, 16*sourcePixels+4*info.Size())
+	}
 	return peakBytes >= largeImageBytes
+}
+
+// Inspect chunk headers without loading IDAT or decompressing ICC profiles.
+// If there are too many chunks to classify cheaply, take a large slot.
+func pngMemoryProperties(file io.ReaderAt, size int64) (hdr, animated, complete bool) {
+	var header [8]byte
+	position := int64(8)
+	for range 4096 {
+		if size-position < 12 {
+			break
+		}
+		if _, err := file.ReadAt(header[:], position); err != nil {
+			break
+		}
+		length := int64(binary.BigEndian.Uint32(header[:4]))
+		if length > size-position-12 {
+			break
+		}
+		switch string(header[4:]) {
+		case "cICP":
+			var data [4]byte
+			if length == 4 {
+				if _, err := file.ReadAt(data[:], position+8); err != nil {
+					return hdr, animated, false
+				}
+				hdr = hdr || data[1] == 16 || data[1] == 18
+			}
+		case "acTL":
+			animated = animated || length == 8
+		case "IEND":
+			return hdr, animated, true
+		}
+		position += length + 12
+	}
+	return hdr, animated, false
 }
 
 // These are the three first-chunk layouts that carry the WebP canvas size.
