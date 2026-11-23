@@ -75,6 +75,10 @@ function ComparisonSession(props: ImageComparisonProps) {
   const compressedPaneRef = useRef<HTMLDivElement>(null);
   const pendingScrolls = useRef(new Map<HTMLDivElement, { left: number; top: number }>());
   const fit = useComparisonImages(props.originalPath, props.compressedPath, "fit");
+  const snapshotsReady = Boolean(fit.images?.original.snapshotId && fit.images?.compressed.snapshotId);
+  useEffect(() => {
+    if (mode === "actual" && snapshotsReady) setRequestedActual(true);
+  }, [mode, snapshotsReady]);
   const actual = useComparisonImages(
     requestedActual ? fit.images?.original.snapshotId : undefined,
     requestedActual ? fit.images?.compressed.snapshotId : undefined,
@@ -127,10 +131,7 @@ function ComparisonSession(props: ImageComparisonProps) {
             size="sm"
             variant={mode === "actual" ? "secondary" : "ghost"}
             aria-pressed={mode === "actual"}
-            onClick={() => {
-              setRequestedActual(true);
-              setMode("actual");
-            }}
+            onClick={() => setMode("actual")}
           >
             100%
           </Button>
