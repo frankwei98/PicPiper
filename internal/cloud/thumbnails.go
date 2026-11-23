@@ -23,6 +23,10 @@ const maxThumbnailBytes int64 = 2 << 20
 const thumbnailCacheBytes int64 = 128 << 20
 const thumbnailSourceLifetime = time.Hour
 
+// Older versions write directly to gallery-thumbnails without locking. Keep
+// new writes in a subdirectory so the parent's mtime detects legacy changes.
+const indexedThumbnailDir = "indexed"
+
 // The mutex protects this index; the file lock coordinates access to the
 // shared directory with other running instances.
 type thumbnailCache struct {
@@ -30,6 +34,7 @@ type thumbnailCache struct {
 	recency           list.List
 	bytes             int64
 	scanned           time.Time
+	legacyModified    time.Time
 	generation        thumbnailGeneration
 	recencyGeneration thumbnailGeneration
 	recencyStale      bool
@@ -157,10 +162,11 @@ func (s *Service) readGalleryThumbnail(ctx context.Context, p thumbnailRequest) 
 	if resp.ContentLength > maxThumbnailSourceBytes {
 		return nil, appErr("thumbnailTooLarge", "This image is too large for a thumbnail.")
 	}
-	if err = os.MkdirAll(dir, 0700); err != nil {
+	indexed := filepath.Join(dir, indexedThumbnailDir)
+	if err = os.MkdirAll(indexed, 0700); err != nil {
 		return nil, appErr("thumbnailCacheFailed", "Could not create the thumbnail cache.")
 	}
-	source, err := os.CreateTemp(dir, "source-*")
+	source, err := os.CreateTemp(indexed, "source-*")
 	if err != nil {
 		return nil, appErr("thumbnailCacheFailed", "Could not prepare the image thumbnail.")
 	}
@@ -253,15 +259,20 @@ func (s *Service) storeThumbnailLocked(dir, path, dataURL string) error {
 	if err := s.invalidateThumbnailIndex(guard); err != nil {
 		return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
 	}
-	if err := atomicWrite(path, []byte(dataURL), 0600, "thumbnailCacheFailed"); err != nil {
+	name := filepath.Join(indexedThumbnailDir, filepath.Base(path))
+	indexedPath := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(indexedPath), 0700); err != nil {
+		return appErr("thumbnailCacheFailed", "Could not create the thumbnail cache.")
+	}
+	if err := atomicWrite(indexedPath, []byte(dataURL), 0600, "thumbnailCacheFailed"); err != nil {
 		return err
 	}
-	// Older versions do not lock or update the generation marker. Reconcile
-	// from disk after publication so their writes count toward the same budget.
-	// Cache hits still use the index and do not scan for recency-only updates.
-	s.thumbnails.scanned = time.Time{}
-	if err := s.refreshThumbnailCacheLocked(dir); err != nil {
-		s.removeCachedThumbnailLocked(dir, filepath.Base(path))
+	s.thumbnails.touch(name, int64(len(dataURL)))
+	// Check for a legacy writer while we held the lock. Only its directory
+	// entries can have changed independently; our own write updated the index.
+	if err := s.refreshThumbnailCacheLocked(dir); err != nil ||
+		s.thumbnails.bytes > thumbnailCacheBytes && s.refreshThumbnailRecencyLocked(dir) != nil {
+		s.removeCachedThumbnailLocked(dir, name)
 		return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
 	}
 	s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
@@ -279,39 +290,47 @@ func (s *Service) refreshThumbnailRecencyLocked(dir string) error {
 func (s *Service) refreshThumbnailCacheLocked(dir string) error {
 	now := s.now()
 	cache := &s.thumbnails
-	if cache.entries != nil && !cache.scanned.IsZero() && now.Sub(cache.scanned) < thumbnailSourceLifetime {
+	var legacyModified time.Time
+	if info, err := os.Stat(dir); err == nil {
+		legacyModified = info.ModTime()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if cache.entries != nil && !cache.scanned.IsZero() && now.Sub(cache.scanned) < thumbnailSourceLifetime && cache.legacyModified.Equal(legacyModified) {
 		return nil
 	}
 	// Reconcile other instances' changes and clean abandoned downloads.
-	// Normal hits only update one index entry.
-	entries, err := os.ReadDir(dir)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
 	type cached struct {
 		name     string
 		size     int64
 		modified time.Time
 	}
-	files := make([]cached, 0, len(entries))
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "source-") {
-			if info, err := entry.Info(); err == nil && info.Mode().IsRegular() && now.Sub(info.ModTime()) > thumbnailSourceLifetime {
-				_ = os.Remove(filepath.Join(dir, entry.Name()))
+	var files []cached
+	for _, subdir := range []string{"", indexedThumbnailDir} {
+		entries, err := os.ReadDir(filepath.Join(dir, subdir))
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		for _, entry := range entries {
+			name := filepath.Join(subdir, entry.Name())
+			if strings.HasPrefix(entry.Name(), "source-") {
+				if info, err := entry.Info(); err == nil && info.Mode().IsRegular() && now.Sub(info.ModTime()) > thumbnailSourceLifetime {
+					_ = os.Remove(filepath.Join(dir, name))
+				}
+				continue
 			}
-			continue
+			if !strings.HasSuffix(entry.Name(), ".thumb") {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			files = append(files, cached{name, info.Size(), info.ModTime()})
 		}
-		if !strings.HasSuffix(entry.Name(), ".thumb") {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		files = append(files, cached{entry.Name(), info.Size(), info.ModTime()})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].modified.Before(files[j].modified) })
-	cache.scanned = now
+	cache.scanned, cache.legacyModified = now, legacyModified
 	cache.recencyStale = false
 	cache.entries = make(map[string]*list.Element, len(files))
 	cache.recency.Init()
@@ -352,7 +371,7 @@ func (s *Service) removeGalleryThumbnails(ctx context.Context, p profile, key st
 	}
 	prefix := thumbnailIdentity(p, key) + "-"
 	for name := range s.thumbnails.entries {
-		if strings.HasPrefix(name, prefix) {
+		if strings.HasPrefix(filepath.Base(name), prefix) {
 			s.removeCachedThumbnailLocked(dir, name)
 		}
 	}
@@ -375,7 +394,14 @@ func (s *Service) cachedThumbnail(path string) (string, bool) {
 		return "", false
 	}
 	defer guard.Close()
-	file, err := os.Open(path)
+	indexedName := filepath.Join(indexedThumbnailDir, name)
+	file, err := os.Open(filepath.Join(dir, indexedName))
+	if os.IsNotExist(err) {
+		s.thumbnails.forget(indexedName)
+		file, err = os.Open(path)
+	} else {
+		name, path = indexedName, filepath.Join(dir, indexedName)
+	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			s.thumbnails.forget(name)
