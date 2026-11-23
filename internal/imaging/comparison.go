@@ -1,9 +1,11 @@
 package imaging
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -233,17 +235,27 @@ func (s *Service) clipboardPNG(ctx context.Context, source string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	path, err := s.previews.newPath()
-	if err != nil {
+	if s.executable != "" || s.executableErr != nil {
+		encoded, err := s.isolated(ctx, workerClipboardOperation, request{Path: paths[0]})
+		if err != nil {
+			return nil, err
+		}
+		return encoded.([]byte), nil
+	}
+	var encoded bytes.Buffer
+	if err := writeClipboardPNG(ctx, paths[0], &encoded); err != nil {
 		return nil, err
 	}
-	defer os.Remove(path)
-	if _, err = s.renderPNGFile(ctx, request{Path: paths[0], PreviewOutput: path}); err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(path)
+	return encoded.Bytes(), nil
+}
+
+func writeClipboardPNG(ctx context.Context, path string, output io.Writer) error {
+	img, _, err := decode(ctx, path)
 	if err != nil {
-		return nil, apperror.New("clipboardFailed", "Could not prepare the clipboard image.")
+		return err
 	}
-	return data, ctx.Err()
+	if err := encodePNG(output, img); err != nil {
+		return apperror.New("clipboardFailed", "Could not prepare the clipboard image.")
+	}
+	return ctx.Err()
 }

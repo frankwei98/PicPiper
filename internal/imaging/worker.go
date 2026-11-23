@@ -2,9 +2,12 @@ package imaging
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -12,9 +15,15 @@ import (
 	"github.com/frankwei98/PicPiper/internal/apperror"
 )
 
+const workerClipboardOperation = "encode_clipboard_png"
+
+// Up to eight bytes per pixel, one filter byte per row, and encoding overhead.
+const maxClipboardPNGBytes = 10*maxPixels + 1<<20
+
 type workerReply struct {
 	Data  json.RawMessage `json:"data"`
 	Error *apperror.Error `json:"error,omitempty"`
+	PNG   []byte          `json:"-"`
 }
 
 type workerRequest struct {
@@ -63,7 +72,18 @@ func serveWorker(input io.Reader, output io.Writer, call func(context.Context, s
 		var value any
 		response := workerReply{}
 		err := json.Unmarshal(requests.Bytes(), &req)
-		if err != nil || !workerOperation(req.Operation) || req.Operation == "copy_image_png" {
+		if err == nil && req.Operation == workerClipboardOperation {
+			var clipboard request
+			err = json.Unmarshal(req.Payload, &clipboard)
+			if err == nil {
+				err = writeClipboardPNG(context.Background(), clipboard.Path, workerPNGWriter{output})
+			}
+			// The private stream ends with a zero-length chunk and then the
+			// normal structured reply, including any error after a partial PNG.
+			if frameErr := binary.Write(output, binary.BigEndian, uint32(0)); frameErr != nil {
+				return
+			}
+		} else if err != nil || !workerOperation(req.Operation) || req.Operation == "copy_image_png" {
 			err = apperror.New("invalidRequest", "The image worker request is invalid.")
 		} else {
 			value, err = call(context.Background(), req.Operation, req.Payload)
@@ -138,6 +158,9 @@ func (s *Service) isolated(ctx context.Context, operation string, req request) (
 		err := json.Unmarshal(response.Data, &preview)
 		return preview, err
 	}
+	if operation == workerClipboardOperation {
+		return response.PNG, nil
+	}
 	var value any
 	if err := json.Unmarshal(response.Data, &value); err != nil {
 		return nil, err
@@ -173,6 +196,37 @@ func (s *Service) takeWorker() (*imageWorker, error) {
 	return &imageWorker{command: command, input: input, output: output}, nil
 }
 
+type workerPNGWriter struct{ output io.Writer }
+
+func (w workerPNGWriter) Write(data []byte) (int, error) {
+	if len(data) == 0 {
+		return 0, nil
+	}
+	if err := binary.Write(w.output, binary.BigEndian, uint32(len(data))); err != nil {
+		return 0, err
+	}
+	return w.output.Write(data)
+}
+
+func readWorkerPNG(input io.Reader) ([]byte, error) {
+	var data bytes.Buffer
+	for {
+		var size uint32
+		if err := binary.Read(input, binary.BigEndian, &size); err != nil {
+			return nil, err
+		}
+		if size == 0 {
+			return data.Bytes(), nil
+		}
+		if int64(size)+int64(data.Len()) > maxClipboardPNGBytes {
+			return nil, fmt.Errorf("clipboard PNG exceeds the worker response limit")
+		}
+		if _, err := io.CopyN(&data, input, int64(size)); err != nil {
+			return nil, err
+		}
+	}
+}
+
 func (worker *imageWorker) call(ctx context.Context, req workerRequest) (workerReply, error) {
 	type result struct {
 		response workerReply
@@ -182,9 +236,12 @@ func (worker *imageWorker) call(ctx context.Context, req workerRequest) (workerR
 	go func() {
 		var response workerReply
 		err := json.NewEncoder(worker.input).Encode(req)
+		if err == nil && req.Operation == workerClipboardOperation {
+			response.PNG, err = readWorkerPNG(worker.output)
+		}
 		if err == nil {
-			// A decoder is scoped to one response so a large comparison doesn't
-			// retain its JSON buffer for the lifetime of an idle process.
+			// Scope the decoder to one response to avoid retaining its buffer
+			// for the lifetime of an idle process.
 			err = json.NewDecoder(worker.output).Decode(&response)
 		}
 		finished <- result{response: response, err: err}
