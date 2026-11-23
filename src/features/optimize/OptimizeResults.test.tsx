@@ -62,7 +62,7 @@ it("replaces a failed result thumbnail's skeleton with a static fallback", async
   const reading = new Promise<{ dataUrl: string }>((_, reject) => { fail = reject; });
   const read = vi.mocked(imageApi.readThumbnail);
   const normalRead = read.getMockImplementation()!;
-  read.mockImplementation((request) => request.path === "/cache/run/one.png" && request.maxSize === 96 ? reading : normalRead(request));
+  read.mockImplementation((request) => request.path === "/cache/run/one.png" && request.maxSize === 1024 ? reading : normalRead(request));
   try {
     const { dialog } = await start();
     const row = dialog.getByRole("button", { name: "one.png" });

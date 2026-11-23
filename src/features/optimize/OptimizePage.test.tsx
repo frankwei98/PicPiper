@@ -391,8 +391,23 @@ describe("OptimizePage", () => {
 
     view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" />);
     await screen.findByAltText("Compressed preview of real-photo.jpg");
-    expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ maxSize: 96 }));
+    const outputReads = readThumbnail.mock.calls.map(([request]) => request).filter(({ path }) => path.includes("/pic-piper/"));
+    expect(outputReads).toEqual([expect.objectContaining({ maxSize: 1024 })]);
     expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ path: "/tmp/real-photo.jpg", maxSize: 1024 }));
+  });
+
+  it("does not reread an already displayed large compressed preview after hiding the workspace", async () => {
+    const dataUrl = "data:image/png;base64,".padEnd(4 * 1024 * 1024 + 1, "A");
+    const normalRead = readThumbnail.getMockImplementation()!;
+    readThumbnail.mockImplementation((request) => request.path.includes("/pic-piper/") ? Promise.resolve({ dataUrl }) : normalRead(request));
+    const user = userEvent.setup();
+    const view = render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByAltText("Compressed preview of real-photo.jpg");
+    view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" isActive={false} />);
+    view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    expect(screen.getByAltText("Compressed preview of real-photo.jpg").getAttribute("src")?.length).toBe(dataUrl.length);
+    expect(readThumbnail.mock.calls.filter(([request]) => request.path.includes("/pic-piper/"))).toHaveLength(1);
   });
 
   it("keeps the current original preview after its source is moved", async () => {
