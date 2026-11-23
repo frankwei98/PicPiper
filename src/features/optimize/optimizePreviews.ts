@@ -72,10 +72,10 @@ export class OptimizePreviews {
   }
 }
 
-export function useOptimizePreview(cache: OptimizePreviews, id: string | undefined, path: string | undefined, maxSize: number, active = true) {
+export function useOptimizePreview(cache: OptimizePreviews, id: string | undefined, path: string | undefined, maxSize: number, active = true, retryVersion = 0) {
   const key = path ? JSON.stringify([id, path, maxSize]) : undefined;
-  const [response, setResponse] = useState<{ key: string; url: string | undefined }>();
-  const current = response?.key === key ? response : undefined;
+  const [response, setResponse] = useState<{ key: string; url: string | undefined; retryVersion: number }>();
+  const current = response?.key === key && (response?.url !== undefined || response?.retryVersion === retryVersion) ? response : undefined;
   const loaded = current?.url !== undefined;
   useEffect(() => {
     if (loaded) return;
@@ -83,9 +83,9 @@ export function useOptimizePreview(cache: OptimizePreviews, id: string | undefin
     if (!active || !key || !path) return;
     let live = true;
     const read = cache.read(key, path, maxSize);
-    void read.result.then((url) => { if (live) setResponse({ key, url }); });
+    void read.result.then((url) => { if (live) setResponse({ key, url, retryVersion }); });
     return () => { live = false; read.release(); };
-  }, [active, cache, key, loaded, maxSize, path]);
+  }, [active, cache, key, loaded, maxSize, path, retryVersion]);
 
   return {
     url: active ? current?.url : undefined,
