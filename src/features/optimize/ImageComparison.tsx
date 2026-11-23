@@ -19,13 +19,13 @@ interface LoadedImages {
   compressed: ReadComparisonImageResponse;
 }
 
-function useComparisonImages({ originalPath, compressedPath }: ImageComparisonProps, maxSize?: number, requested = true) {
+function useComparisonImages(originalSource: string | undefined, compressedSource: string | undefined, mode: ComparisonMode) {
   const [images, setImages] = useState<LoadedImages | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
-    if (!requested) return;
+    if (!originalSource || !compressedSource) return;
     let active = true;
     let cancelled = false;
     const taskId = `comparison:${crypto.randomUUID()}`;
@@ -37,10 +37,10 @@ function useComparisonImages({ originalPath, compressedPath }: ImageComparisonPr
       });
     };
 
-    Promise.all([
-      imageApi.readComparisonImage({ taskId, path: originalPath, maxSize }),
-      imageApi.readComparisonImage({ taskId, path: compressedPath, maxSize }),
-    ]).then(
+    const read = (source: string) => imageApi.readComparisonImage(mode === "fit"
+      ? { taskId, path: source, maxSize: 1280 }
+      : { taskId, snapshotId: source });
+    Promise.all([read(originalSource), read(compressedSource)]).then(
       ([original, compressed]) => {
         if (active) setImages({ original, compressed });
       },
@@ -54,7 +54,7 @@ function useComparisonImages({ originalPath, compressedPath }: ImageComparisonPr
       active = false;
       cancelReads();
     };
-  }, [compressedPath, loadAttempt, maxSize, originalPath, requested]);
+  }, [compressedSource, loadAttempt, mode, originalSource]);
 
   const retry = () => {
     setLoadError(null);
@@ -74,10 +74,14 @@ function ComparisonSession(props: ImageComparisonProps) {
   const originalPaneRef = useRef<HTMLDivElement>(null);
   const compressedPaneRef = useRef<HTMLDivElement>(null);
   const pendingScrolls = useRef(new Map<HTMLDivElement, { left: number; top: number }>());
-  const fit = useComparisonImages(props, 1280);
-  const actual = useComparisonImages(props, undefined, requestedActual);
+  const fit = useComparisonImages(props.originalPath, props.compressedPath, "fit");
+  const actual = useComparisonImages(
+    requestedActual ? fit.images?.original.snapshotId : undefined,
+    requestedActual ? fit.images?.compressed.snapshotId : undefined,
+    "actual",
+  );
   // Keep both sizes available until this pair changes or the dialog closes.
-  const { images, loadError, retry } = mode === "fit" ? fit : actual;
+  const { images, loadError, retry } = mode === "fit" || fit.loadError ? fit : actual;
   const loadingLabel = mode === "actual" ? t("Loading full-resolution images…") : t("Updating preview…");
 
   useEffect(() => {

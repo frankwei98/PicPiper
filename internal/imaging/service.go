@@ -79,6 +79,7 @@ type request struct {
 	OutputPaths    []string `json:"outputPaths"`
 	TargetDir      string   `json:"targetDir"`
 	MaxSize        int      `json:"maxSize"`
+	SnapshotID     string   `json:"snapshotId,omitempty"`
 	PreviewOutput  string   `json:"previewOutput,omitempty"`
 	Settings       settings `json:"settings"`
 }
@@ -146,6 +147,14 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 	case "copy_outputs_to_dir":
 		return s.copyOutputs(ctx, req)
 	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "render_preview_png", "copy_image_png":
+		if operation == "read_comparison_image" && req.SnapshotID != "" {
+			path, release, err := s.previews.borrowSnapshot(req.SnapshotID)
+			if err != nil {
+				return nil, err
+			}
+			defer release()
+			req.Path = path
+		}
 		// Admit high-memory work in the desktop process before reserving a
 		// worker. Each isolated child runs requests serially.
 		if s.executable != "" {
