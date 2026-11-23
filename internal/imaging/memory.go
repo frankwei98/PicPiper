@@ -45,7 +45,7 @@ func needsLargeImageSlot(operation string, req request, probeModern func(string)
 	header := bufio.NewReader(io.LimitReader(file, 256<<10))
 	magic, _ := header.Peek(30)
 	var config image.Config
-	var hdr, animatedPNG bool
+	var hdr, animatedPNG, webp bool
 	switch {
 	case len(magic) >= 8 && string(magic[:8]) == "\x89PNG\r\n\x1a\n":
 		config, err = png.DecodeConfig(header)
@@ -57,6 +57,7 @@ func needsLargeImageSlot(operation string, req request, probeModern func(string)
 	case len(magic) >= 3 && string(magic[:3]) == "\xff\xd8\xff":
 		config, err = jpeg.DecodeConfig(header)
 	case len(magic) == 30 && string(magic[:4]) == "RIFF" && string(magic[8:12]) == "WEBP":
+		webp = true
 		// Preserving an animation retains every decoded frame and the encoder's
 		// packed copy. The VP8X canvas size alone cannot bound those buffers.
 		const animationFlag = 0x02
@@ -100,6 +101,11 @@ func needsLargeImageSlot(operation string, req request, probeModern func(string)
 		// First-frame extraction holds the decoded frame, its canvas, and
 		// compressed bytes while rebuilding the frame's PNG stream.
 		peakBytes = max(peakBytes, 16*sourcePixels+4*info.Size())
+	}
+	if webp {
+		// The decoder reads the entire file and copies the encoded data into
+		// its module, even when the caller only needs the first frame.
+		peakBytes += 3 * info.Size()
 	}
 	return peakBytes >= largeImageBytes
 }
