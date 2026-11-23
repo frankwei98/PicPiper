@@ -250,19 +250,20 @@ func (s *Service) storeThumbnailLocked(dir, path, dataURL string) error {
 		return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
 	}
 	defer guard.Close()
-	name, size := filepath.Base(path), int64(len(dataURL))
-	if s.thumbnails.bytes-s.thumbnails.size(name)+size > thumbnailCacheBytes {
-		if err := s.refreshThumbnailRecencyLocked(dir); err != nil {
-			return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
-		}
-	}
 	if err := s.invalidateThumbnailIndex(guard); err != nil {
 		return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
 	}
 	if err := atomicWrite(path, []byte(dataURL), 0600, "thumbnailCacheFailed"); err != nil {
 		return err
 	}
-	s.thumbnails.touch(name, size)
+	// Older versions do not lock or update the generation marker. Reconcile
+	// from disk after publication so their writes count toward the same budget.
+	// Cache hits still use the index and do not scan for recency-only updates.
+	s.thumbnails.scanned = time.Time{}
+	if err := s.refreshThumbnailCacheLocked(dir); err != nil {
+		s.removeCachedThumbnailLocked(dir, filepath.Base(path))
+		return appErr("thumbnailCacheFailed", "Could not write the thumbnail cache.")
+	}
 	s.pruneThumbnailsLocked(dir, thumbnailCacheBytes)
 	return nil
 }
@@ -281,8 +282,8 @@ func (s *Service) refreshThumbnailCacheLocked(dir string) error {
 	if cache.entries != nil && !cache.scanned.IsZero() && now.Sub(cache.scanned) < thumbnailSourceLifetime {
 		return nil
 	}
-	// Reconcile other instances' changes and occasionally clean abandoned
-	// downloads. Normal hits and writes only update one index entry.
+	// Reconcile other instances' changes and clean abandoned downloads.
+	// Normal hits only update one index entry.
 	entries, err := os.ReadDir(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
