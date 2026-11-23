@@ -240,6 +240,39 @@ func TestSmallModernImagesDoNotWaitForLargeSlots(t *testing.T) {
 	}
 }
 
+func TestWebPMemoryAdmissionCountsEncodedBytes(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		animation byte
+	}{
+		{"still", 0},
+		{"first frame", 0x02},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var header [30]byte
+			copy(header[:], "RIFF\x00\x00\x00\x00WEBPVP8X\x0a\x00\x00\x00")
+			header[20] = tt.animation
+			header[24], header[27] = 63, 63
+			path := filepath.Join(t.TempDir(), "input.webp")
+			if err := os.WriteFile(path, header[:], 0600); err != nil {
+				t.Fatal(err)
+			}
+			req := request{SourcePath: path, Settings: settings{TargetFormat: "png", AnimationMode: "firstFrame"}}
+			if needsLargeImageSlot("compress_image", req, nil) {
+				t.Fatal("small WebP should use the regular pool")
+			}
+			// Only the header and file size are needed to classify the request.
+			if err := os.Truncate(path, 100<<20); err != nil {
+				t.Fatal(err)
+			}
+			if !needsLargeImageSlot("compress_image", req, nil) ||
+				!needsLargeImageSlot("read_thumbnail", request{Path: path, MaxSize: 96}, nil) {
+				t.Fatal("large encoded WebP should wait for the memory budget")
+			}
+		})
+	}
+}
+
 func TestWebPHeaderSizeReadsAllCanvasLayouts(t *testing.T) {
 	for _, test := range []struct {
 		chunk  string
