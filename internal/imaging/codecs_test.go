@@ -77,7 +77,7 @@ func TestModernFormatsRoundTripThroughInspectionPreviewComparisonAndExport(t *te
 			if !strings.HasPrefix(thumb["dataUrl"], "data:image/png;base64,") {
 				t.Fatal("transparent preview must remain PNG")
 			}
-			comparison := call(t, service, "read_comparison_image", request{Path: unknown}).(ComparisonImage)
+			comparison := call(t, service, "read_comparison_image", request{TaskID: "roundtrip", Path: unknown}).(ComparisonImage)
 			if preview := decodeComparison(t, service, comparison); preview.Bounds() != img.Bounds() {
 				t.Fatalf("comparison did not retain dimensions: %v", preview.Bounds())
 			}
@@ -129,7 +129,7 @@ func TestHEICImportsAndConvertsWithoutNativeTools(t *testing.T) {
 		t.Fatalf("incorrect HEIC inspection: %+v", info)
 	}
 	t.Cleanup(service.Close)
-	comparison := call(t, service, "read_comparison_image", request{Path: path}).(ComparisonImage)
+	comparison := call(t, service, "read_comparison_image", request{TaskID: "heic-comparison", Path: path}).(ComparisonImage)
 	if comparison.Width != 64 || comparison.Height != 48 {
 		t.Fatalf("incorrect HEIC comparison: %+v", comparison)
 	}

@@ -27,6 +27,18 @@ func decodeComparison(t *testing.T, service *Service, comparison ComparisonImage
 	return img
 }
 
+func TestComparisonRequiresATaskIDBeforeCreatingFiles(t *testing.T) {
+	s := NewIsolated(t.TempDir())
+	t.Cleanup(s.Close)
+	payload, _ := json.Marshal(request{Path: fixture(t, image.NewNRGBA(image.Rect(0, 0, 16, 8)))})
+	if _, err := s.Call(context.Background(), "read_comparison_image", payload); err == nil {
+		t.Fatal("comparison accepted a request without a task ID")
+	}
+	if _, err := os.Stat(s.previews.root); !os.IsNotExist(err) {
+		t.Fatalf("invalid request created preview storage: %v", err)
+	}
+}
+
 func TestIsolatedComparisonBoundsPreviewAndReleasesPrivateFiles(t *testing.T) {
 	service := NewIsolated(t.TempDir())
 	t.Cleanup(service.Close)

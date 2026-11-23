@@ -88,7 +88,7 @@ func TestHDRPNGPreviewComparisonAndExport(t *testing.T) {
 			}
 			thumbnail := call(t, service, "read_thumbnail", request{Path: path}).(map[string]string)
 			t.Cleanup(service.Close)
-			comparison := call(t, service, "read_comparison_image", request{Path: path}).(ComparisonImage)
+			comparison := call(t, service, "read_comparison_image", request{TaskID: "hdr-comparison", Path: path}).(ComparisonImage)
 			for _, preview := range []image.Image{decodePreview(t, thumbnail["dataUrl"]), decodeComparison(t, service, comparison)} {
 				got := color.NRGBAModel.Convert(preview.At(0, 0)).(color.NRGBA)
 				if abs(int(got.R)-int(test.want)) > 1 {

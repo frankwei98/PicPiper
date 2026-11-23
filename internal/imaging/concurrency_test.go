@@ -52,7 +52,7 @@ func TestLiveConcurrencyIncreaseAndDecreasePreserveRunningWorkers(t *testing.T) 
 		t.Cleanup(cancel)
 		done := make(chan error, 1)
 		go func() {
-			raw, _ := json.Marshal(request{Path: path})
+			raw, _ := json.Marshal(request{TaskID: name, Path: path})
 			_, err := s.Call(ctx, "read_comparison_image", raw)
 			done <- err
 		}()
@@ -165,7 +165,7 @@ func TestLargeImageOperationsWaitWithoutTakingAWorkerAndCanCancel(t *testing.T) 
 	}{
 		{"compress_image", request{SourcePath: largeSource, Settings: settings{MaxDimension: 2560}}},
 		{"read_thumbnail", request{Path: largeSource, MaxSize: 96}},
-		{"read_comparison_image", request{Path: largeSource, MaxSize: 1280}},
+		{"read_comparison_image", request{TaskID: "large-comparison", Path: largeSource, MaxSize: 1280}},
 	} {
 		t.Run(test.operation, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
