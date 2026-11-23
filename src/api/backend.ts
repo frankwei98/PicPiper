@@ -86,6 +86,7 @@ export const imageApi = {
   copyOutputsToDir: (request: CopyOutputsRequest) => invoke<string[]>("copy_outputs_to_dir", { request }),
   readThumbnail: (request: ReadThumbnailRequest) => invoke<ReadThumbnailResponse>("read_thumbnail", { request }),
   readComparisonImage: (request: ReadComparisonImageRequest) => invoke<ReadComparisonImageResponse>("read_comparison_image", { request }),
+  readOriginalPreview: (request: { taskId: string; path: string; maxSize: number }) => invoke<ReadComparisonImageResponse>("read_original_preview", { request }),
 };
 
 export interface ListGalleryObjectsRequest {

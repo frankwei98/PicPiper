@@ -208,7 +208,7 @@ func (b *Backend) Call(ctx context.Context, operation, payload string) string {
 			if err = json.Unmarshal([]byte(payload), &req); err == nil {
 				err = b.cloud.SaveMiniSettings(req.Settings)
 			}
-		case "inspect_image", "create_optimizer_run", "compress_image", "copy_outputs_to_dir", "read_thumbnail", "read_comparison_image", "cancel_image_task":
+		case "inspect_image", "create_optimizer_run", "compress_image", "copy_outputs_to_dir", "read_thumbnail", "read_comparison_image", "read_original_preview", "cancel_image_task":
 			value, err = b.images.Call(ctx, operation, json.RawMessage(payload))
 		default:
 			value, err = b.cloud.Call(ctx, operation, json.RawMessage(payload))

@@ -15,6 +15,7 @@ vi.mock("../../api/backend", () => ({
     inspectImage: vi.fn(async ({ path }) => ({ path, fileName: path.split("/").pop(), sourceFormat: "png", originalBytes: 1000, width: 20, height: 20 })),
     compressImage: vi.fn(async ({ sourcePath, outputFileName }) => ({ sourcePath, outputPath: `/cache/run/${outputFileName}`, outputFileName, originalBytes: 1000, outputBytes: 500, targetFormat: "png" })),
     readThumbnail: vi.fn(async () => ({ dataUrl: "data:image/png;base64,AA==" })),
+    readOriginalPreview: vi.fn(async () => ({ url: "picpiper-preview://localhost/original.png", width: 20, height: 20 })),
     readComparisonImage: vi.fn(async () => ({ url: "picpiper-preview://localhost/preview.png", width: 20, height: 20 })),
     copyImages: mocks.copyImages, copyOutputsToDir: mocks.copyOutputsToDir,
   },

@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import type { OptimizeItem, WritableImageFormat } from "../../types";
 import { AVAILABLE_OUTPUT_FORMATS, formatBytes, sizeChangeLabel } from "./optimizeQueue";
 import { OptimizeItemCard } from "./OptimizeItemCard";
-import { STAGE_PREVIEW_EDGE, useOptimizePreview, type OptimizePreviews } from "./optimizePreviews";
+import { STAGE_PREVIEW_EDGE, useOptimizePreview, useOriginalPreview, type OptimizePreviews } from "./optimizePreviews";
 
 export type CompressionPreset = "original" | "balanced" | "small" | "lossless" | "custom";
 
@@ -71,7 +71,7 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
   const outputPath = selected?.status === "compressed" ? selected.outputPath : undefined;
   // Keep the selected original available for a later toggle, even if the source is moved.
   const originalPath = selected?.originalBytes ? selected.sourcePath : undefined;
-  const original = useOptimizePreview(props.previews, selected?.id, originalPath, STAGE_PREVIEW_EDGE, props.active, selected?.taskVersion);
+  const original = useOriginalPreview(props.previews, selected?.id, originalPath, props.active, selected?.taskVersion);
   const output = useOptimizePreview(props.previews, selected?.id, outputPath, STAGE_PREVIEW_EDGE, props.active && preview === "compressed");
   const previewUrl = output.url ?? original.url;
   const width = output.url ? selected?.outputWidth ?? selected?.originalWidth : selected?.originalWidth;

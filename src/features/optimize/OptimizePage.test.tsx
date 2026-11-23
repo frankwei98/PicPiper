@@ -3,7 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { OptimizePage } from "./OptimizePage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { cancelImageTask, createOptimizerRun, inspectImage, compressImage, copyOutputsToDir, readThumbnail, mockDialogOpen, mockOnFileDrop, uploadObject, generateObjectKey } = vi.hoisted(() => {
+const originalPreviewURL = "picpiper-preview://localhost/original.png";
+const { cancelImageTask, createOptimizerRun, inspectImage, compressImage, copyOutputsToDir, readThumbnail, readOriginalPreview, mockDialogOpen, mockOnFileDrop, uploadObject, generateObjectKey } = vi.hoisted(() => {
   const mockDialogOpen = vi.fn(async (..._args: unknown[]) => ["/tmp/real-photo.jpg"]);
   return {
     cancelImageTask: vi.fn(async () => {}),
@@ -34,9 +35,8 @@ const { cancelImageTask, createOptimizerRun, inspectImage, compressImage, copyOu
       targetFormat: "jpg",
     })),
     copyOutputsToDir: vi.fn(async () => ["/tmp/saved/real-photo.jpg"]),
-    readThumbnail: vi.fn(async ({ path }: { path: string }) => ({
-      dataUrl: path.includes("pic-piper") ? "data:image/jpeg;base64,COMPRESSED" : "data:image/jpeg;base64,ORIGINAL",
-    })),
+    readThumbnail: vi.fn(async ({ path: _path }: { path: string }) => ({ dataUrl: "data:image/jpeg;base64,COMPRESSED" })),
+    readOriginalPreview: vi.fn(async (_request: { taskId: string; path: string; maxSize: number }) => ({ url: "picpiper-preview://localhost/original.png", width: 1200, height: 800 })),
     mockDialogOpen,
     mockOnFileDrop: vi.fn((_listener: (paths: string[]) => void) => vi.fn()),
     uploadObject: vi.fn(async () => ({
@@ -65,6 +65,7 @@ vi.mock("../../api/backend", async () => ({
     compressImage,
     copyOutputsToDir,
     readThumbnail,
+    readOriginalPreview,
     readComparisonImage: vi.fn(async () => ({ url: "picpiper-preview://localhost/preview.png", width: 1200, height: 800 })),
   },
   uploadApi: {
@@ -107,9 +108,8 @@ function installDefaultMocks() {
     };
   });
   copyOutputsToDir.mockImplementation(async () => ["/tmp/saved/real-photo.jpg"]);
-  readThumbnail.mockImplementation(async ({ path }: { path: string }) => ({
-    dataUrl: path.includes("pic-piper") ? "data:image/jpeg;base64,COMPRESSED" : "data:image/jpeg;base64,ORIGINAL",
-  }));
+  readThumbnail.mockResolvedValue({ dataUrl: "data:image/jpeg;base64,COMPRESSED" });
+  readOriginalPreview.mockResolvedValue({ url: originalPreviewURL, width: 1200, height: 800 });
   uploadObject.mockImplementation(async () => ({
     key: "images/2026/06/real-photo-abcdef12.jpg",
     size: 240_000,
@@ -388,12 +388,13 @@ describe("OptimizePage", () => {
     await user.click(screen.getByTestId("image-drop-zone"));
     await screen.findByRole("button", { name: "Compare real-photo.jpg" });
     expect(readThumbnail).not.toHaveBeenCalled();
+    expect(readOriginalPreview).not.toHaveBeenCalled();
 
     view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" />);
     await screen.findByAltText("Compressed preview of real-photo.jpg");
     const outputReads = readThumbnail.mock.calls.map(([request]) => request).filter(({ path }) => path.includes("/pic-piper/"));
     expect(outputReads).toEqual([expect.objectContaining({ maxSize: 1024 })]);
-    expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ path: "/tmp/real-photo.jpg", maxSize: 1024 }));
+    expect(readOriginalPreview).toHaveBeenCalledWith(expect.objectContaining({ path: "/tmp/real-photo.jpg", maxSize: 1024 }));
   });
 
   it.each(["loads", "fails"])("shows dimensions for the displayed image when the resized preview %s", async (outcome) => {
@@ -436,25 +437,38 @@ describe("OptimizePage", () => {
     expect(readThumbnail.mock.calls.filter(([request]) => request.path.includes("/pic-piper/"))).toHaveLength(1);
   });
 
-  it("keeps the current original preview after its source is moved", async () => {
-    const normalRead = readThumbnail.getMockImplementation()!;
+  it("keeps a loaded original across selections after its source is moved and releases it on removal", async () => {
+    const originalPath = "/tmp/real-photo.jpg";
+    mockDialogOpen.mockResolvedValueOnce([originalPath, "/tmp/other.jpg"]);
+    const inspect = inspectImage.getMockImplementation()!;
+    inspectImage.mockImplementation(async (...args: unknown[]) => {
+      const { path } = args[0] as { path: string };
+      return { ...await inspect(...args), sourcePath: path, fileName: path.split("/").pop()! };
+    });
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{slug}.{ext}" />);
     await user.click(screen.getByTestId("image-drop-zone"));
-    await screen.findByAltText("Compressed preview of real-photo.jpg");
-    readThumbnail.mockImplementation((request) => request.path === "/tmp/real-photo.jpg"
-      ? Promise.reject(new Error("Source file no longer exists")) : normalRead(request));
     const toggle = within(screen.getByRole("group", { name: "Preview version" }));
     await user.click(toggle.getByRole("button", { name: "Original" }));
-    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
-    expect(readThumbnail.mock.calls.filter(([request]) => request.path === "/tmp/real-photo.jpg")).toHaveLength(1);
+    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", originalPreviewURL);
+    const normalRead = readOriginalPreview.getMockImplementation()!;
+    readOriginalPreview.mockImplementation((request) => request.path === originalPath
+      ? Promise.reject(new Error("Source file no longer exists")) : normalRead(request));
+    await user.click(await screen.findByRole("button", { name: "Select other.jpg" }));
+    await screen.findByAltText("Original preview of other.jpg");
+    await user.click(screen.getByRole("button", { name: "Select real-photo.jpg" }));
+    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", originalPreviewURL);
+    const originalReads = readOriginalPreview.mock.calls.filter(([request]) => request.path === originalPath);
+    expect(originalReads).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Remove real-photo.jpg" }));
+    expect(cancelImageTask).toHaveBeenCalledWith({ taskId: originalReads[0][0].taskId });
   });
 
   it("reloads a failed original preview after retrying compression", async () => {
     const originalPath = "/tmp/real-photo.jpg";
-    const normalRead = readThumbnail.getMockImplementation()!;
+    const normalRead = readOriginalPreview.getMockImplementation()!;
     let sourceAvailable = false;
-    readThumbnail.mockImplementation((request) => request.path === originalPath && !sourceAvailable
+    readOriginalPreview.mockImplementation((request) => request.path === originalPath && !sourceAvailable
       ? Promise.reject(new Error("Source file temporarily unavailable")) : normalRead(request));
     compressImage.mockRejectedValueOnce(new Error("Source file temporarily unavailable"));
     const user = userEvent.setup();
@@ -463,21 +477,19 @@ describe("OptimizePage", () => {
     const retry = await screen.findByRole("button", { name: "Retry unfinished" });
     const toggle = within(screen.getByRole("group", { name: "Preview version" }));
     await user.click(toggle.getByRole("button", { name: "Original" }));
-    expect(readThumbnail.mock.calls.filter(([request]) => request.path === originalPath)).toHaveLength(1);
+    expect(readOriginalPreview).toHaveBeenCalledTimes(1);
 
     sourceAvailable = true;
     await user.click(retry);
-    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
-    expect(readThumbnail.mock.calls.filter(([request]) => request.path === originalPath)).toHaveLength(2);
+    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", originalPreviewURL);
+    expect(readOriginalPreview).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the selected original across tabs when the cache cannot hold it", async () => {
-    const originalUrl = "data:image/png;base64,".padEnd(4 * 1024 * 1024 + 1, "A");
-    const normalRead = readThumbnail.getMockImplementation()!;
+  it("keeps a loaded original preview across tabs", async () => {
+    const normalRead = readOriginalPreview.getMockImplementation()!;
     let sourceMoved = false;
-    readThumbnail.mockImplementation((request) => request.path === "/tmp/real-photo.jpg"
-      ? sourceMoved ? Promise.reject(new Error("Source file no longer exists")) : Promise.resolve({ dataUrl: originalUrl })
-      : normalRead(request));
+    readOriginalPreview.mockImplementation((request) => sourceMoved
+      ? Promise.reject(new Error("Source file no longer exists")) : normalRead(request));
     const user = userEvent.setup();
     const view = render(<OptimizePage namingTemplate="{slug}.{ext}" />);
     await user.click(screen.getByTestId("image-drop-zone"));
@@ -489,16 +501,14 @@ describe("OptimizePage", () => {
     view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" isActive={false} />);
     expect(screen.queryByAltText("Original preview of real-photo.jpg")).not.toBeInTheDocument();
     view.rerender(<OptimizePage namingTemplate="{slug}.{ext}" />);
-    const restored = await screen.findByAltText("Original preview of real-photo.jpg");
-    expect(restored.getAttribute("src")?.length).toBe(originalUrl.length);
-    expect(readThumbnail.mock.calls.filter(([request]) => request.path === "/tmp/real-photo.jpg")).toHaveLength(1);
+    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", originalPreviewURL);
+    expect(readOriginalPreview).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a pending original read across preview toggles without replacing the compressed image", async () => {
-    let finishOriginal!: (value: { dataUrl: string }) => void;
-    const original = new Promise<{ dataUrl: string }>((resolve) => { finishOriginal = resolve; });
-    const normalRead = readThumbnail.getMockImplementation()!;
-    readThumbnail.mockImplementation((request) => request.path === "/tmp/real-photo.jpg" ? original : normalRead(request));
+    let finishOriginal!: (value: Awaited<ReturnType<typeof readOriginalPreview>>) => void;
+    const original = new Promise<Awaited<ReturnType<typeof readOriginalPreview>>>((resolve) => { finishOriginal = resolve; });
+    readOriginalPreview.mockReturnValue(original);
     const user = userEvent.setup();
     render(<OptimizePage namingTemplate="{slug}.{ext}" />);
     await user.click(screen.getByTestId("image-drop-zone"));
@@ -506,11 +516,11 @@ describe("OptimizePage", () => {
     const toggle = within(screen.getByRole("group", { name: "Preview version" }));
     await user.click(toggle.getByRole("button", { name: "Original" }));
     await user.click(toggle.getByRole("button", { name: "Compressed" }));
-    await act(async () => { finishOriginal({ dataUrl: "data:image/jpeg;base64,ORIGINAL" }); });
+    await act(async () => { finishOriginal({ url: originalPreviewURL, width: 1200, height: 800 }); });
     expect(screen.getByAltText("Compressed preview of real-photo.jpg")).toBeInTheDocument();
     await user.click(toggle.getByRole("button", { name: "Original" }));
-    expect(screen.getByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
-    expect(readThumbnail.mock.calls.filter(([request]) => request.path === "/tmp/real-photo.jpg")).toHaveLength(1);
+    expect(screen.getByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", originalPreviewURL);
+    expect(readOriginalPreview).toHaveBeenCalledTimes(1);
   });
 
   it("retries failed images with the latest batch preset", async () => {

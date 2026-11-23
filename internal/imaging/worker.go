@@ -102,7 +102,7 @@ func serveWorker(input io.Reader, output io.Writer, call func(context.Context, s
 
 func workerOperation(operation string) bool {
 	switch operation {
-	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "render_preview_png", "copy_image_png":
+	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "read_original_preview", "render_preview_png", "copy_image_png":
 		return true
 	}
 	return false

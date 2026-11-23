@@ -29,6 +29,7 @@ vi.mock("./api/backend", () => ({
     createOptimizerRun: vi.fn(async () => ({ runId: "r", outputDir: "/cache/r" })),
     compressImage: vi.fn(async () => ({ outputFileName: "photo.jpg", outputPath: "/cache/r/photo.jpg", outputBytes: 500 })),
     readThumbnail: vi.fn(async () => ({ dataUrl: "data:image/png;base64,test" })),
+    readOriginalPreview: vi.fn(async () => ({ url: "picpiper-preview://localhost/original.png", width: 20, height: 20 })),
     copyOutputsToDir: mocks.copy,
   },
   namingApi: { generateObjectKey: vi.fn(async () => ({ objectKey: "images/photo.jpg" })) },

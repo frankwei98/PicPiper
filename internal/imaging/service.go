@@ -123,8 +123,8 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 		s.previews.release(req.TaskID)
 		return nil, nil
 	}
-	if operation == "read_comparison_image" && req.TaskID == "" {
-		return nil, apperror.New("invalidRequest", "Choose a valid image task for the comparison preview.")
+	if (operation == "read_comparison_image" || operation == "read_original_preview") && req.TaskID == "" {
+		return nil, apperror.New("invalidRequest", "Choose a valid image task for the preview.")
 	}
 	if workerOperation(operation) {
 		workerContext, cancel := context.WithCancel(ctx)
@@ -149,7 +149,7 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 		return s.createRun()
 	case "copy_outputs_to_dir":
 		return s.copyOutputs(ctx, req)
-	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "render_preview_png", "copy_image_png":
+	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "read_original_preview", "render_preview_png", "copy_image_png":
 		if operation == "read_comparison_image" && req.SnapshotID != "" {
 			path, release, err := s.previews.borrowSnapshot(req.SnapshotID)
 			if err != nil {
@@ -180,7 +180,10 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 		}
 		switch operation {
 		case "read_comparison_image":
-			return s.comparison(ctx, req)
+			return s.comparison(ctx, req, true)
+		case "read_original_preview":
+			req.MaxSize = thumbnailEdge(req.MaxSize)
+			return s.comparison(ctx, req, false)
 		case "copy_image_png":
 			return s.clipboardPNG(ctx, req.Path)
 		case "render_preview_png":

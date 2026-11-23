@@ -191,7 +191,7 @@ func (s *Service) ServeComparison(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, name, time.Time{}, file)
 }
 
-func (s *Service) comparison(ctx context.Context, req request) (ComparisonImage, error) {
+func (s *Service) comparison(ctx context.Context, req request, snapshotSource bool) (ComparisonImage, error) {
 	path, err := s.previews.newPath()
 	if err != nil {
 		return ComparisonImage{}, err
@@ -207,7 +207,7 @@ func (s *Service) comparison(ctx context.Context, req request) (ComparisonImage,
 			}
 		}
 	}()
-	if req.SnapshotID == "" && req.MaxSize > 0 && req.TaskID != "" {
+	if snapshotSource && req.SnapshotID == "" && req.MaxSize > 0 {
 		// Decode Fit from the same private bytes that a later 100% request
 		// will use, even if the caller renames or edits the original in place.
 		snapshotPath = filepath.Join(filepath.Dir(path), "source-"+strings.TrimSuffix(filepath.Base(path), ".png"))
