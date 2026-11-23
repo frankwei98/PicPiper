@@ -96,6 +96,26 @@ describe("ImageComparison", () => {
     expect(imageApi.cancelImageTask).toHaveBeenCalledWith({ taskId: readComparisonImage.mock.calls[2][0].taskId });
   });
 
+  it("does not load 100% if the user returns to Fit before snapshots are ready", async () => {
+    let finishFit!: (image: ReadComparisonImageResponse) => void;
+    const image = { url: "picpiper-preview://localhost/preview", width: 2400, height: 1600 };
+    readComparisonImage
+      .mockImplementationOnce(() => new Promise((resolve) => { finishFit = resolve; }))
+      .mockResolvedValueOnce({ ...image, snapshotId: "compressed-snapshot" })
+      .mockResolvedValue(image);
+    const user = userEvent.setup();
+    render(<ImageComparison originalPath="source.jpg" compressedPath="output.webp" />);
+    await user.click(screen.getByRole("button", { name: "100%" }));
+    await user.click(screen.getByRole("button", { name: "Fit" }));
+    await act(async () => { finishFit({ ...image, snapshotId: "original-snapshot" }); });
+    expect(await screen.findByAltText("Original")).toBeInTheDocument();
+    expect(readComparisonImage).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole("button", { name: "100%" }));
+    expect(await screen.findByAltText("Original full-resolution preview")).toBeInTheDocument();
+    expect(readComparisonImage).toHaveBeenCalledTimes(4);
+  });
+
   it("waits for Fit's snapshot before loading 100% and retries a failed Fit", async () => {
     let failFit!: (error: Error) => void;
     const image = { url: "picpiper-preview://localhost/preview", width: 2400, height: 1600 };
