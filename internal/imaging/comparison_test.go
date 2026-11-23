@@ -101,6 +101,27 @@ func TestIsolatedComparisonBoundsPreviewAndReleasesPrivateFiles(t *testing.T) {
 	}
 }
 
+func TestOriginalPreviewSurvivesSourceRemovalWithoutKeepingASnapshot(t *testing.T) {
+	s := NewIsolated(t.TempDir())
+	t.Cleanup(s.Close)
+	source := fixture(t, image.NewNRGBA(image.Rect(0, 0, 1440, 80)))
+	preview := call(t, s, "read_original_preview", request{TaskID: "original-preview", Path: source, MaxSize: 2000}).(ComparisonImage)
+	if preview.SnapshotID != "" || preview.Width != 1440 {
+		t.Fatalf("unexpected original preview: %+v", preview)
+	}
+	if err := os.Remove(source); err != nil {
+		t.Fatal(err)
+	}
+	if w := decodeComparison(t, s, preview).Bounds().Dx(); w != 1024 {
+		t.Fatalf("original preview width = %d", w)
+	}
+	call(t, s, "cancel_image_task", request{TaskID: "original-preview"})
+	entries, err := filepath.Glob(filepath.Join(s.previews.dir, "*.png"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("released original preview left files behind: %v (%v)", entries, err)
+	}
+}
+
 func TestComparisonKeepsBorrowedSnapshotUntilReaderFinishes(t *testing.T) {
 	s := New(t.TempDir())
 	t.Cleanup(s.Close)

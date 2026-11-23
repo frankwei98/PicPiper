@@ -22,6 +22,8 @@ func needsLargeImageSlot(operation string, req request, probeModern func(string)
 		path, edge = req.SourcePath, req.Settings.MaxDimension
 	case "read_thumbnail":
 		edge, outputBytesPerPixel = thumbnailEdge(req.MaxSize), 4
+	case "read_original_preview":
+		edge = thumbnailEdge(req.MaxSize)
 	case "read_comparison_image":
 		edge = min(req.MaxSize, 1280)
 	case "copy_image_png":

@@ -129,6 +129,7 @@ export function OptimizePage({ processingConcurrency, activeProfile, profiles, n
     if (item) {
       cancelBackendTask(item);
       importedPaths.current.delete(item.sourcePath);
+      previews.forgetOriginal(id);
     }
     setItems((current) => current.filter((item) => item.id !== id));
     uploads.forgetItem(id);
