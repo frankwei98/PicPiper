@@ -63,16 +63,15 @@ export interface ReadThumbnailResponse {
   dataUrl: string;
 }
 
-export interface ReadComparisonImageRequest {
-  taskId: string;
-  path: string;
-  maxSize?: number;
-}
+export type ReadComparisonImageRequest = { taskId: string } & (
+  { path: string; maxSize: number } | { snapshotId: string }
+);
 
 export interface ReadComparisonImageResponse {
   url: string;
   width: number;
   height: number;
+  snapshotId?: string;
 }
 
 export interface ProcessingLimits { cpuCount: number; defaultConcurrency: number; concurrency: number }

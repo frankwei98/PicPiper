@@ -23,17 +23,26 @@ const ComparisonScheme = "picpiper-preview"
 const comparisonSessionPrefix = "session-"
 
 type ComparisonImage struct {
-	URL    string `json:"url,omitempty"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
+	URL        string `json:"url,omitempty"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	SnapshotID string `json:"snapshotId,omitempty"`
 }
 
 type comparisonFiles struct {
-	mu     sync.Mutex
-	root   string
-	dir    string
-	lease  *os.File
-	owners map[string]string
+	mu        sync.Mutex
+	root      string
+	dir       string
+	lease     *os.File
+	owners    map[string]string
+	snapshots map[string]*comparisonSnapshot
+}
+
+type comparisonSnapshot struct {
+	path    string
+	taskID  string
+	readers int
+	retired bool
 }
 
 func (files *comparisonFiles) newPath() (string, error) {
@@ -60,6 +69,7 @@ func (files *comparisonFiles) newPath() (string, error) {
 		}
 		files.dir, files.lease = dir, lease
 		files.owners = make(map[string]string)
+		files.snapshots = make(map[string]*comparisonSnapshot)
 	}
 	return filepath.Join(files.dir, rand.Text()+".png"), nil
 }
@@ -99,6 +109,36 @@ func (files *comparisonFiles) release(taskID string) {
 			_ = os.Remove(filepath.Join(files.dir, name))
 		}
 	}
+	for id, snapshot := range files.snapshots {
+		if snapshot.taskID == taskID {
+			delete(files.snapshots, id)
+			snapshot.retired = true
+			if snapshot.readers == 0 {
+				_ = os.Remove(snapshot.path)
+			}
+		}
+	}
+}
+
+func (files *comparisonFiles) borrowSnapshot(id string) (string, func(), error) {
+	files.mu.Lock()
+	defer files.mu.Unlock()
+	snapshot := files.snapshots[id]
+	if snapshot == nil {
+		return "", nil, apperror.New("comparisonExpired", "The comparison image is no longer available. Reopen the comparison to try again.")
+	}
+	snapshot.readers++
+	return snapshot.path, func() {
+		files.mu.Lock()
+		defer files.mu.Unlock()
+		snapshot.readers--
+		if snapshot.readers == 0 && (snapshot.retired || files.dir == "") {
+			_ = os.Remove(snapshot.path)
+			if files.dir == "" {
+				_ = os.Remove(filepath.Dir(snapshot.path))
+			}
+		}
+	}, nil
 }
 
 func (files *comparisonFiles) close() {
@@ -107,7 +147,7 @@ func (files *comparisonFiles) close() {
 	if files.dir != "" {
 		_ = files.lease.Close()
 		_ = os.RemoveAll(files.dir)
-		files.dir, files.lease, files.owners = "", nil, nil
+		files.dir, files.lease, files.owners, files.snapshots = "", nil, nil, nil
 	}
 }
 
@@ -157,12 +197,25 @@ func (s *Service) comparison(ctx context.Context, req request) (ComparisonImage,
 		return ComparisonImage{}, err
 	}
 	req.PreviewOutput = path
+	var snapshotPath string
 	published := false
 	defer func() {
 		if !published {
 			_ = os.Remove(path)
+			if snapshotPath != "" {
+				_ = os.Remove(snapshotPath)
+			}
 		}
 	}()
+	if req.SnapshotID == "" && req.MaxSize > 0 && req.TaskID != "" {
+		// Decode Fit from the same private bytes that a later 100% request
+		// will use, even if the caller renames or edits the original in place.
+		snapshotPath = filepath.Join(filepath.Dir(path), "source-"+strings.TrimSuffix(filepath.Base(path), ".png"))
+		if err := copyComparisonSource(ctx, req.Path, snapshotPath); err != nil {
+			return ComparisonImage{}, err
+		}
+		req.Path = snapshotPath
+	}
 	preview, err := s.renderPNGFile(ctx, req)
 	if err != nil {
 		return ComparisonImage{}, err
@@ -175,6 +228,10 @@ func (s *Service) comparison(ctx context.Context, req request) (ComparisonImage,
 	}
 	name := filepath.Base(path)
 	s.previews.owners[name] = req.TaskID
+	if snapshotPath != "" {
+		preview.SnapshotID = filepath.Base(snapshotPath)
+		s.previews.snapshots[preview.SnapshotID] = &comparisonSnapshot{path: snapshotPath, taskID: req.TaskID}
+	}
 	published = true
 	preview.URL = ComparisonScheme + "://localhost/" + name
 	if runtime.GOOS == "windows" {
@@ -182,6 +239,37 @@ func (s *Service) comparison(ctx context.Context, req request) (ComparisonImage,
 		preview.URL = "http://" + ComparisonScheme + ".localhost/" + name
 	}
 	return preview, nil
+}
+
+func copyComparisonSource(ctx context.Context, path, snapshot string) error {
+	// Check before opening to avoid blocking on a non-regular path.
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() || info.Size() > 256<<20 {
+		return apperror.New("comparisonUnavailable", "Choose a readable image under 256 MB to compare.")
+	}
+	source, err := os.Open(path)
+	if err != nil {
+		return apperror.New("imageOpenFailed", "Could not open the image. Choose a readable image file.")
+	}
+	defer source.Close()
+	if info, err := source.Stat(); err != nil || !info.Mode().IsRegular() || info.Size() > 256<<20 {
+		return apperror.New("comparisonUnavailable", "Choose a readable image under 256 MB to compare.")
+	}
+	output, err := os.OpenFile(snapshot, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return apperror.New("comparisonFailed", "Could not prepare the comparison. Check available disk space.")
+	}
+	written, copyErr := io.Copy(output, io.LimitReader(contextReader{ctx: ctx, reader: source}, (256<<20)+1))
+	closeErr := output.Close()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if written > 256<<20 {
+		return apperror.New("comparisonUnavailable", "Choose a readable image under 256 MB to compare.")
+	}
+	if copyErr != nil || closeErr != nil {
+		return apperror.New("comparisonFailed", "Could not prepare the comparison. Check available disk space.")
+	}
+	return nil
 }
 
 func (s *Service) renderPNGFile(ctx context.Context, req request) (ComparisonImage, error) {

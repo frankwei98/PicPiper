@@ -22,8 +22,8 @@ describe("ImageComparison", () => {
 
   it("loads both bounded previews on mount", async () => {
     readComparisonImage
-      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/original", width: 4000, height: 3000 })
-      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/compressed", width: 4000, height: 3000 });
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/original", width: 4000, height: 3000, snapshotId: "original-snapshot" })
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/compressed", width: 4000, height: 3000, snapshotId: "compressed-snapshot" });
 
     render(<ImageComparison originalPath="/photos/source.jpg" compressedPath="/cache/output.webp" />);
 
@@ -41,18 +41,22 @@ describe("ImageComparison", () => {
   });
 
   it("switches to native pixel dimensions and keeps both panes in sync", async () => {
-    readComparisonImage.mockResolvedValue({
-      url: "picpiper-preview://localhost/pixels",
-      width: 2400,
-      height: 1600,
-    });
+    const preview = { url: "picpiper-preview://localhost/pixels", width: 2400, height: 1600 };
+    readComparisonImage
+      .mockResolvedValueOnce({ ...preview, snapshotId: "original-snapshot" })
+      .mockResolvedValueOnce({ ...preview, snapshotId: "compressed-snapshot" })
+      .mockResolvedValue(preview);
     const user = userEvent.setup();
     render(<ImageComparison originalPath="source.jpg" compressedPath="output.webp" />);
     await screen.findByAltText("Original");
 
     await user.click(screen.getByRole("button", { name: "100%" }));
     const originalImage = await screen.findByAltText("Original full-resolution preview");
-    expect(readComparisonImage.mock.calls.slice(2).map(([request]) => request.maxSize)).toEqual([undefined, undefined]);
+    const taskId = readComparisonImage.mock.calls[2][0].taskId;
+    expect(readComparisonImage.mock.calls.slice(2)).toEqual([
+      [{ taskId, snapshotId: "original-snapshot" }],
+      [{ taskId, snapshotId: "compressed-snapshot" }],
+    ]);
     expect(originalImage).toHaveStyle({ width: "2400px", height: "1600px" });
     expect(screen.getByText("100% scale. Scroll either image to compare details.")).toBeInTheDocument();
 
@@ -69,7 +73,8 @@ describe("ImageComparison", () => {
     const fit = { url: "picpiper-preview://localhost/fit", width: 2400, height: 1600 };
     const actual = { ...fit, url: "picpiper-preview://localhost/actual" };
     readComparisonImage
-      .mockResolvedValueOnce(fit).mockResolvedValueOnce(fit)
+      .mockResolvedValueOnce({ ...fit, snapshotId: "original-snapshot" })
+      .mockResolvedValueOnce({ ...fit, snapshotId: "compressed-snapshot" })
       .mockResolvedValueOnce(actual).mockResolvedValueOnce(actual)
       .mockRejectedValue(new Error("Source file no longer exists"));
     const user = userEvent.setup();
@@ -91,10 +96,33 @@ describe("ImageComparison", () => {
     expect(imageApi.cancelImageTask).toHaveBeenCalledWith({ taskId: readComparisonImage.mock.calls[2][0].taskId });
   });
 
+  it("waits for Fit's snapshot before loading 100% and retries a failed Fit", async () => {
+    let failFit!: (error: Error) => void;
+    const image = { url: "picpiper-preview://localhost/preview", width: 2400, height: 1600 };
+    readComparisonImage
+      .mockImplementationOnce(() => new Promise((_, reject) => { failFit = reject; }))
+      .mockResolvedValueOnce({ ...image, snapshotId: "abandoned-compressed" })
+      .mockResolvedValueOnce({ ...image, snapshotId: "original-snapshot" })
+      .mockResolvedValueOnce({ ...image, snapshotId: "compressed-snapshot" })
+      .mockResolvedValue(image);
+    const user = userEvent.setup();
+    render(<ImageComparison originalPath="source.jpg" compressedPath="output.webp" />);
+    await user.click(screen.getByRole("button", { name: "100%" }));
+    expect(readComparisonImage).toHaveBeenCalledTimes(2);
+    await act(async () => { failFit(new Error("Source unavailable")); });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Source unavailable");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByAltText("Original full-resolution preview")).toBeInTheDocument();
+    expect(readComparisonImage.mock.calls.slice(4).map(([request]) => request)).toEqual([
+      { taskId: expect.any(String), snapshotId: "original-snapshot" },
+      { taskId: expect.any(String), snapshotId: "compressed-snapshot" },
+    ]);
+  });
+
   it("ignores clamped scroll echoes while allowing either pane to drive scrolling", async () => {
     readComparisonImage
-      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/original", width: 2400, height: 1600 })
-      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/compressed", width: 800, height: 600 })
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/original", width: 2400, height: 1600, snapshotId: "original-snapshot" })
+      .mockResolvedValueOnce({ url: "picpiper-preview://localhost/compressed", width: 800, height: 600, snapshotId: "compressed-snapshot" })
       .mockResolvedValueOnce({ url: "picpiper-preview://localhost/full-original", width: 2400, height: 1600 })
       .mockResolvedValueOnce({ url: "picpiper-preview://localhost/full-compressed", width: 800, height: 600 });
     const user = userEvent.setup();
