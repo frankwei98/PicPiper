@@ -123,6 +123,9 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 		s.previews.release(req.TaskID)
 		return nil, nil
 	}
+	if operation == "read_comparison_image" && req.TaskID == "" {
+		return nil, apperror.New("invalidRequest", "Choose a valid image task for the comparison preview.")
+	}
 	if workerOperation(operation) {
 		workerContext, cancel := context.WithCancel(ctx)
 		stop := context.AfterFunc(s.lifetime, cancel)

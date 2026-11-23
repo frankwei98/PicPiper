@@ -131,7 +131,7 @@ func TestTransparentPNGAndJPEGWhiteBackground(t *testing.T) {
 		}
 	}
 	t.Cleanup(service.Close)
-	response := call(t, service, "read_comparison_image", request{Path: source}).(ComparisonImage)
+	response := call(t, service, "read_comparison_image", request{TaskID: "transparency-comparison", Path: source}).(ComparisonImage)
 	if decoded := decodeComparison(t, service, response); decoded.Bounds() != img.Bounds() {
 		t.Fatalf("comparison changed dimensions: %v", decoded.Bounds())
 	}
