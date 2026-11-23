@@ -148,12 +148,15 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 	case "inspect_image", "compress_image", "read_thumbnail", "read_comparison_image", "render_preview_png", "copy_image_png":
 		// Admit high-memory work in the desktop process before reserving a
 		// worker. Each isolated child runs requests serially.
-		if s.executable != "" && needsLargeImageSlot(operation, req) {
-			select {
-			case s.largeImages <- struct{}{}:
-				defer func() { <-s.largeImages }()
-			case <-ctx.Done():
-				return nil, ctx.Err()
+		if s.executable != "" {
+			probeModern := func(path string) bool { return s.largeModernImage(ctx, path) }
+			if needsLargeImageSlot(operation, req, probeModern) {
+				select {
+				case s.largeImages <- struct{}{}:
+					defer func() { <-s.largeImages }()
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			}
 		}
 		if err := s.workers.acquire(ctx); err != nil {

@@ -2,6 +2,8 @@ package imaging
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/binary"
 	"image"
 	"image/color"
@@ -13,7 +15,7 @@ import (
 
 const largeImageBytes = 192 << 20
 
-func needsLargeImageSlot(operation string, req request) bool {
+func needsLargeImageSlot(operation string, req request, probeModern func(string) bool) bool {
 	path, edge, outputBytesPerPixel := req.Path, 0, int64(8)
 	switch operation {
 	case "compress_image":
@@ -67,6 +69,9 @@ func needsLargeImageSlot(operation string, req request) bool {
 			return true
 		}
 	default:
+		if probeModern != nil && (bytes.HasPrefix(magic, []byte{0xff, 0x0a}) || bytes.HasPrefix(magic, jxlContainerSignature) || len(magic) >= 8 && string(magic[4:8]) == "ftyp") {
+			return probeModern(path)
+		}
 		return true
 	}
 	if err != nil {
@@ -97,6 +102,32 @@ func needsLargeImageSlot(operation string, req request) bool {
 		peakBytes = max(peakBytes, 16*sourcePixels+4*info.Size())
 	}
 	return peakBytes >= largeImageBytes
+}
+
+// Modern header readers can enter bundled codecs. Probe in an isolated
+// worker, then return that worker before waiting for a large-image slot.
+func (s *Service) largeModernImage(ctx context.Context, path string) bool {
+	if err := s.workers.acquire(ctx); err != nil {
+		return true
+	}
+	defer s.workers.release()
+	if ctx.Err() != nil {
+		return true
+	}
+	value, err := s.isolated(ctx, "inspect_image", request{Path: path})
+	if err != nil {
+		return true
+	}
+	inspection, ok := value.(map[string]any)
+	if !ok {
+		return true
+	}
+	width, _ := inspection["width"].(float64)
+	height, _ := inspection["height"].(float64)
+	encodedBytes, _ := inspection["originalBytes"].(float64)
+	// Allow two conversion buffers and encoded data copied by the decoder,
+	// without reserving a large slot for even the smallest modern inputs.
+	return width < 1 || height < 1 || encodedBytes < 1 || 24*width*height+3*encodedBytes >= largeImageBytes
 }
 
 // Inspect chunk headers without loading IDAT or decompressing ICC profiles.
