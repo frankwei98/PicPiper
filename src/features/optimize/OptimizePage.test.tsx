@@ -396,6 +396,32 @@ describe("OptimizePage", () => {
     expect(readThumbnail).toHaveBeenCalledWith(expect.objectContaining({ path: "/tmp/real-photo.jpg", maxSize: 1024 }));
   });
 
+  it.each(["loads", "fails"])("shows dimensions for the displayed image when the resized preview %s", async (outcome) => {
+    const inspect = inspectImage.getMockImplementation()!;
+    const compress = compressImage.getMockImplementation()!;
+    inspectImage.mockImplementationOnce(async (...args) => ({ ...await inspect(...args), width: 1200, height: 800 }));
+    compressImage.mockImplementationOnce(async (...args) => ({ ...await compress(...args), width: 600, height: 400 }));
+    const read = readThumbnail.getMockImplementation()!;
+    let finish!: (value: { dataUrl: string }) => void;
+    let fail!: (error: Error) => void;
+    const output = new Promise<{ dataUrl: string }>((resolve, reject) => { finish = resolve; fail = reject; });
+    readThumbnail.mockImplementation((request) => request.path.includes("/pic-piper/") ? output : read(request));
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await userEvent.click(screen.getByTestId("image-drop-zone"));
+    await screen.findByText("1 of 1 ready");
+    const stage = within(screen.getByRole("region", { name: "Image preview" }));
+    await stage.findByAltText("Original preview of real-photo.jpg");
+    expect(stage.getByText("real-photo.jpg (1200 × 800 px)")).toBeInTheDocument();
+    if (outcome === "fails") {
+      await act(async () => { fail(new Error("Output unavailable")); });
+      expect(stage.getByText("real-photo.jpg (1200 × 800 px)")).toBeInTheDocument();
+    } else {
+      await act(async () => { finish({ dataUrl: "data:image/jpeg;base64,COMPRESSED" }); });
+      await stage.findByAltText("Compressed preview of real-photo.jpg");
+      expect(stage.getByText("real-photo.jpg (600 × 400 px)")).toBeInTheDocument();
+    }
+  });
+
   it("does not reread an already displayed large compressed preview after hiding the workspace", async () => {
     const dataUrl = "data:image/png;base64,".padEnd(4 * 1024 * 1024 + 1, "A");
     const normalRead = readThumbnail.getMockImplementation()!;

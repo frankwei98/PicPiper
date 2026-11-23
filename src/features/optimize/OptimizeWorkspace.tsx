@@ -74,8 +74,8 @@ export function OptimizeWorkspace(props: OptimizeWorkspaceProps) {
   const original = useOptimizePreview(props.previews, selected?.id, originalPath, STAGE_PREVIEW_EDGE, props.active, selected?.taskVersion);
   const output = useOptimizePreview(props.previews, selected?.id, outputPath, STAGE_PREVIEW_EDGE, props.active && preview === "compressed");
   const previewUrl = output.url ?? original.url;
-  const width = selected && preview === "compressed" && selected.status === "compressed" ? selected.outputWidth ?? selected.originalWidth : selected?.originalWidth;
-  const height = selected && preview === "compressed" && selected.status === "compressed" ? selected.outputHeight ?? selected.originalHeight : selected?.originalHeight;
+  const width = output.url ? selected?.outputWidth ?? selected?.originalWidth : selected?.originalWidth;
+  const height = output.url ? selected?.outputHeight ?? selected?.originalHeight : selected?.originalHeight;
 
   const dropHandlers = {
     onDrop: props.onDrop,
