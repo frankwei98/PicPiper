@@ -154,7 +154,8 @@ func TestLargeImageOperationsWaitWithoutTakingAWorkerAndCanCancel(t *testing.T) 
 	binary.BigEndian.PutUint32(header[4:8], 4096)
 	header[8], header[9] = 16, 6
 	prefix := append([]byte("\x89PNG\r\n\x1a\n"), pngChunk("IHDR", header)...)
-	if err := os.WriteFile(largeSource, append(prefix, pngChunk("IDAT", nil)...), 0600); err != nil {
+	prefix = append(prefix, pngChunk("IDAT", nil)...)
+	if err := os.WriteFile(largeSource, append(prefix, pngChunk("IEND", nil)...), 0600); err != nil {
 		t.Fatal(err)
 	}
 	source := fixture(t, image.NewNRGBA(image.Rect(0, 0, 16, 8)))
@@ -178,6 +179,37 @@ func TestLargeImageOperationsWaitWithoutTakingAWorkerAndCanCancel(t *testing.T) 
 			call(t, service, "read_thumbnail", request{Path: source, MaxSize: 96})
 			if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("large operation did not wait for its memory budget: %v", err)
+			}
+		})
+	}
+}
+
+func TestPNGMemoryAdmissionIncludesHDRAndAnimation(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		chunk []byte
+		large bool
+	}{
+		{"SDR stays in the regular pool", nil, false},
+		{"8-bit PQ tone mapping needs a large slot", pngChunk("cICP", []byte{9, 16, 0, 1}), true},
+		{"8-bit HLG tone mapping needs a large slot", pngChunk("cICP", []byte{9, 18, 0, 1}), true},
+		{"APNG first-frame extraction needs a large slot", pngChunk("acTL", []byte{0, 0, 0, 2, 0, 0, 0, 0}), true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			header := make([]byte, 13)
+			binary.BigEndian.PutUint32(header[:4], 4096)
+			binary.BigEndian.PutUint32(header[4:8], 4096)
+			header[8], header[9] = 8, 6
+			data := append([]byte("\x89PNG\r\n\x1a\n"), pngChunk("IHDR", header)...)
+			data = append(data, pngChunk("IDAT", nil)...)
+			data = append(data, tt.chunk...)
+			data = append(data, pngChunk("IEND", nil)...)
+			path := filepath.Join(t.TempDir(), "header.png")
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if got := needsLargeImageSlot("read_thumbnail", request{Path: path, MaxSize: 96}); got != tt.large {
+				t.Fatalf("large slot = %t, want %t", got, tt.large)
 			}
 		})
 	}
