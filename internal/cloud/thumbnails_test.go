@@ -62,7 +62,7 @@ func TestGalleryThumbnailPersistsAcrossRestartAndTracksObjectVersion(t *testing.
 	if downloads.Load() != 2 {
 		t.Fatal("changed ETag reused stale thumbnail")
 	}
-	matches, _ := filepath.Glob(filepath.Join(dir, "gallery-thumbnails", "source-*"))
+	matches, _ := filepath.Glob(filepath.Join(dir, "gallery-thumbnails", indexedThumbnailDir, "source-*"))
 	if len(matches) != 0 {
 		t.Fatal("full downloaded image left on disk")
 	}
@@ -154,6 +154,9 @@ func TestThumbnailCacheEvictsLeastRecentlyUsedAndDeletionClearsVersions(t *testi
 	if err := os.WriteFile(filepath.Join(dir, prefix+"-external.thumb"), []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.storeThumbnailLocked(dir, filepath.Join(dir, prefix+"-indexed.thumb"), data); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.saveSecret(p.ID, "fake-secret"); err != nil {
 		t.Fatal(err)
 	}
@@ -161,9 +164,14 @@ func TestThumbnailCacheEvictsLeastRecentlyUsedAndDeletionClearsVersions(t *testi
 	if _, err := call(t, s, "delete_gallery_object", map[string]any{"profile": p, "key": "image.png"}); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ := os.ReadDir(dir)
-	if len(entries) != 0 || s.thumbnails.bytes != 0 {
-		t.Fatal("deleted object left cached thumbnails")
+	for _, subdir := range []string{"", indexedThumbnailDir} {
+		matches, _ := filepath.Glob(filepath.Join(dir, subdir, "*.thumb"))
+		if len(matches) != 0 {
+			t.Fatalf("deleted object left cached thumbnails: %v", matches)
+		}
+	}
+	if s.thumbnails.bytes != 0 {
+		t.Fatal("deleted object still counts against the cache budget")
 	}
 }
 
@@ -227,17 +235,18 @@ func TestGalleryThumbnailCacheSharesBudgetAcrossInstances(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var total int64
-	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			t.Fatal(err)
+	if err := filepath.WalkDir(dir, func(_ string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".thumb") {
+			return err
 		}
-		total += info.Size()
+		info, err := entry.Info()
+		if err == nil {
+			total += info.Size()
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 	if total != thumbnailCacheBytes {
 		t.Fatalf("shared cache holds %d bytes, want %d", total, thumbnailCacheBytes)
@@ -247,6 +256,30 @@ func TestGalleryThumbnailCacheSharesBudgetAcrossInstances(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "seed-02.thumb")); !os.IsNotExist(err) {
 		t.Fatalf("oldest shared cache entry was not evicted: %v", err)
+	}
+}
+
+func TestThumbnailCacheUpdatesIndexWithoutRescanningOnIndexedWrites(t *testing.T) {
+	dataDir := t.TempDir()
+	dir := filepath.Join(dataDir, "gallery-thumbnails")
+	if err := os.MkdirAll(filepath.Join(dir, indexedThumbnailDir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	s := NewWithThumbnails(dataDir, nil)
+	scanned := s.thumbnails.scanned
+	now := scanned.Add(time.Minute)
+	s.now = func() time.Time { return now }
+	const data = "data:image/png;base64,c3ludGhldGlj"
+	for _, name := range []string{"one.thumb", "two.thumb", "one.thumb"} {
+		if err := s.storeThumbnailLocked(dir, filepath.Join(dir, name), data); err != nil {
+			t.Fatal(err)
+		}
+		if s.thumbnails.scanned != scanned {
+			t.Fatal("an indexed write rebuilt the directory index")
+		}
+	}
+	if s.thumbnails.bytes != 2*int64(len(data)) {
+		t.Fatalf("cache counted overwritten bytes: %d", s.thumbnails.bytes)
 	}
 }
 
@@ -378,7 +411,7 @@ func TestCachedThumbnailsAndDeletionDoNotWaitForRendering(t *testing.T) {
 		if err := <-done; err != nil {
 			t.Error(err)
 		}
-		files, _ := filepath.Glob(filepath.Join(s.dataDir, "gallery-thumbnails", thumbnailIdentity(p, "blocked.png")+"-*.thumb"))
+		files, _ := filepath.Glob(filepath.Join(s.dataDir, "gallery-thumbnails", indexedThumbnailDir, thumbnailIdentity(p, "blocked.png")+"-*.thumb"))
 		if len(files) != 0 {
 			t.Error("in-flight rendering republished deleted thumbnail")
 		}
