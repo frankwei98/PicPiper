@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"image"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/iotest"
 	"time"
 )
 
@@ -105,6 +107,28 @@ func TestWorkerProtocolProcessesMultipleRequestsAndRejectsInvalidOperations(t *t
 		t.Fatalf("worker dispatched %d operations, want 2", calls)
 	}
 }
+
+func TestWorkerConsumesJSONDelimiterBeforeClipboardFrames(t *testing.T) {
+	worker := &imageWorker{input: discardWriteCloser{io.Discard}}
+	stream := bytes.NewBufferString("{\"data\":null}\n")
+	if _, err := (workerPNGWriter{stream}).Write([]byte("mock PNG")); err != nil {
+		t.Fatal(err)
+	}
+	stream.WriteString("\x00\x00\x00\x00{\"data\":null}\n")
+	// Force the JSON object and its terminating newline into separate reads.
+	worker.output = io.NopCloser(iotest.OneByteReader(stream))
+	if _, err := worker.call(context.Background(), workerRequest{Operation: "inspect_image"}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := worker.call(context.Background(), workerRequest{Operation: workerClipboardOperation})
+	if err != nil || string(response.PNG) != "mock PNG" {
+		t.Fatalf("read clipboard after JSON response: %q, %v", response.PNG, err)
+	}
+}
+
+type discardWriteCloser struct{ io.Writer }
+
+func (discardWriteCloser) Close() error { return nil }
 
 func TestServiceCloseReapsIdleWorker(t *testing.T) {
 	service := NewIsolated(t.TempDir())

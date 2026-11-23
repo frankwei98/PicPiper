@@ -235,14 +235,19 @@ func (worker *imageWorker) call(ctx context.Context, req workerRequest) (workerR
 	finished := make(chan result, 1)
 	go func() {
 		var response workerReply
+		output := bufio.NewReader(worker.output)
 		err := json.NewEncoder(worker.input).Encode(req)
 		if err == nil && req.Operation == workerClipboardOperation {
-			response.PNG, err = readWorkerPNG(worker.output)
+			response.PNG, err = readWorkerPNG(output)
 		}
 		if err == nil {
-			// Scope the decoder to one response to avoid retaining its buffer
-			// for the lifetime of an idle process.
-			err = json.NewDecoder(worker.output).Decode(&response)
+			// Consume the newline as well as the JSON so a following binary
+			// response starts exactly at its first frame.
+			var line []byte
+			line, err = output.ReadBytes('\n')
+			if err == nil {
+				err = json.Unmarshal(line, &response)
+			}
 		}
 		finished <- result{response: response, err: err}
 	}()
