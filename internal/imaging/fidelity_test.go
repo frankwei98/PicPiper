@@ -120,7 +120,7 @@ func TestWebPAnimationPreservesFramesTimingLoopsAndResize(t *testing.T) {
 	}
 	for _, mode := range []string{"", "preserve", "firstFrame"} {
 		req := request{SourcePath: source, Settings: settings{TargetFormat: "webp", AnimationMode: mode}}
-		if got, want := needsLargeImageSlot("compress_image", req), mode != "firstFrame"; got != want {
+		if got, want := needsLargeImageSlot("compress_image", req, nil), mode != "firstFrame"; got != want {
 			t.Errorf("animation mode %q: large-image slot = %t, want %t", mode, got, want)
 		}
 	}
