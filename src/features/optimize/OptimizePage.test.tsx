@@ -409,6 +409,27 @@ describe("OptimizePage", () => {
     expect(readThumbnail.mock.calls.filter(([request]) => request.path === "/tmp/real-photo.jpg")).toHaveLength(1);
   });
 
+  it("reloads a failed original preview after retrying compression", async () => {
+    const originalPath = "/tmp/real-photo.jpg";
+    const normalRead = readThumbnail.getMockImplementation()!;
+    let sourceAvailable = false;
+    readThumbnail.mockImplementation((request) => request.path === originalPath && !sourceAvailable
+      ? Promise.reject(new Error("Source file temporarily unavailable")) : normalRead(request));
+    compressImage.mockRejectedValueOnce(new Error("Source file temporarily unavailable"));
+    const user = userEvent.setup();
+    render(<OptimizePage namingTemplate="{slug}.{ext}" />);
+    await user.click(screen.getByTestId("image-drop-zone"));
+    const retry = await screen.findByRole("button", { name: "Retry unfinished" });
+    const toggle = within(screen.getByRole("group", { name: "Preview version" }));
+    await user.click(toggle.getByRole("button", { name: "Original" }));
+    expect(readThumbnail.mock.calls.filter(([request]) => request.path === originalPath)).toHaveLength(1);
+
+    sourceAvailable = true;
+    await user.click(retry);
+    expect(await screen.findByAltText("Original preview of real-photo.jpg")).toHaveAttribute("src", "data:image/jpeg;base64,ORIGINAL");
+    expect(readThumbnail.mock.calls.filter(([request]) => request.path === originalPath)).toHaveLength(2);
+  });
+
   it("keeps the selected original across tabs when the cache cannot hold it", async () => {
     const originalUrl = "data:image/png;base64,".padEnd(4 * 1024 * 1024 + 1, "A");
     const normalRead = readThumbnail.getMockImplementation()!;
