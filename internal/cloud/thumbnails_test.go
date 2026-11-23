@@ -250,6 +250,47 @@ func TestGalleryThumbnailCacheSharesBudgetAcrossInstances(t *testing.T) {
 	}
 }
 
+func TestThumbnailCachePublicationCountsWritesFromOlderVersions(t *testing.T) {
+	dataDir := t.TempDir()
+	dir := filepath.Join(dataDir, "gallery-thumbnails")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	oldest := filepath.Join(dir, "oldest.thumb")
+	for path, size := range map[string]int64{
+		oldest:                               maxThumbnailBytes,
+		filepath.Join(dir, "existing.thumb"): thumbnailCacheBytes - 2*maxThumbnailBytes,
+	} {
+		if err := os.WriteFile(path, nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Truncate(path, size); err != nil {
+			t.Fatal(err)
+		}
+	}
+	past := time.Unix(1, 0)
+	if err := os.Chtimes(oldest, past, past); err != nil {
+		t.Fatal(err)
+	}
+	s := NewWithThumbnails(dataDir, nil)
+	const prefix = "data:image/png;base64,"
+	data := prefix + strings.Repeat("A", int(maxThumbnailBytes)-len(prefix))
+	legacy := filepath.Join(dir, "legacy.thumb")
+	// The previous release publishes atomically without the index lock or marker.
+	if err := atomicWrite(legacy, []byte(data), 0600, "thumbnailCacheFailed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.storeThumbnailLocked(dir, filepath.Join(dir, "current.thumb"), data); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(oldest); !os.IsNotExist(err) {
+		t.Fatalf("write from an older version did not participate in eviction: %v", err)
+	}
+	if s.thumbnails.bytes != thumbnailCacheBytes || s.thumbnails.size(filepath.Base(legacy)) != maxThumbnailBytes {
+		t.Fatalf("legacy write not included in the index: total %d, legacy %d", s.thumbnails.bytes, s.thumbnails.size(filepath.Base(legacy)))
+	}
+}
+
 func TestThumbnailCacheReplacesCorruptFilesAndForgetsMissingFiles(t *testing.T) {
 	dataDir := t.TempDir()
 	dir := filepath.Join(dataDir, "gallery-thumbnails")
