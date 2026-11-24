@@ -54,8 +54,10 @@ if (args[0] === 'api' && args[1].includes('/releases/tags/')) {
   if (release.draft) { console.error('gh: Not Found (HTTP 404)'); process.exit(1); }
   console.log(JSON.stringify(release)); process.exit(0);
 }
-if (args[0] === 'api' && args[1].endsWith('/releases?per_page=100')) {
-  console.log(JSON.stringify([release]));
+if (args[0] === 'api' && args[1].includes('/releases?')) {
+  const page = Number(new URL(args[1], 'https://example.test').searchParams.get('page') || 1);
+  const others = fs.existsSync('other-releases.json') ? JSON.parse(fs.readFileSync('other-releases.json')) : [];
+  console.log(JSON.stringify([release, ...others].slice((page - 1) * 100, page * 100)));
 } else if (args[0] === 'api' && args[1].endsWith('/releases/101')) {
   console.log(JSON.stringify(release));
   const reads = Number(fs.existsSync('release-reads') ? fs.readFileSync('release-reads','utf8') : 0) + 1;
@@ -181,6 +183,16 @@ test("publishing rechecks the release after asset verification before making it 
       assert.equal(requests.match(/releases\/101/g)?.length, 2, `${mutation}: final release state was not fetched`);
     } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
   }
+});
+test("an unresolved draft on a later release page blocks publication", () => {
+  const fixture = releaseCLI();
+  try {
+    const previews = Array.from({ length: 99 }, (_, index) => ({ tag_name: `preview-${index}`, prerelease: true, draft: false }));
+    const older = { tag_name: "v1.0.0", draft: true, prerelease: false };
+    writeFileSync(join(fixture.dir, "other-releases.json"), JSON.stringify([...previews, older]));
+    assert.throws(() => fixture.run("publish"), /Resolve the older draft v1.0.0/);
+    assert.doesNotMatch(readFileSync(join(fixture.dir, "requests.log"), "utf8"), /"upload"|"edit"/);
+  } finally { rmSync(fixture.dir, { recursive: true, force: true }); }
 });
 test("release notes select only the requested section in Release Please format", () => {
   const text = "# Changelog\n\n## [1.10.0](https://example.test)\n\nnewer\n\n## [1.1.0](https://example.test) (2026-11-14)\n\n### Features\n- update\n\n## 1.0.0\nold";
