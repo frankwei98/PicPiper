@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpdateState } from "@/api/updates";
@@ -71,6 +71,51 @@ describe("Update preferences", () => {
     expect(await screen.findByText("1.3.0")).toBeVisible();
     notify?.();
     expect(await screen.findByText("1.4.0")).toBeVisible();
+  });
+
+  it("lets the user save preferences after the manual check state arrives", async () => {
+    const user = userEvent.setup();
+    let finishCheckState!: (snapshot: UpdateState) => void;
+    state.mockResolvedValueOnce(current)
+      .mockImplementationOnce(() => new Promise<UpdateState>((resolve) => { finishCheckState = resolve; }));
+    render(<UpdatePreferences />);
+    await screen.findByText("Version 1.2.3");
+
+    await user.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(state).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Checking..." })).toBeDisabled();
+
+    const toggle = screen.getByRole("switch", { name: "Automatic update downloads" });
+    expect(toggle).toBeDisabled();
+    await user.click(toggle);
+    expect(preferences).not.toHaveBeenCalled();
+    await act(async () => finishCheckState({ ...current, availableVersion: "1.4.0" }));
+
+    expect(screen.getByText("1.4.0")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Check for updates" })).toBeEnabled();
+    await user.click(toggle);
+    expect(preferences).toHaveBeenCalledWith({ automaticChecks: true, automaticDownloads: true });
+    expect(toggle).toBeChecked();
+  });
+
+  it("keeps the check button disabled until the manual check itself returns", async () => {
+    const user = userEvent.setup();
+    let notify!: () => void;
+    let finishCheck!: () => void;
+    subscribe.mockImplementation((listener: () => void) => { notify = listener; return () => {}; });
+    check.mockImplementationOnce(() => new Promise<void>((resolve) => { finishCheck = resolve; }));
+    render(<UpdatePreferences />);
+    await screen.findByText("Version 1.2.3");
+
+    await user.click(screen.getByRole("button", { name: "Check for updates" }));
+    await act(async () => notify());
+    expect(state).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Checking..." })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Automatic update checks" })).toBeDisabled();
+
+    await act(async () => finishCheck());
+    expect(screen.getByRole("button", { name: "Check for updates" })).toBeEnabled();
+    expect(screen.getByRole("switch", { name: "Automatic update checks" })).toBeEnabled();
   });
 
   it("ignores an old state response after the panel becomes inactive", async () => {
