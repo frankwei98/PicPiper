@@ -29,6 +29,17 @@ const gh = (...args) => run("gh", args);
 const api = (path) => JSON.parse(gh("api", path));
 const digest = (file) => createHash("sha256").update(readFileSync(file)).digest();
 
+function listReleases(repository) {
+  const releases = [];
+  const fields = "map({id, tag_name, name, draft, prerelease, assets: [.assets[] | {name, state}]})";
+  for (let page = 1; ; page++) {
+    const path = `repos/${repository}/releases?per_page=100&page=${page}`;
+    const batch = JSON.parse(gh("api", path, "--jq", fields));
+    releases.push(...batch);
+    if (batch.length < 100) return releases;
+  }
+}
+
 // Publishing flips the whole draft public, not just the assets uploaded by
 // this run. Reject any draft asset that was not verified against the local
 // inventory.
@@ -166,7 +177,7 @@ async function main() {
   const files = releaseArtifacts(resolve(directory), app, repository, targets);
   // This job alone has write access and can enumerate private drafts. Use
   // the release ID for refreshes rather than the published-only tag route.
-  const all = api(`repos/${repository}/releases?per_page=100`);
+  const all = listReleases(repository);
   const release = all.find((item) => item.tag_name === tag);
   assert(release, `Missing release draft for ${tag}`);
   assert(!release.prerelease, "Stable pipeline cannot publish a prerelease");
