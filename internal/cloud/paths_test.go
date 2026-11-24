@@ -27,6 +27,7 @@ func requirePathError(t *testing.T, err error, code string) {
 
 func TestCallRejectsApplicationPrivatePaths(t *testing.T) {
 	dataDir := t.TempDir()
+	externalDir := t.TempDir()
 	privateFile := filepath.Join(dataDir, "private.png")
 	if err := os.WriteFile(privateFile, []byte("synthetic-private-image"), 0600); err != nil {
 		t.Fatal(err)
@@ -47,13 +48,29 @@ func TestCallRejectsApplicationPrivatePaths(t *testing.T) {
 	if _, err := s.saveSecret(p.ID, "synthetic-secret"); err != nil {
 		t.Fatal(err)
 	}
+	credentialPath := s.secretPath(p.ID)
 	cacheDir := filepath.Join(dataDir, "optimizer-cache")
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	cacheEscapeLink := filepath.Join(cacheDir, "escape.png")
-	if err := os.Symlink(s.secretPath(p.ID), cacheEscapeLink); err != nil {
+	if err := os.Symlink(credentialPath, cacheEscapeLink); err != nil {
 		t.Fatal(err)
+	}
+	cacheCredentialLink := filepath.Join(cacheDir, "credential.png")
+	externalCredentialLink := filepath.Join(externalDir, "credential.png")
+	if err := s.saveSettings(defaults()); err != nil {
+		t.Fatal(err)
+	}
+	externalSettingsLink := filepath.Join(externalDir, "settings.png")
+	for _, link := range []struct{ target, path string }{
+		{target: credentialPath, path: cacheCredentialLink},
+		{target: credentialPath, path: externalCredentialLink},
+		{target: s.settingsPath(), path: externalSettingsLink},
+	} {
+		if err := os.Link(link.target, link.path); err != nil {
+			t.Fatal(err)
+		}
 	}
 	danglingPrivateLink := filepath.Join(t.TempDir(), "dangling-private")
 	if err := os.Symlink(filepath.Join(dataDir, "not-created", "secret.png"), danglingPrivateLink); err != nil {
@@ -67,11 +84,15 @@ func TestCallRejectsApplicationPrivatePaths(t *testing.T) {
 		namingCode string
 	}{
 		{name: "private file", path: privateFile, uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
+		{name: "credential file", path: credentialPath, uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
 		{name: "private root", path: dataDir, uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
 		{name: "nonexistent private child", path: filepath.Join(dataDir, "not-created", "source.png"), uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
 		{name: "symlink private file", path: filepath.Join(privateLink, "private.png"), uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
 		{name: "symlink nonexistent private child", path: filepath.Join(privateLink, "future", "source.png"), uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
 		{name: "optimizer-cache symlink escaping to credential", path: cacheEscapeLink, uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
+		{name: "optimizer-cache hard link to credential", path: cacheCredentialLink, uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
+		{name: "external hard link to credential", path: externalCredentialLink, uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
+		{name: "external hard link to app settings", path: externalSettingsLink, uploadCode: "invalidSourcePath", namingCode: "invalidSourcePath"},
 		{name: "dangling symlink into private data", path: danglingPrivateLink, uploadCode: "uploadReadFailed", namingCode: "readFileFailed"},
 	} {
 		t.Run("upload/"+tc.name, func(t *testing.T) {
