@@ -24,11 +24,26 @@ func publishDownloadWith(publish, link func(string, string) error, source, targe
 	return err
 }
 
-func saveUnique(dir, name string, r io.Reader) (string, error) {
+func (s *Service) saveUnique(dir, name string, r io.Reader) (string, error) {
 	if !safeFilename(name) {
 		return "", fmt.Errorf("unsafe filename")
 	}
+	dir, err := s.resolveDownloadDir(dir)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	checked, err := s.resolveDownloadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	if checked != dir {
+		return "", appErr("invalidDownloadPath", "The download folder changed. Select it again.")
+	}
+	directory, err := os.Stat(dir)
+	if err != nil {
 		return "", err
 	}
 	stage, err := os.MkdirTemp(dir, ".picpiper-download-*")
@@ -41,12 +56,27 @@ func saveUnique(dir, name string, r io.Reader) (string, error) {
 		return "", err
 	}
 	_, copyErr := io.Copy(file, r)
+	var syncErr error
+	if copyErr == nil {
+		syncErr = file.Sync()
+	}
 	closeErr := file.Close()
 	if copyErr != nil {
 		return "", copyErr
 	}
+	if syncErr != nil {
+		return "", syncErr
+	}
 	if closeErr != nil {
 		return "", closeErr
+	}
+	checked, err = s.resolveDownloadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	current, err := os.Stat(checked)
+	if err != nil || checked != dir || !os.SameFile(directory, current) {
+		return "", appErr("invalidDownloadPath", "The download folder changed. Select it again.")
 	}
 	ext := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, ext)

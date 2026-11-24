@@ -37,6 +37,7 @@ type imageWorker struct {
 	command *exec.Cmd
 	input   io.WriteCloser
 	output  io.ReadCloser
+	reader  *bufio.Reader
 }
 
 // NewIsolated runs image work in this application's own executable. Cancelling
@@ -50,16 +51,28 @@ func NewIsolated(dataDir string) *Service {
 
 // RunWorker handles the private child-process protocol before any GUI starts.
 func RunWorker() bool {
+	return runWorker(func(dataDir string, input io.Reader, output io.Writer) {
+		service := New(dataDir)
+		defer service.Close()
+		serveWorker(input, output, service.Call)
+	})
+}
+
+func runWorker(serve func(string, io.Reader, io.Writer)) bool {
 	if len(os.Args) < 2 || os.Args[1] != "--image-worker" {
 		return false
 	}
-	if len(os.Args) != 3 {
-		_ = json.NewEncoder(os.Stdout).Encode(workerReply{Error: apperror.New("invalidRequest", "The image worker request is invalid.")})
+	output, err := isolateWorkerStdout()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Could not isolate image worker output:", err)
 		return true
 	}
-	service := New(os.Args[2])
-	defer service.Close()
-	serveWorker(os.Stdin, os.Stdout, service.Call)
+	defer output.Close()
+	if len(os.Args) != 3 {
+		_ = json.NewEncoder(output).Encode(workerReply{Error: apperror.New("invalidRequest", "The image worker request is invalid.")})
+		return true
+	}
+	serve(os.Args[2], os.Stdin, output)
 	return true
 }
 
@@ -233,18 +246,20 @@ func (worker *imageWorker) call(ctx context.Context, req workerRequest) (workerR
 		err      error
 	}
 	finished := make(chan result, 1)
+	if worker.reader == nil {
+		worker.reader = bufio.NewReader(worker.output)
+	}
 	go func() {
 		var response workerReply
-		output := bufio.NewReader(worker.output)
 		err := json.NewEncoder(worker.input).Encode(req)
 		if err == nil && req.Operation == workerClipboardOperation {
-			response.PNG, err = readWorkerPNG(output)
+			response.PNG, err = readWorkerPNG(worker.reader)
 		}
 		if err == nil {
 			// Consume the newline as well as the JSON so a following binary
 			// response starts exactly at its first frame.
 			var line []byte
-			line, err = output.ReadBytes('\n')
+			line, err = worker.reader.ReadBytes('\n')
 			if err == nil {
 				err = json.Unmarshal(line, &response)
 			}

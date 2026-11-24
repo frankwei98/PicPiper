@@ -81,7 +81,7 @@ func needsLargeImageSlot(operation string, req request, probeModern func(string)
 		return true
 	}
 	width, height := int64(config.Width), int64(config.Height)
-	if min(width, height) < 1 || max(width, height) > maxPixels || width*height > maxPixels {
+	if !validDimensions(config.Width, config.Height) {
 		return false
 	}
 	sourcePixels := width * height
@@ -128,6 +128,12 @@ func (s *Service) largeModernImage(ctx context.Context, path string) bool {
 	}
 	inspection, ok := value.(map[string]any)
 	if !ok {
+		return true
+	}
+	// AVIF inspection can report the primary item's dimensions while the
+	// bundled decoder selects the movie track. Keep animated inputs bounded
+	// even when both declared sizes are within the per-image limit.
+	if inspection["sourceFormat"] == "avif" && inspection["animated"] == true {
 		return true
 	}
 	width, _ := inspection["width"].(float64)

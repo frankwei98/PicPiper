@@ -18,13 +18,14 @@ func (read downloadReaderFunc) Read(b []byte) (int, error) { return read(b) }
 func TestDownloadFailureLeavesNoPartialFile(t *testing.T) {
 	for _, failure := range []error{io.ErrUnexpectedEOF, context.Canceled} {
 		t.Run(failure.Error(), func(t *testing.T) {
+			service := New(t.TempDir())
 			dir := t.TempDir()
 			existing := filepath.Join(dir, "photo.png")
 			if err := os.WriteFile(existing, []byte("user image"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			source := downloadReaderFunc(func(b []byte) (int, error) { return copy(b, "partial"), failure })
-			if _, err := saveUnique(dir, "photo.png", source); !errors.Is(err, failure) {
+			if _, err := service.saveUnique(dir, "photo.png", source); !errors.Is(err, failure) {
 				t.Fatalf("download error = %v", err)
 			}
 			entries, err := os.ReadDir(dir)
@@ -35,7 +36,7 @@ func TestDownloadFailureLeavesNoPartialFile(t *testing.T) {
 			if string(content) != "user image" {
 				t.Fatal("existing file changed")
 			}
-			path, err := saveUnique(dir, "photo.png", strings.NewReader("complete"))
+			path, err := service.saveUnique(dir, "photo.png", strings.NewReader("complete"))
 			if err != nil || filepath.Base(path) != "photo (2).png" {
 				t.Fatalf("retry consumed filename: %s %v", path, err)
 			}
@@ -46,6 +47,7 @@ func TestDownloadFailureLeavesNoPartialFile(t *testing.T) {
 func TestDownloadCollisionWithLongFilename(t *testing.T) {
 	for _, stem := range []string{strings.Repeat("a", 251), strings.Repeat("界", 83) + "ab"} {
 		t.Run(stem[:3], func(t *testing.T) {
+			service := New(t.TempDir())
 			dir := t.TempDir()
 			name := stem + ".png"
 			existing := filepath.Join(dir, name)
@@ -53,7 +55,7 @@ func TestDownloadCollisionWithLongFilename(t *testing.T) {
 				t.Fatal(err)
 			}
 			for range 2 {
-				path, err := saveUnique(dir, name, strings.NewReader("download"))
+				path, err := service.saveUnique(dir, name, strings.NewReader("download"))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -73,6 +75,7 @@ func TestDownloadCollisionWithLongFilename(t *testing.T) {
 }
 
 func TestDownloadPreservesFileCreatedDuringRead(t *testing.T) {
+	service := New(t.TempDir())
 	dir := t.TempDir()
 	target := filepath.Join(dir, "photo.png")
 	source := downloadReaderFunc(func(b []byte) (int, error) {
@@ -81,7 +84,7 @@ func TestDownloadPreservesFileCreatedDuringRead(t *testing.T) {
 		}
 		return copy(b, "complete"), io.EOF
 	})
-	path, err := saveUnique(dir, "photo.png", source)
+	path, err := service.saveUnique(dir, "photo.png", source)
 	if err != nil || filepath.Base(path) != "photo (2).png" {
 		t.Fatalf("concurrent file overwritten: %s %v", path, err)
 	}

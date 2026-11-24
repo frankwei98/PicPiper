@@ -126,6 +126,7 @@ func TestListPaginationConditionalUploadConflictAndDownload(t *testing.T) {
 	}))
 	defer srv.Close()
 	dir := t.TempDir()
+	external := t.TempDir()
 	s := New(dir)
 	p := testProfile(srv.URL)
 	_, e := call(t, s, "save_s3_secret", map[string]string{"profileId": "profile", "secretAccessKey": "secret"})
@@ -152,7 +153,7 @@ func TestListPaginationConditionalUploadConflictAndDownload(t *testing.T) {
 			t.Fatalf("unexpected next token: %#v", res.NextContinuationToken)
 		}
 	}
-	source := filepath.Join(dir, "source.webp")
+	source := filepath.Join(external, "source.webp")
 	os.WriteFile(source, []byte("upload-data"), 0600)
 	_, e = call(t, s, "upload_gallery_object", map[string]any{"profile": p, "sourcePath": source, "objectKey": "pics/new.webp", "contentType": "image/webp"})
 	if e == nil || !strings.Contains(e.Error(), "conflicted") {
@@ -165,7 +166,7 @@ func TestListPaginationConditionalUploadConflictAndDownload(t *testing.T) {
 	if e == nil || !strings.Contains(e.Error(), "already exists") {
 		t.Fatalf("expected existing-object error, got %v", e)
 	}
-	v, e := call(t, s, "download_gallery_object", map[string]any{"profile": p, "key": "pics/a.jpg", "outputDir": dir})
+	v, e := call(t, s, "download_gallery_object", map[string]any{"profile": p, "key": "pics/a.jpg", "outputDir": external})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -251,11 +252,12 @@ func TestSafeFilenameAndExclusiveDownloads(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
-	first, err := saveUnique(dir, "photo.jpg", strings.NewReader("first"))
+	service := New(t.TempDir())
+	first, err := service.saveUnique(dir, "photo.jpg", strings.NewReader("first"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := saveUnique(dir, "photo.jpg", strings.NewReader("second"))
+	second, err := service.saveUnique(dir, "photo.jpg", strings.NewReader("second"))
 	if err != nil {
 		t.Fatal(err)
 	}
