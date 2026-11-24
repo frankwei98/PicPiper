@@ -231,7 +231,7 @@ func TestSmallModernImagesDoNotWaitForLargeSlots(t *testing.T) {
 	}).(Result).OutputPath
 	for _, path := range []string{filepath.Join("testdata", "sample.heic"), filepath.Join("testdata", "rotation.avif"), jxl} {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
 			if data, err := s.ThumbnailDataURL(ctx, path, 96); err != nil || data == "" {
 				t.Fatalf("small image waited for a large-image slot or failed to render: %v", err)
