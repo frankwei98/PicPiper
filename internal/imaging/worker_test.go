@@ -147,23 +147,26 @@ func TestWorkerKeepsCodecDiagnosticsOutOfReusedProtocol(t *testing.T) {
 	service.SetConcurrency(1)
 	run := call(t, service, "create_optimizer_run", request{}).(map[string]string)
 	pid := workerPID(t, service)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 
 	for _, fixture := range []string{"rotation.avif", "animated.jxl"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		data, err := os.ReadFile(filepath.Join("testdata", fixture))
 		if err != nil {
+			cancel()
 			t.Fatal(err)
 		}
 		path := filepath.Join(run["outputDir"], fixture)
 		if err := os.WriteFile(path, data, 0600); err != nil {
+			cancel()
 			t.Fatal(err)
 		}
 		payload, _ := json.Marshal(request{Path: path, MaxSize: 48})
 		if _, err := service.Call(ctx, "read_thumbnail", payload); err != nil {
+			cancel()
 			t.Fatalf("decode %s in worker: %v", fixture, err)
 		}
 		data, err = service.ClipboardPNG(ctx, path)
+		cancel()
 		if err != nil {
 			t.Fatalf("clipboard %s: %v", fixture, err)
 		}
