@@ -142,18 +142,22 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		return s.loadSettings()
 	case "save_app_settings":
 		var p struct {
-			Settings settings      `json:"settings"`
-			Scope    string        `json:"scope"`
-			MiniBase *MiniSettings `json:"miniBase"`
+			Settings    settings      `json:"settings"`
+			Scope       string        `json:"scope"`
+			MiniBase    *MiniSettings `json:"miniBase"`
+			StorageBase *settings     `json:"storageBase"`
 		}
 		if err := decode("settings", &p); err != nil {
 			return nil, err
 		}
 		if p.Scope != "" {
-			return s.saveScopedSettings(p.Settings, p.Scope, p.MiniBase)
+			return s.saveScopedSettings(p.Settings, p.Scope, p.MiniBase, p.StorageBase)
 		}
 		p.Settings.Mini = clipboardMiniSettings(p.Settings.Mini)
 		if err := validateSettings(p.Settings); err != nil {
+			return nil, err
+		}
+		if err := validateNamingTemplate(p.Settings.NamingTemplate); err != nil {
 			return nil, err
 		}
 		return nil, s.saveSettings(p.Settings)
@@ -883,6 +887,12 @@ func slugify(v string) string {
 	}
 	return strings.Trim(b.String(), "-")
 }
+
+func validateNamingTemplate(template string) error {
+	_, err := renderKey(template, "photo.png", "png", "00000000", time.Time{})
+	return err
+}
+
 func renderKey(template, name, ext, hash string, now time.Time) (string, error) {
 	if !strings.Contains(template, "{ext}") {
 		return "", appErr("invalidTemplate", "Naming template must include {ext}.")

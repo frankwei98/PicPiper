@@ -1,9 +1,11 @@
 package cloud
 
+import "reflect"
+
 // A settings form owns either storage fields or general preferences. Merge
 // those edits with the latest disk value so profile writes and rollback never
 // restore an old Mini snapshot from another window.
-func (s *Service) saveScopedSettings(draft settings, scope string, miniBase *MiniSettings) (settings, error) {
+func (s *Service) saveScopedSettings(draft settings, scope string, miniBase *MiniSettings, storageBase *settings) (settings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	current, err := s.loadSettingsLocked()
@@ -11,7 +13,13 @@ func (s *Service) saveScopedSettings(draft settings, scope string, miniBase *Min
 		return settings{}, err
 	}
 	switch scope {
-	case "storage":
+	case "storage", "storageRollback":
+		if scope == "storageRollback" && storageBase == nil {
+			return settings{}, appErr("invalidRequest", "Storage rollback requires the settings being restored from.")
+		}
+		if storageBase != nil && !sameStorageSettings(current, *storageBase) {
+			return settings{}, appErr("storageSettingsChanged", "Storage settings changed. Reload Settings before retrying.")
+		}
 		current.Profiles = draft.Profiles
 		current.NamingTemplate = draft.NamingTemplate
 		current.DefaultProfileID = draft.DefaultProfileID
@@ -38,8 +46,17 @@ func (s *Service) saveScopedSettings(draft settings, scope string, miniBase *Min
 	if err = validateSettings(current); err != nil {
 		return settings{}, err
 	}
+	if scope == "storage" {
+		if err = validateNamingTemplate(current.NamingTemplate); err != nil {
+			return settings{}, err
+		}
+	}
 	if err = s.saveSettingsLocked(current); err != nil {
 		return settings{}, err
 	}
 	return current, nil
+}
+
+func sameStorageSettings(a, b settings) bool {
+	return a.NamingTemplate == b.NamingTemplate && reflect.DeepEqual(a.Profiles, b.Profiles) && reflect.DeepEqual(a.DefaultProfileID, b.DefaultProfileID)
 }

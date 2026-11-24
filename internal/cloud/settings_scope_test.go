@@ -41,3 +41,42 @@ func TestScopedSettingsKeepConcurrentMiniChanges(t *testing.T) {
 		t.Fatalf("unchanged general fields reverted Mini: %+v %v", current.Mini, err)
 	}
 }
+
+func TestStorageRollbackRestoresLegacyTemplateWithoutReplacingNewerEdits(t *testing.T) {
+	s := New(t.TempDir())
+	base := defaults()
+	base.NamingTemplate = "gallery/{slug}"
+	if err := s.saveSettings(base); err != nil {
+		t.Fatal(err)
+	}
+	draft := defaults()
+	draft.Profiles = []profile{testProfile("https://s3.example.test")}
+	applied, err := call(t, s, "save_app_settings", map[string]any{"settings": draft, "scope": "storage"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quality := 77
+	if _, err := s.SaveMiniCompressionSettings(MiniCompressionSettings{Quality: &quality}); err != nil {
+		t.Fatal(err)
+	}
+	rollback := map[string]any{"settings": base, "scope": "storageRollback", "storageBase": applied}
+	value, err := call(t, s, "save_app_settings", rollback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved := value.(settings); saved.NamingTemplate != base.NamingTemplate || len(saved.Profiles) != 0 || saved.Mini.Quality != quality {
+		t.Fatalf("rollback should restore the old storage settings and preserve Mini edits: %+v", saved)
+	}
+	newer := draft
+	newer.NamingTemplate = "later/{slug}.{ext}"
+	if _, err = call(t, s, "save_app_settings", map[string]any{"settings": newer, "scope": "storage"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = call(t, s, "save_app_settings", rollback); err == nil {
+		t.Fatal("rollback accepted after a newer storage edit")
+	}
+	loaded, err := s.loadSettings()
+	if err != nil || loaded.NamingTemplate != newer.NamingTemplate {
+		t.Fatalf("newer settings were lost: %+v, %v", loaded, err)
+	}
+}
