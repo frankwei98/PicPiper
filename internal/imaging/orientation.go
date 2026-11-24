@@ -182,9 +182,12 @@ func applyOrientation(src image.Image, orientation int) image.Image {
 	if orientation >= 5 {
 		outWidth, outHeight = height, width
 	}
-	var dst draw.Image = image.NewNRGBA(image.Rect(0, 0, outWidth, outHeight))
+	orientedBounds := image.Rect(0, 0, outWidth, outHeight)
+	var dst draw.Image
 	if highBitDepth(src) {
-		dst = image.NewNRGBA64(image.Rect(0, 0, outWidth, outHeight))
+		dst = image.NewNRGBA64(orientedBounds)
+	} else {
+		dst = image.NewNRGBA(orientedBounds)
 	}
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {

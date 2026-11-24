@@ -6,12 +6,32 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestOrientationPreserves16BitPixels(t *testing.T) {
+	const width, height = 40, 30
+	src := image.NewNRGBA64(image.Rect(5, 7, 5+width, 7+height))
+	sample := color.NRGBA64{R: 0x1234, G: 0x5678, B: 0x9abc, A: 0xcdef}
+	src.SetNRGBA64(5+10, 7+20, sample)
+
+	oriented := applyOrientation(src, 6)
+
+	if oriented.Bounds() != image.Rect(0, 0, height, width) {
+		t.Fatalf("orientation produced bounds %v", oriented.Bounds())
+	}
+	if got := color.NRGBA64Model.Convert(oriented.At(height-1-20, 10)); got != sample {
+		t.Fatalf("rotated pixel = %+v, want %+v", got, sample)
+	}
+	if _, _, _, alpha := oriented.At(0, 0).RGBA(); alpha != 0 {
+		t.Fatalf("transparent pixel has alpha %d", alpha)
+	}
+}
 
 func TestOrientationFindsEXIFAfterLargePayloads(t *testing.T) {
 	tiff := []byte{'I', 'I', 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 1, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0}
