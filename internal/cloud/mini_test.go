@@ -125,6 +125,39 @@ func TestMiniUploadCapturesProfileEscapesURLAndNeverOverwrites(t *testing.T) {
 	}
 }
 
+func TestMiniUploadRetryWithExtensionOnlyKeyStaysInGallery(t *testing.T) {
+	s, p, _, source := newUploadFixture(t)
+	baseURL := "https://images.example.test/public"
+	p.PublicBaseURL = &baseURL
+	cfg := defaults()
+	cfg.Profiles = []profile{p}
+	cfg.Mini.Enabled = true
+	cfg.NamingTemplate = ".{ext}"
+	if _, err := call(t, s, "save_app_settings", map[string]any{"settings": cfg}); err != nil {
+		t.Fatal(err)
+	}
+	uploadRecorded(t, s, p, source, ".png", "existing.png")
+	plan, err := s.MiniUploadPlan(p.ID, "url")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const name = "📷.png"
+	link, err := s.UploadMini(context.Background(), plan, source, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := call(t, s, "list_gallery_objects", map[string]any{"profile": p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, object := range value.(listResponse).Objects {
+		if object.FileName == name && strings.HasSuffix(object.Key, ".png") && object.PublicURL != nil && *object.PublicURL == link {
+			return
+		}
+	}
+	t.Fatalf("Mini retry uploaded %q but did not create a visible PNG: %+v", link, value)
+}
+
 func TestMiniLegacyUploadPreferenceBecomesClipboardWithoutS3(t *testing.T) {
 	s := New(t.TempDir())
 	v := defaults()

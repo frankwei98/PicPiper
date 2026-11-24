@@ -314,7 +314,8 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		modified := obj.UploadedAt
 		obj.LastModified = &modified
 		record := uploadedImage{Key: obj.Key, FileName: obj.FileName, UploadedAt: obj.UploadedAt, Size: obj.Size, ETag: obj.ETag, UploadID: uploadID}
-		if isImage(obj.Key) {
+		obj.IsImage = record.isImage()
+		if obj.IsImage {
 			obj.UploadRecordWarning = s.recordUpload(p.Profile, record) != nil
 		}
 		return obj, nil
@@ -890,7 +891,11 @@ func renderKey(template, name, ext, hash string, now time.Time) (string, error) 
 	if i := strings.LastIndex(stem, "."); i >= 0 {
 		stem = stem[:i]
 	}
-	key := strings.NewReplacer("{yyyy}", now.Format("2006"), "{mm}", now.Format("01"), "{slug}", slugify(stem), "{hash}", hash[:8], "{ext}", strings.TrimLeft(ext, ".")).Replace(template)
+	slug := slugify(stem)
+	if slug == "" {
+		slug = "image"
+	}
+	key := strings.NewReplacer("{yyyy}", now.Format("2006"), "{mm}", now.Format("01"), "{slug}", slug, "{hash}", hash[:8], "{ext}", strings.TrimLeft(ext, ".")).Replace(template)
 	key = strings.ReplaceAll(key, "\\", "/")
 	if e := validateKey(key); e != nil {
 		return "", e
@@ -912,7 +917,7 @@ func appendSuffix(key, suffix string) (string, error) {
 	i := strings.LastIndex(key, "/")
 	dir, file := key[:i+1], key[i+1:]
 	dot := strings.LastIndex(file, ".")
-	if dot > 0 && dot < len(file)-1 {
+	if dot >= 0 && dot < len(file)-1 {
 		file = file[:dot] + "-" + suffix + file[dot:]
 	} else {
 		file += "-" + suffix

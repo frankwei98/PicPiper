@@ -116,7 +116,15 @@ func (s *Service) readGalleryThumbnail(ctx context.Context, p thumbnailRequest) 
 		return nil, err
 	}
 	if !isImage(p.Key) {
-		return nil, appErr("thumbnailUnavailable", "This object is not an image.")
+		s.mu.Lock()
+		records, err := s.loadUploadRecordsLocked(p.Profile)
+		s.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		if !records[p.Key].isImage() {
+			return nil, appErr("thumbnailUnavailable", "This object is not an image.")
+		}
 	}
 	version, _ := json.Marshal([]any{"v1-384", p.ETag, p.Size, p.LastModified})
 	hash := sha256.Sum256(version)
