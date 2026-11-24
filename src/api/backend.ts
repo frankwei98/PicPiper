@@ -106,6 +106,8 @@ export interface ListGalleryObjectsResponse {
 export interface DeleteObjectRequest {
   profile: S3Profile;
   key: string;
+  uploadId?: string;
+  etag?: string;
 }
 
 export interface DownloadObjectRequest {

@@ -213,9 +213,17 @@ func (s *Service) forgetInvalidUploads(p profile, invalid []uploadedImage) error
 	return atomicWrite(s.uploadRecordsPath(p), data, 0600, "uploadHistoryWriteFailed")
 }
 
+func (s *Service) headUpload(ctx context.Context, p profile, secret, key string) (uploadID, etag string, err error) {
+	resp, err := s.doS3(ctx, p, secret, http.MethodHead, key, nil, "", nil)
+	if err != nil {
+		return "", "", err
+	}
+	resp.Body.Close()
+	return resp.Header.Get("X-Amz-Meta-Picpiper-Upload-Id"), resp.Header.Get("ETag"), nil
+}
+
 func (s *Service) verifyUpload(ctx context.Context, p profile, secret string, record uploadedImage) (bool, error) {
-	// Verify only known app uploads, never enumerate unrelated bucket contents.
-	resp, err := s.doS3(ctx, p, secret, http.MethodHead, record.Key, nil, "", nil)
+	uploadID, etag, err := s.headUpload(ctx, p, secret, record.Key)
 	if err != nil {
 		var status *statusError
 		if errors.As(err, &status) && status.status == http.StatusNotFound {
@@ -223,8 +231,6 @@ func (s *Service) verifyUpload(ctx context.Context, p profile, secret string, re
 		}
 		return false, err
 	}
-	defer resp.Body.Close()
-	uploadID, etag := resp.Header.Get("X-Amz-Meta-Picpiper-Upload-Id"), resp.Header.Get("ETag")
 	if uploadID == "" || (uploadID == record.UploadID && record.ETag != "" && etag == "") {
 		return false, appErr("s3ObjectUnverified", "The provider did not return enough metadata to verify this upload.")
 	}
@@ -346,6 +352,7 @@ func (s *Service) listUploads(ctx context.Context, request galleryRequest, secre
 			record := batch[offset]
 			modified := record.UploadedAt
 			object := makeObject(request.Profile, record.Key, record.Size, &modified)
+			object.UploadID = record.UploadID
 			object.ETag = record.ETag
 			object.FileName, object.UploadedAt = record.FileName, record.UploadedAt
 			out.Objects = append(out.Objects, object)

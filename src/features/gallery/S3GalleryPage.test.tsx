@@ -559,6 +559,79 @@ describe("S3GalleryPage", () => {
     expect(screen.queryByText("images/photo.webp")).not.toBeInTheDocument();
   });
 
+  it.each([false, true])("filters a deleted upload from a pending sort without hiding a newer upload: %s", async (reuploaded) => {
+    const user = userEvent.setup();
+    const deleted = { key: "images/photo.webp", fileName: "Old photo.webp", uploadId: "test-original", etag: '"synthetic-etag"', uploadedAt: "2026-11-20T08:00:00.000000000Z", size: 100, isImage: true };
+    const survivor = { key: "images/survivor.webp", size: 100, isImage: true };
+    const replacement = { ...deleted, fileName: "New photo.webp", uploadId: "test-replacement" };
+    let finishDelete!: () => void;
+    let finishSort!: (value: unknown) => void;
+    deleteObject.mockImplementationOnce(() => new Promise<void>((resolve) => { finishDelete = resolve; }));
+    listObjects
+      .mockResolvedValueOnce({ objects: [deleted], nextContinuationToken: null })
+      .mockImplementationOnce(() => new Promise((resolve) => { finishSort = resolve; }));
+
+    render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile]} />);
+    await screen.findByText(deleted.fileName);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sort by" }), "name-asc");
+    expect(listObjects).toHaveBeenNthCalledWith(2, { profile, prefix: "images", sort: "name-asc" });
+
+    await act(async () => finishDelete());
+    await act(async () => finishSort({ objects: [reuploaded ? replacement : deleted, survivor], nextContinuationToken: null }));
+
+    expect(await screen.findByText(survivor.key)).toBeInTheDocument();
+    expect(screen.queryByText(deleted.fileName)).not.toBeInTheDocument();
+    if (reuploaded) expect(screen.getByText(replacement.fileName)).toBeInTheDocument();
+    else expect(screen.queryByText(deleted.key)).not.toBeInTheDocument();
+    expect(deleteObject).toHaveBeenCalledWith({ profile, key: deleted.key, uploadId: deleted.uploadId, etag: deleted.etag });
+  });
+
+  it.each(["success", "failure"])("keeps a pending delete and its feedback in its own bucket: %s", async (result) => {
+    const user = userEvent.setup();
+    const otherProfile = { ...profile, id: "another", name: "Another profile", defaultPrefix: "images", bucket: "different" };
+    const item = { key: "images/photo.webp", size: 100, isImage: true };
+    let finishDelete!: () => void;
+    let rejectDelete!: (error: Error) => void;
+    let finishOtherDelete!: () => void;
+    deleteObject
+      .mockImplementationOnce(() => new Promise<void>((resolve, reject) => {
+        finishDelete = resolve;
+        rejectDelete = reject;
+      }))
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { finishOtherDelete = resolve; }));
+    listObjects
+      .mockResolvedValueOnce({ objects: [item], nextContinuationToken: null })
+      .mockResolvedValueOnce({ objects: [{ ...item, fileName: "Other bucket photo.webp" }], nextContinuationToken: null });
+
+    render(<S3GalleryPage galleryFocus={{ prefix: "images", highlightedKeys: [] }} profiles={[profile, otherProfile]} />);
+    await screen.findByText(item.key);
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Profile" }), otherProfile.id);
+    expect(await screen.findByText("Other bucket photo.webp")).toBeVisible();
+    expect(screen.queryByText(/Deleting images\/photo/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download" })).toBeEnabled();
+    const otherDeleteButton = screen.getByRole("button", { name: "Delete" });
+    expect(otherDeleteButton).toBeEnabled();
+    await user.click(otherDeleteButton);
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+
+    await act(async () => {
+      if (result === "success") finishDelete();
+      else rejectDelete(new Error("Access denied"));
+    });
+
+    expect(screen.getByText("Other bucket photo.webp")).toBeVisible();
+    expect(screen.queryByText(/Access denied/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Deleting images\/photo/)).toBeVisible();
+    expect(otherDeleteButton).toBeDisabled();
+
+    await act(async () => finishOtherDelete());
+    expect(screen.queryByText("Other bucket photo.webp")).not.toBeInTheDocument();
+  });
+
   it("shows an error when delete rejects", async () => {
     deleteObject.mockRejectedValueOnce(new Error("Access denied"));
     const user = userEvent.setup();
@@ -1122,6 +1195,35 @@ describe("S3GalleryPage", () => {
         ([request]) => (request as { profile: { id: string } }).profile.id === "p1",
       ),
     ).toHaveLength(oldProfileRequests);
+  });
+
+  it("keeps an old upload out of a profile rebound to a different bucket", async () => {
+    const user = userEvent.setup();
+    const rebound = { ...profile, bucket: "new-images" };
+    const uploaded = { key: "images/uploaded.png", size: 100, isImage: true, publicUrl: "https://cdn.example.com/images/uploaded.png" };
+    const current = { key: "images/current.png", size: 100, isImage: true };
+    let finishUpload!: (object: typeof uploaded) => void;
+    uploadObject.mockImplementationOnce(() => new Promise((resolve) => { finishUpload = resolve; }));
+    generateObjectKey.mockResolvedValueOnce({ objectKey: uploaded.key });
+    mockDialogOpen.mockResolvedValueOnce("/tmp/uploaded.png");
+    listObjects
+      .mockResolvedValueOnce({ objects: [{ key: "images/old.png", size: 100, isImage: true }], nextContinuationToken: null })
+      .mockResolvedValueOnce({ objects: [current], nextContinuationToken: null });
+    const galleryFocus = { profileId: profile.id, prefix: "images", highlightedKeys: [] };
+    const view = render(<S3GalleryPage galleryFocus={galleryFocus} profiles={[profile]} />);
+
+    await screen.findByText("images/old.png");
+    await user.click(screen.getByRole("button", { name: "Upload local images" }));
+    await waitFor(() => expect(uploadObject).toHaveBeenCalledWith(expect.objectContaining({ profile })));
+    view.rerender(<S3GalleryPage galleryFocus={galleryFocus} profiles={[rebound]} />);
+    await screen.findByText(current.key);
+    expect(listObjects).toHaveBeenNthCalledWith(2, { profile: rebound, prefix: "images" });
+
+    await act(async () => finishUpload(uploaded));
+
+    expect(screen.getByText(current.key)).toBeVisible();
+    expect(screen.queryByText(uploaded.key)).not.toBeInTheDocument();
+    expect(screen.getByText("1 of 1 images")).toBeVisible();
   });
 
   it.each([false, true])("preserves uploads and their fresh metadata when an in-flight first page has a stale duplicate: %s", async (includesStaleDuplicate) => {

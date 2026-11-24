@@ -87,6 +87,7 @@ export interface S3Profile {
 }
 
 export interface GalleryObject {
+  uploadId?: string;
   fileName?: string;
   uploadedAt?: string;
   uploadRecordWarning?: boolean;
