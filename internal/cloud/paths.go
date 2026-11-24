@@ -82,6 +82,42 @@ func (s *Service) resolveUploadPath(path, readErrorCode string) (string, error) 
 	return source, nil
 }
 
+func (s *Service) checkUploadSourceIdentity(source os.FileInfo, readErrorCode string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	check := func(path string) error {
+		info, err := os.Stat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return appErr(readErrorCode, "Could not verify the selected image file.")
+		}
+		if os.SameFile(source, info) {
+			return appErr("invalidSourcePath", "The selected file is part of Pic Piper’s private data. Choose another image.")
+		}
+		return nil
+	}
+	if err := check(s.settingsPath()); err != nil {
+		return err
+	}
+	credentials := filepath.Join(s.dataDir, "credentials")
+	entries, err := os.ReadDir(credentials)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return appErr(readErrorCode, "Could not verify the selected image file.")
+	}
+	for _, entry := range entries {
+		if err := check(filepath.Join(credentials, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) resolveDownloadDir(path string) (string, error) {
 	dir, err := canonicalPath(s.dataDir)
 	if err != nil {
@@ -131,6 +167,9 @@ func (s *Service) readUploadSource(ctx context.Context, path, readErrorCode stri
 	current, err := os.Stat(checked)
 	if err != nil || !os.SameFile(opened, current) {
 		return nil, 0, "", appErr(readErrorCode, "The selected image file changed. Select it again.")
+	}
+	if err := s.checkUploadSourceIdentity(opened, readErrorCode); err != nil {
+		return nil, 0, "", err
 	}
 
 	size := opened.Size()
