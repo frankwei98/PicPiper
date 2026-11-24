@@ -85,7 +85,7 @@ func decodeWebPAnimation(ctx context.Context, path string, metadata sourceProper
 	}
 	cfg, format, err := decodeConfig(file)
 	actual := properties(file)
-	if err != nil || format != "webp" || cfg.Width < 1 || cfg.Height < 1 || cfg.Width > maxPixels || cfg.Height > maxPixels || actual.frames != metadata.frames || int64(actual.frames)*int64(cfg.Width)*int64(cfg.Height) > maxPixels {
+	if err != nil || format != "webp" || !validDimensions(cfg.Width, cfg.Height) || actual.frames != metadata.frames || int64(actual.frames)*int64(cfg.Width)*int64(cfg.Height) > maxPixels {
 		return nil, fmt.Errorf("animation changed or exceeds the pixel limit")
 	}
 	if err := validateColorProperties(actual); err != nil {

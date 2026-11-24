@@ -208,39 +208,67 @@ func (s *Service) Call(ctx context.Context, operation string, payload json.RawMe
 	}
 }
 
-func inspect(path string) (Inspection, error) {
+type inspectedImage struct {
+	info        Inspection
+	config      image.Config
+	format      string
+	metadata    sourceProperties
+	orientation int
+}
+
+func openImage(path string) (*os.File, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return Inspection{}, apperror.New("imageOpenFailed", "Could not open the image. Choose a readable image file.")
+		return nil, apperror.New("imageOpenFailed", "Could not open the image. Choose a readable image file.")
+	}
+	return file, nil
+}
+
+func inspect(path string) (Inspection, error) {
+	file, err := openImage(path)
+	if err != nil {
+		return Inspection{}, err
 	}
 	defer file.Close()
+	source, err := inspectOpened(file)
+	return source.info, err
+}
+
+func inspectOpened(file *os.File) (inspectedImage, error) {
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() {
-		return Inspection{}, apperror.New("imageReadFailed", "Choose an image file, rather than a folder.")
+		return inspectedImage{}, apperror.New("imageReadFailed", "Choose an image file, rather than a folder.")
 	}
 	if info.Size() > 256<<20 {
-		return Inspection{}, apperror.New("imageTooLarge", "Images must be smaller than 256 MB.")
+		return inspectedImage{}, apperror.New("imageTooLarge", "Images must be smaller than 256 MB.")
+	}
+	animated, err := inspectBMFF(file, info.Size())
+	if err != nil {
+		return inspectedImage{}, err
 	}
 	cfg, format, err := decodeConfig(file)
 	if err != nil || !readableFormat(format) {
-		return Inspection{}, apperror.New("unsupportedImage", "Choose a readable JPEG, PNG, WebP, AVIF, JPEG XL, or HEIF/HEIC image.")
+		return inspectedImage{}, apperror.New("unsupportedImage", "Choose a readable JPEG, PNG, WebP, AVIF, JPEG XL, or HEIF/HEIC image.")
 	}
-	if cfg.Width < 1 || cfg.Height < 1 || cfg.Width > maxPixels || cfg.Height > maxPixels || int64(cfg.Width)*int64(cfg.Height) > maxPixels {
-		return Inspection{}, apperror.New("imageTooLarge", "Images must contain at most 40 million pixels.")
+	if !validDimensions(cfg.Width, cfg.Height) {
+		return inspectedImage{}, imagePixelLimitError()
 	}
 	metadata := properties(file)
+	metadata.sequence = metadata.sequence || animated
+	orientation := orientationFromFile(file)
 	width, height := cfg.Width, cfg.Height
-	if orientationFromFile(file) >= 5 || (format == "avif" && metadata.rotation%2 == 1) {
+	if orientation >= 5 || (format == "avif" && metadata.rotation%2 == 1) {
 		width, height = height, width
 	}
+	reportedFormat := format
 	switch format {
 	case "jpeg":
-		format = "jpg"
+		reportedFormat = "jpg"
 	case "heic":
-		format = "heif"
+		reportedFormat = "heif"
 	}
 	if err := validateColorProperties(metadata); err != nil {
-		return Inspection{}, err
+		return inspectedImage{}, err
 	}
 	if cfg.ColorModel == color.RGBA64Model || cfg.ColorModel == color.NRGBA64Model || cfg.ColorModel == color.Gray16Model {
 		metadata.bitDepth = 16
@@ -264,49 +292,62 @@ func inspect(path string) (Inspection, error) {
 		text := strings.Join(notices, " ")
 		warning = &text
 	}
-	return Inspection{Path: path, FileName: filepath.Base(path), SourceFormat: format, OriginalBytes: info.Size(), Width: width, Height: height, BitDepth: metadata.bitDepth, FrameCount: metadata.frames, Animated: metadata.sequence, HDR: metadata.hdr, Warning: warning}, nil
+	return inspectedImage{
+		info: Inspection{
+			Path: file.Name(), FileName: filepath.Base(file.Name()), SourceFormat: reportedFormat,
+			OriginalBytes: info.Size(), Width: width, Height: height, BitDepth: metadata.bitDepth,
+			FrameCount: metadata.frames, Animated: metadata.sequence, HDR: metadata.hdr, Warning: warning,
+		},
+		config: cfg, format: format, metadata: metadata, orientation: orientation,
+	}, nil
+}
+
+func validDimensions(width, height int) bool {
+	return width >= 1 && height >= 1 && width <= maxPixels && height <= maxPixels && int64(width)*int64(height) <= maxPixels
+}
+
+func imagePixelLimitError() error {
+	return apperror.New("imageTooLarge", "Images must contain at most 40 million pixels.")
+}
+
+func checkDecodedBounds(img image.Image) error {
+	if img == nil {
+		return imagePixelLimitError()
+	}
+	bounds := img.Bounds()
+	if !validDimensions(bounds.Dx(), bounds.Dy()) {
+		return imagePixelLimitError()
+	}
+	return nil
 }
 
 func decode(ctx context.Context, path string) (image.Image, Inspection, error) {
-	info, err := inspect(path)
-	if err != nil {
-		return nil, info, err
+	if err := ctx.Err(); err != nil {
+		return nil, Inspection{}, err
 	}
+	file, err := openImage(path)
+	if err != nil {
+		return nil, Inspection{}, err
+	}
+	defer file.Close()
+	// Inspection and decoding share this handle so a replaced path cannot change
+	// the decoder's pixel allocation after the size check.
+	source, err := inspectOpened(file)
+	if err != nil {
+		return nil, Inspection{}, err
+	}
+	info, metadata := source.info, source.metadata
 	if err := ctx.Err(); err != nil {
 		return nil, info, err
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, info, apperror.New("imageOpenFailed", "The image is no longer available.")
-	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil || !opened.Mode().IsRegular() || opened.Size() > 256<<20 {
-		return nil, info, apperror.New("imageTooLarge", "Choose a regular image file smaller than 256 MB.")
-	}
-	info.OriginalBytes = opened.Size()
-	// DecodeConfig and Decode share this handle so a replaced path cannot change
-	// the decoder's pixel allocation after the size check.
-	cfg, format, err := decodeConfig(file)
-	if err != nil || !readableFormat(format) || cfg.Width < 1 || cfg.Height < 1 || cfg.Width > maxPixels || cfg.Height > maxPixels || int64(cfg.Width)*int64(cfg.Height) > maxPixels {
-		return nil, info, apperror.New("imageTooLarge", "This image could not be decoded within the pixel limit.")
-	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return nil, info, err
-	}
-	metadata := properties(file)
-	if err := validateColorProperties(metadata); err != nil {
-		return nil, info, err
-	}
-	info.Animated = metadata.sequence
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return nil, info, err
 	}
 	var img image.Image
-	if format == "png" && metadata.sequence {
-		img, err = decodeAPNGFirst(ctx, file, cfg)
+	if source.format == "png" && metadata.sequence {
+		img, err = decodeAPNGFirst(ctx, file, source.config)
 	} else {
-		img, err = decodePixels(file, format)
+		img, err = decodePixels(file, source.format)
 	}
 	if err != nil {
 		return nil, info, apperror.New("imageDecodeFailed", "The image is damaged or uses an unsupported encoding.")
@@ -314,7 +355,7 @@ func decode(ctx context.Context, path string) (image.Image, Inspection, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, info, err
 	}
-	if err := validateColorProperties(metadata); err != nil {
+	if err := checkDecodedBounds(img); err != nil {
 		return nil, info, err
 	}
 	if metadata.hdr {
@@ -328,7 +369,7 @@ func decode(ctx context.Context, path string) (image.Image, Inspection, error) {
 			return nil, info, apperror.New("colorProfileUnsupported", "This embedded color profile could not be converted safely. Export an sRGB copy from your image editor first.")
 		}
 	}
-	img = applyOrientation(img, orientationFromFile(file))
+	img = applyOrientation(img, source.orientation)
 	info.Width, info.Height = img.Bounds().Dx(), img.Bounds().Dy()
 	return img, info, nil
 }

@@ -3,22 +3,27 @@ package imaging
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"testing/iotest"
 	"time"
 )
 
 func TestMain(m *testing.M) {
-	if len(os.Args) == 3 && os.Args[1] == "--image-worker" {
-		service := New(os.Args[2])
+	stdout := os.Stdout
+	if runWorker(func(dataDir string, input io.Reader, output io.Writer) {
+		service := New(dataDir)
 		defer service.Close()
-		serveWorker(os.Stdin, os.Stdout, func(ctx context.Context, operation string, payload json.RawMessage) (any, error) {
+		serveWorker(input, workerDiagnosticWriter{output, stdout}, func(ctx context.Context, operation string, payload json.RawMessage) (any, error) {
 			// A deterministic stand-in for a synchronous codec that never returns.
 			// The real packaged smoke separately exercises the actual codecs.
 			var req request
@@ -43,12 +48,22 @@ func TestMain(m *testing.M) {
 			}
 			return service.Call(ctx, operation, payload)
 		})
-		return
-	}
-	if RunWorker() {
+	}) {
 		return
 	}
 	os.Exit(m.Run())
+}
+
+type workerDiagnosticWriter struct {
+	output, originalStdout io.Writer
+}
+
+func (w workerDiagnosticWriter) Write(data []byte) (int, error) {
+	fmt.Fprintln(os.Stdout, "codec diagnostic")
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		fmt.Fprintln(w.originalStdout, "native codec diagnostic")
+	}
+	return w.output.Write(data)
 }
 
 func TestWorkerSurvivesBusinessErrorsAndIsReplacedAfterCrash(t *testing.T) {
@@ -123,6 +138,51 @@ func TestWorkerConsumesJSONDelimiterBeforeClipboardFrames(t *testing.T) {
 	response, err := worker.call(context.Background(), workerRequest{Operation: workerClipboardOperation})
 	if err != nil || string(response.PNG) != "mock PNG" {
 		t.Fatalf("read clipboard after JSON response: %q, %v", response.PNG, err)
+	}
+}
+
+func TestWorkerKeepsCodecDiagnosticsOutOfReusedProtocol(t *testing.T) {
+	service := NewIsolated(t.TempDir())
+	t.Cleanup(service.Close)
+	service.SetConcurrency(1)
+	run := call(t, service, "create_optimizer_run", request{}).(map[string]string)
+	pid := workerPID(t, service)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	for _, fixture := range []string{"rotation.avif", "animated.jxl"} {
+		data, err := os.ReadFile(filepath.Join("testdata", fixture))
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(run["outputDir"], fixture)
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		payload, _ := json.Marshal(request{Path: path, MaxSize: 48})
+		if _, err := service.Call(ctx, "read_thumbnail", payload); err != nil {
+			t.Fatalf("decode %s in worker: %v", fixture, err)
+		}
+		data, err = service.ClipboardPNG(ctx, path)
+		if err != nil {
+			t.Fatalf("clipboard %s: %v", fixture, err)
+		}
+		if _, err := png.Decode(bytes.NewReader(data)); err != nil {
+			t.Fatalf("clipboard %s did not return a PNG: %v", fixture, err)
+		}
+	}
+	if got := workerPID(t, service); got != pid {
+		t.Fatalf("worker changed from %d to %d after diagnostics", pid, got)
+	}
+}
+
+func TestWorkerRejectsOversizedClipboardFrameBeforeReading(t *testing.T) {
+	var stream bytes.Buffer
+	if err := binary.Write(&stream, binary.BigEndian, uint32(maxClipboardPNGBytes+1)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readWorkerPNG(&stream); err == nil || errors.Is(err, io.EOF) {
+		t.Fatalf("oversized frame was not rejected at its length: %v", err)
 	}
 }
 

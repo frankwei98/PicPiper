@@ -253,6 +253,13 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		if !safeFilename(name) {
 			return nil, appErr("invalidDownloadFileName", "Object key has an unsafe filename.")
 		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		dir, err := s.resolveDownloadDir(p.OutputDir)
+		if err != nil {
+			return nil, err
+		}
 		secret, err := s.getSecret(p.Profile, nil)
 		if err != nil {
 			return nil, err
@@ -262,8 +269,12 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 			return nil, s3error("s3DownloadFailed", err)
 		}
 		defer resp.Body.Close()
-		path, err := saveUnique(p.OutputDir, name, resp.Body)
+		path, err := s.saveUnique(dir, name, resp.Body)
 		if err != nil {
+			var business *apperror.Error
+			if errors.As(err, &business) {
+				return nil, business
+			}
 			if cause := requestContextError(err); cause != nil {
 				return nil, cause
 			}
@@ -287,19 +298,11 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		if err := validateKey(p.ObjectKey); err != nil {
 			return nil, err
 		}
-		f, err := os.Open(p.SourcePath)
+		f, size, hash, err := s.readUploadSource(ctx, p.SourcePath, "uploadReadFailed")
 		if err != nil {
-			return nil, appErr("uploadReadFailed", err.Error())
+			return nil, err
 		}
 		defer f.Close()
-		info, err := f.Stat()
-		if err != nil {
-			return nil, appErr("uploadReadFailed", err.Error())
-		}
-		sum, err := hashSeek(f)
-		if err != nil {
-			return nil, appErr("uploadReadFailed", err.Error())
-		}
 		secret, err := s.getSecret(p.Profile, nil)
 		if err != nil {
 			return nil, err
@@ -310,7 +313,7 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		if p.ContentType != nil {
 			headers.Set("Content-Type", *p.ContentType)
 		}
-		resp, err := s.doS3(ctx, p.Profile, secret, http.MethodPut, p.ObjectKey, f, hex.EncodeToString(sum), headers)
+		resp, err := s.doS3(ctx, p.Profile, secret, http.MethodPut, p.ObjectKey, io.NewSectionReader(f, 0, size), hash, headers)
 		if err != nil {
 			var se *statusError
 			if errors.As(err, &se) {
@@ -324,7 +327,7 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 			return nil, s3error("s3UploadFailed", err)
 		}
 		resp.Body.Close()
-		obj := makeObject(p.Profile, p.ObjectKey, info.Size(), nil)
+		obj := makeObject(p.Profile, p.ObjectKey, size, nil)
 		obj.ETag = resp.Header.Get("ETag")
 		obj.FileName = p.FileName
 		if obj.FileName == "" {
@@ -350,16 +353,12 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		if err := decode("sourcePath", &p); err != nil {
 			return nil, err
 		}
-		f, err := os.Open(p.SourcePath)
+		f, _, hash, err := s.readUploadSource(ctx, p.SourcePath, "readFileFailed")
 		if err != nil {
-			return nil, appErr("readFileFailed", err.Error())
+			return nil, err
 		}
 		defer f.Close()
-		h := sha256.New()
-		if _, err = io.Copy(h, f); err != nil {
-			return nil, appErr("readFileFailed", err.Error())
-		}
-		key, err := renderKey(p.Template, p.OutputFileName, p.Ext, hex.EncodeToString(h.Sum(nil)), s.now().UTC())
+		key, err := renderKey(p.Template, p.OutputFileName, p.Ext, hash, s.now().UTC())
 		if err != nil {
 			return nil, err
 		}
@@ -612,16 +611,6 @@ func safeFilename(n string) bool {
 	}
 	return true
 }
-func hashSeek(f *os.File) ([]byte, error) {
-	h := sha256.New()
-	if _, e := io.Copy(h, f); e != nil {
-		return nil, e
-	}
-	if _, e := f.Seek(0, 0); e != nil {
-		return nil, e
-	}
-	return h.Sum(nil), nil
-}
 func encodeSeg(v string) string {
 	const hexchars = "0123456789ABCDEF"
 	var b strings.Builder
@@ -680,7 +669,7 @@ type statusError struct {
 }
 
 func (e *statusError) Error() string { return fmt.Sprintf("S3 returned HTTP %d: %s", e.status, e.body) }
-func (s *Service) doS3(ctx context.Context, p profile, secret, method, key string, body io.Reader, payloadHash string, headers http.Header) (*http.Response, error) {
+func (s *Service) doS3(ctx context.Context, p profile, secret, method, key string, body *io.SectionReader, payloadHash string, headers http.Header) (*http.Response, error) {
 	u, e := endpoint(p)
 	if e != nil {
 		return nil, e
@@ -697,18 +686,23 @@ func (s *Service) doS3(ctx context.Context, p profile, secret, method, key strin
 	if payloadHash == "" {
 		payloadHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	}
-	req, e := http.NewRequestWithContext(ctx, method, u.String(), body)
+	var requestBody io.Reader
+	var contentLength int64
+	if body != nil {
+		contentLength = body.Size()
+		requestBody = http.NoBody
+		if contentLength > 0 {
+			requestBody = body
+		}
+	}
+	req, e := http.NewRequestWithContext(ctx, method, u.String(), requestBody)
 	if e != nil {
 		return nil, e
 	}
 	if headers != nil {
 		req.Header = headers.Clone()
 	}
-	if f, ok := body.(*os.File); ok {
-		if st, se := f.Stat(); se == nil {
-			req.ContentLength = st.Size()
-		}
-	}
+	req.ContentLength = contentLength
 	sign(req, p.Region, p.AccessKeyID, secret, payloadHash, s.now().UTC())
 	resp, e := s.client.Do(req)
 	if e != nil {
