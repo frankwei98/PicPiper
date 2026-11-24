@@ -1,13 +1,14 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { AppSettings } from "../../api/backend";
 
-const { saveSettings, saveGeneralSettings, saveStorageSettings, loadSettings, saveS3Secret, testS3Connection, deleteProfile } = vi.hoisted(() => ({
+const { saveSettings, saveGeneralSettings, saveStorageSettings, rollbackStorageSettings, loadSettings, saveS3Secret, testS3Connection, deleteProfile } = vi.hoisted(() => ({
   saveSettings: vi.fn(async (_settings?: AppSettings) => {}),
   saveGeneralSettings: vi.fn(),
   saveStorageSettings: vi.fn(),
+  rollbackStorageSettings: vi.fn(),
   loadSettings: vi.fn(),
   saveS3Secret: vi.fn(async () => ({
     credentialRef: "s3:personal",
@@ -21,6 +22,7 @@ vi.mock("../../api/backend", async () => ({
     saveSettings,
     saveGeneralSettings,
     saveStorageSettings,
+    rollbackStorageSettings,
     loadSettings,
     saveS3Secret,
     testS3Connection,
@@ -43,6 +45,8 @@ describe("SettingsPage", () => {
     saveGeneralSettings.mockImplementation(async (settings: AppSettings) => { await saveSettings(settings); return settings; });
     saveStorageSettings.mockReset();
     saveStorageSettings.mockImplementation(async (settings: AppSettings) => { await saveSettings(settings); return settings; });
+    rollbackStorageSettings.mockReset();
+    rollbackStorageSettings.mockImplementation(async (settings: AppSettings) => { await saveSettings(settings); return settings; });
     loadSettings.mockReset();
     loadSettings.mockImplementation(async () => saveSettings.mock.calls[saveSettings.mock.calls.length - 1]?.[0]);
     saveS3Secret.mockReset();
@@ -60,15 +64,21 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("button", { name: "Save general settings" })).toBeInTheDocument();
   });
 
-  it("keeps a Mini change made while a profile credential save is awaiting failure", async () => {
+  it("restores a legacy naming template and keeps a concurrent Mini change after a credential write fails", async () => {
     const user = userEvent.setup();
     let stored: AppSettings = {
       profiles: [{ id: "profile", name: "Profile", endpoint: "https://s3.example.test", region: "auto", bucket: "images", accessKeyId: "fake-access", credentialRef: "s3:profile", defaultPrefix: "", pathStyle: true }],
-      namingTemplate: "{slug}.{ext}",
+      namingTemplate: "{slug}",
       mini: { enabled: true, targetFormat: "webp", quality: 90, action: "clipboard", profileId: "", linkFormat: "url" },
     };
     saveSettings.mockImplementation(async (settings) => { stored = settings!; });
     saveStorageSettings.mockImplementation(async (settings: AppSettings) => {
+      if (!settings.namingTemplate.includes("{ext}")) throw new Error("Naming template must include {ext}.");
+      stored = { ...stored, profiles: settings.profiles, namingTemplate: settings.namingTemplate, defaultProfileId: settings.defaultProfileId };
+      return stored;
+    });
+    rollbackStorageSettings.mockImplementation(async (settings: AppSettings, storageBase: AppSettings) => {
+      expect(storageBase.namingTemplate).toBe(stored.namingTemplate);
       stored = { ...stored, profiles: settings.profiles, namingTemplate: settings.namingTemplate, defaultProfileId: settings.defaultProfileId };
       return stored;
     });
@@ -78,12 +88,15 @@ describe("SettingsPage", () => {
     const view = render(<SettingsPage settings={stored} onSettingsChange={() => {}} />);
     await goToSection(user, "S3 profiles");
     await user.type(screen.getByLabelText("Secret access key"), "fake-new-secret");
+    await goToSection(user, "Links and naming");
+    fireEvent.change(screen.getByLabelText("Naming template"), { target: { value: "{slug}.{ext}" } });
     await user.click(screen.getByRole("button", { name: "Save profile" }));
     await waitFor(() => expect(saveS3Secret).toHaveBeenCalled());
     stored = { ...stored, mini: { ...stored.mini!, targetFormat: "avif", quality: 77 } };
     view.rerender(<SettingsPage settings={stored} onSettingsChange={() => {}} />);
     await act(async () => rejectSecret?.(new Error("credential write failed")));
     await screen.findByText("credential write failed");
+    expect(stored.namingTemplate).toBe("{slug}");
     expect(stored.mini).toMatchObject({ targetFormat: "avif", quality: 77 });
   });
 

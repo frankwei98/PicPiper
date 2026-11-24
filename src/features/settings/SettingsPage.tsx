@@ -320,7 +320,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
             : settings.defaultProfileId,
       };
 
-      const persistedSettings = await settingsApi.saveStorageSettings(nextSettings);
+      const persistedSettings = await settingsApi.saveStorageSettings(nextSettings, settings);
       try {
         if (secretAccessKey) {
           await settingsApi.saveS3Secret({
@@ -330,7 +330,7 @@ export function SettingsPage({ settings, onSettingsChange, isActive = true, proc
         }
       } catch (error) {
         try {
-          await settingsApi.saveStorageSettings(settings);
+          await settingsApi.rollbackStorageSettings(settings, persistedSettings);
         } catch (rollbackError) {
           setSaving(false);
           setSaveError(
