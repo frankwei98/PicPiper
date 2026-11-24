@@ -116,9 +116,15 @@ func decodeAPNGFirst(ctx context.Context, file *os.File, canvas image.Config) (i
 	if err != nil {
 		return nil, err
 	}
-	var output draw.Image = image.NewNRGBA(image.Rect(0, 0, canvas.Width, canvas.Height))
+	bounds := image.Rect(0, 0, canvas.Width, canvas.Height)
+	if rect == bounds {
+		return decoded, nil
+	}
+	var output draw.Image
 	if highBitDepth(decoded) {
-		output = image.NewNRGBA64(output.Bounds())
+		output = image.NewNRGBA64(bounds)
+	} else {
+		output = image.NewNRGBA(bounds)
 	}
 	draw.Draw(output, rect, decoded, decoded.Bounds().Min, draw.Src)
 	return output, nil

@@ -9,8 +9,57 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func TestAPNGFullCanvasFirstFramePreserves16BitPixelsWithoutCopy(t *testing.T) {
+	const width, height = 1024, 512
+	frame := image.NewNRGBA64(image.Rect(0, 0, width, height))
+	sample := color.NRGBA64{R: 0x1234, G: 0x5678, B: 0x9abc, A: 0xcdef}
+	frame.SetNRGBA64(20, 10, sample)
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, frame); err != nil {
+		t.Fatal(err)
+	}
+	base := encoded.Bytes()
+	animation := binary.BigEndian.AppendUint32(nil, 1)
+	animation = binary.BigEndian.AppendUint32(animation, 0)
+	control := make([]byte, 26)
+	binary.BigEndian.PutUint32(control[4:8], width)
+	binary.BigEndian.PutUint32(control[8:12], height)
+	binary.BigEndian.PutUint16(control[20:22], 1)
+	binary.BigEndian.PutUint16(control[22:24], 10)
+	data := append([]byte{}, base[:33]...)
+	data = append(data, pngChunk("acTL", animation)...)
+	data = append(data, pngChunk("fcTL", control)...)
+	data = append(data, base[33:]...)
+	path := filepath.Join(t.TempDir(), "full-canvas.png")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	decoded, info, err := decode(context.Background(), path)
+	runtime.ReadMemStats(&after)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Animated || info.BitDepth != 16 || decoded.Bounds() != frame.Bounds() {
+		t.Fatalf("incorrect frame info %+v with bounds %v", info, decoded.Bounds())
+	}
+	if got := color.NRGBA64Model.Convert(decoded.At(20, 10)); got != sample {
+		t.Fatalf("decoded pixel = %+v, want %+v", got, sample)
+	}
+	if _, _, _, alpha := decoded.At(0, 0).RGBA(); alpha != 0 {
+		t.Fatalf("transparent pixel has alpha %d", alpha)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 7<<20 {
+		t.Fatalf("16-bit APNG first-frame decode allocated %d bytes for %d pixels", allocated, width*height)
+	}
+}
 
 func TestAPNGFirstFrameAcceptsPaletteAfterFrameControl(t *testing.T) {
 	img := image.NewPaletted(image.Rect(0, 0, 2, 2), color.Palette{color.NRGBA{R: 240, A: 128}, color.NRGBA{B: 240, A: 255}})
