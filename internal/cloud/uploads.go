@@ -29,6 +29,10 @@ type uploadedImage struct {
 	UploadID   string `json:"uploadId"`
 }
 
+func (record uploadedImage) isImage() bool {
+	return isImage(record.FileName) || isImage(record.Key)
+}
+
 type galleryRequest struct {
 	Profile  profile `json:"profile"`
 	Prefix   string  `json:"prefix"`
@@ -277,7 +281,7 @@ func (s *Service) listUploads(ctx context.Context, request galleryRequest, secre
 	}
 	candidates := []uploadedImage{}
 	for _, record := range records {
-		if isImage(record.Key) && strings.HasPrefix(record.Key, request.Prefix) {
+		if record.isImage() && strings.HasPrefix(record.Key, request.Prefix) {
 			candidates = append(candidates, record)
 		}
 	}
@@ -352,6 +356,7 @@ func (s *Service) listUploads(ctx context.Context, request galleryRequest, secre
 			record := batch[offset]
 			modified := record.UploadedAt
 			object := makeObject(request.Profile, record.Key, record.Size, &modified)
+			object.IsImage = true
 			object.UploadID = record.UploadID
 			object.ETag = record.ETag
 			object.FileName, object.UploadedAt = record.FileName, record.UploadedAt

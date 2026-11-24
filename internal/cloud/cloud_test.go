@@ -206,6 +206,13 @@ func TestNamingMatchesTemplateHashAndSuffix(t *testing.T) {
 	}
 }
 
+func TestNamingTemplateWithEmojiOnlyStemUsesFallbackSlug(t *testing.T) {
+	key, err := renderKey("{slug}/{hash}.{ext}", "📷.png", "png", "ba7816bf8f01cfea414140de5dae2223", time.Time{})
+	if err != nil || key != "image/ba7816bf.png" {
+		t.Fatalf("key = %q, %v", key, err)
+	}
+}
+
 func TestDefaultPrefixValidationMatchesGeneratedKeys(t *testing.T) {
 	for _, prefix := range []string{`images\2026`, "images//2026", "images/./2026", "images/../2026", "images/\x1f2026"} {
 		t.Run("invalid/"+prefix, func(t *testing.T) {

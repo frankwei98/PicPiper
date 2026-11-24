@@ -50,6 +50,12 @@ func (f *uploadFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("X-Amz-Meta-Picpiper-Upload-Id", f.ids[key])
 		w.Header().Set("ETag", f.etags[key])
+	case http.MethodGet:
+		if f.ids[key] == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = io.WriteString(w, "synthetic-image")
 	case http.MethodDelete:
 		if r.Header.Get("If-Match") == "" || r.Header.Get("If-Match") != f.etags[key] || !strings.Contains(r.Header.Get("Authorization"), "if-match") {
 			w.WriteHeader(http.StatusPreconditionFailed)
@@ -90,6 +96,47 @@ func uploadRecorded(t *testing.T, s *Service, p profile, path, key, name string)
 	}
 	return object
 }
+
+func TestGalleryRecognizesImageUploadedUnderKeyWithoutImageExtension(t *testing.T) {
+	s, p, _, source := newUploadFixture(t)
+	named, err := call(t, s, "generate_object_key", map[string]any{
+		"sourcePath": source, "outputFileName": "photo.png", "namingTemplate": "{ext}/{slug}", "ext": "png",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := named.(map[string]string)["objectKey"]
+	if key != "png/photo" {
+		t.Fatalf("unexpected object key %q", key)
+	}
+	if uploaded := uploadRecorded(t, s, p, source, key, "photo.png"); !uploaded.IsImage {
+		t.Fatalf("upload did not identify the image: %+v", uploaded)
+	}
+	value, err := call(t, s, "list_gallery_objects", map[string]any{"profile": p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects := value.(listResponse).Objects
+	if len(objects) != 1 || objects[0].Key != key || objects[0].FileName != "photo.png" || !objects[0].IsImage {
+		t.Fatalf("upload is missing from the gallery: %+v", objects)
+	}
+	const thumbnail = "data:image/png;base64,c3ludGhldGljLWltYWdl"
+	s.renderThumbnail = func(_ context.Context, path string) (string, error) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		if string(data) != "synthetic-image" {
+			return "", fmt.Errorf("unexpected thumbnail source: %q", data)
+		}
+		return thumbnail, nil
+	}
+	preview, err := call(t, s, "read_gallery_thumbnail", thumbnailRequest{Profile: p, Key: key, ETag: objects[0].ETag, Size: objects[0].Size, LastModified: objects[0].LastModified})
+	if err != nil || preview.(map[string]string)["dataUrl"] != thumbnail {
+		t.Fatalf("extensionless key thumbnail unavailable: %v, %v", preview, err)
+	}
+}
+
 func TestGalleryOnlyListsLocalUploadsAndSortsBeforePagination(t *testing.T) {
 	s, p, fixture, source := newUploadFixture(t)
 	response, err := call(t, s, "list_gallery_objects", map[string]any{"profile": p, "prefix": ""})
