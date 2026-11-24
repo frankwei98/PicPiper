@@ -12,6 +12,7 @@ export function UpdatePreferences({ isActive = true }: { isActive?: boolean }) {
   useLocale();
   const [state, setState] = useState<UpdateState | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
@@ -37,6 +38,7 @@ export function UpdatePreferences({ isActive = true }: { isActive?: boolean }) {
     if (!isActive) return;
     const requestGeneration = ++generation.current;
     setLoading(true);
+    setChecking(false);
     setSaving(false);
     void refresh(requestGeneration, true);
     const unsubscribe = updateApi.subscribe(() => {
@@ -53,7 +55,7 @@ export function UpdatePreferences({ isActive = true }: { isActive?: boolean }) {
 
   const checkForUpdates = async () => {
     setError(null);
-    setLoading(true);
+    setChecking(true);
     const requestGeneration = generation.current;
     try {
       await updateApi.check();
@@ -62,12 +64,13 @@ export function UpdatePreferences({ isActive = true }: { isActive?: boolean }) {
     } catch (cause) {
       if (generation.current !== requestGeneration) return;
       setError(errorMessage(cause, t("Could not check for updates.")));
-      setLoading(false);
+    } finally {
+      if (generation.current === requestGeneration) setChecking(false);
     }
   };
 
   const savePreferences = async (automaticChecks: boolean, automaticDownloads: boolean) => {
-    if (!state || savingRef.current) return;
+    if (!state || loading || checking || savingRef.current) return;
     const previous = state;
     savingRef.current = true;
     ++fetchGeneration.current;
@@ -103,20 +106,21 @@ export function UpdatePreferences({ isActive = true }: { isActive?: boolean }) {
   };
 
   const canUseUpdater = state?.enabled ?? false;
+  const updaterBusy = loading || checking || saving;
 
   return <section className="settings-group settings-preferences">
     <h3>{t("Updates")}</h3>
     <PreferenceRow label={state ? t("Version {{version}}", { version: state.version }) : <><span className="sr-only">{t("Version")}</span><Skeleton className="h-4 w-24" aria-hidden="true" /></>}>
-      <Button type="button" variant="outline" disabled={(state !== null && !canUseUpdater) || loading || saving} onClick={checkForUpdates}>
-        {loading ? t("Checking...") : t("Check for updates")}
+      <Button type="button" variant="outline" disabled={(state !== null && !canUseUpdater) || updaterBusy} onClick={checkForUpdates}>
+        {loading || checking ? t("Checking...") : t("Check for updates")}
       </Button>
     </PreferenceRow>
     {!canUseUpdater && <p className="field-hint">{t("Updates are available in an installed release build.")}</p>}
     <PreferenceRow label={t("Automatic update checks")} htmlFor="settings-automatic-update-checks" description={t("Checks periodically for new releases.")} descriptionId="settings-automatic-update-checks-description">
-      <Switch id="settings-automatic-update-checks" aria-label={t("Automatic update checks")} aria-describedby="settings-automatic-update-checks-description" checked={state?.automaticChecks ?? false} disabled={!canUseUpdater || saving} onCheckedChange={(checked) => state && void savePreferences(checked, state.automaticDownloads)} />
+      <Switch id="settings-automatic-update-checks" aria-label={t("Automatic update checks")} aria-describedby="settings-automatic-update-checks-description" checked={state?.automaticChecks ?? false} disabled={!canUseUpdater || updaterBusy} onCheckedChange={(checked) => state && void savePreferences(checked, state.automaticDownloads)} />
     </PreferenceRow>
     <PreferenceRow label={t("Automatic update downloads")} htmlFor="settings-automatic-update-downloads" description={t("Downloads available updates automatically.")} descriptionId="settings-automatic-update-downloads-description">
-      <Switch id="settings-automatic-update-downloads" aria-label={t("Automatic update downloads")} aria-describedby="settings-automatic-update-downloads-description" checked={state?.automaticDownloads ?? false} disabled={!canUseUpdater || saving} onCheckedChange={(checked) => state && void savePreferences(state.automaticChecks, checked)} />
+      <Switch id="settings-automatic-update-downloads" aria-label={t("Automatic update downloads")} aria-describedby="settings-automatic-update-downloads-description" checked={state?.automaticDownloads ?? false} disabled={!canUseUpdater || updaterBusy} onCheckedChange={(checked) => state && void savePreferences(state.automaticChecks, checked)} />
     </PreferenceRow>
     <PreferenceRow label={t("Last checked")}>{state ? formatLastCheck(state.lastCheck) : "—"}</PreferenceRow>
     {state?.availableVersion && <PreferenceRow label={t("Available version")}>{state.availableVersion}</PreferenceRow>}
