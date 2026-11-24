@@ -434,20 +434,13 @@ func reserve(dir, name string) (*os.File, error) {
 	if !validFileName(name) {
 		return nil, apperror.New("invalidFileName", "Choose a filename without path separators or reserved characters.")
 	}
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
-	for sequence := 1; sequence <= 10000; sequence++ {
-		candidate := name
-		if sequence > 1 {
-			candidate = fmt.Sprintf("%s-%d%s", stem, sequence, ext)
-		}
-		file, err := os.OpenFile(filepath.Join(dir, candidate), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-		if os.IsExist(err) {
-			continue
-		}
-		return file, err
-	}
-	return nil, apperror.New("tooManyFiles", "Too many files share this name. Choose another output folder.")
+	var file *os.File
+	_, err := reserveOutputName(name, func(candidate string) error {
+		var err error
+		file, err = os.OpenFile(filepath.Join(dir, candidate), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		return err
+	})
+	return file, err
 }
 
 func (s *Service) compress(ctx context.Context, req request) (Result, error) {

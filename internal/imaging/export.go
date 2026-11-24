@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/frankwei98/PicPiper/internal/apperror"
 )
@@ -92,25 +93,49 @@ func copyReserved(ctx context.Context, dir, name string, source io.Reader) (stri
 	}
 	// Publish only complete images. Cleanup never touches a public output path,
 	// which another application may have replaced since we last inspected it.
+	name, err = reserveOutputName(name, func(candidate string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return publishExport(output.Name(), filepath.Join(dir, candidate))
+	})
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name), nil
+}
+
+func reserveOutputName(name string, create func(string) error) (string, error) {
 	ext := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, ext)
 	for sequence := 1; sequence <= 10000; sequence++ {
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
-		candidate := name
+		suffix := ""
 		if sequence > 1 {
-			candidate = fmt.Sprintf("%s-%d%s", stem, sequence, ext)
+			suffix = fmt.Sprintf("-%d", sequence)
 		}
-		path := filepath.Join(dir, candidate)
-		err := publishExport(output.Name(), path)
-		if os.IsExist(err) {
-			continue
+		for {
+			candidate := stem + suffix + ext
+			if !validFileName(candidate) {
+				break
+			}
+			err := create(candidate)
+			if err == nil {
+				return candidate, nil
+			}
+			if os.IsExist(err) {
+				break
+			}
+			if !outputNameTooLong(err) || stem == "" {
+				return "", err
+			}
+			// Let the filesystem accept the full name first. Bound retries
+			// for oversized input and shorten only at a UTF-8 rune boundary.
+			end := min(len(stem)-1, 255*utf8.UTFMax)
+			for end > 0 && !utf8.RuneStart(stem[end]) {
+				end--
+			}
+			stem = stem[:end]
 		}
-		if err != nil {
-			return "", err
-		}
-		return path, nil
 	}
 	return "", apperror.New("tooManyFiles", "Too many files share this name. Choose another output folder.")
 }
