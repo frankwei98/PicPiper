@@ -51,6 +51,10 @@ func (f *uploadFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Amz-Meta-Picpiper-Upload-Id", f.ids[key])
 		w.Header().Set("ETag", f.etags[key])
 	case http.MethodDelete:
+		if r.Header.Get("If-Match") == "" || r.Header.Get("If-Match") != f.etags[key] || !strings.Contains(r.Header.Get("Authorization"), "if-match") {
+			w.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
 		delete(f.ids, key)
 		w.WriteHeader(204)
 	default:
@@ -187,6 +191,91 @@ func TestUploadRecordFailureDoesNotTurnSuccessfulRemoteUploadIntoRetryableFailur
 		t.Fatal("successful upload must report a local-record warning, not a retryable upload failure")
 	}
 }
+func TestGalleryDeleteUsesSelectedUploadIdentity(t *testing.T) {
+	for _, replace := range []string{"before confirmation", "after verification"} {
+		t.Run(replace, func(t *testing.T) {
+			s, p, fixture, source := newUploadFixture(t)
+			const key = "images/photo.png"
+			uploaded := uploadRecorded(t, s, p, source, key, "photo.png")
+			page, err := call(t, s, "list_gallery_objects", map[string]any{"profile": p})
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected := page.(listResponse).Objects[0]
+			if selected.UploadID == "" || selected.UploadID != uploaded.UploadID {
+				t.Fatal("upload and listing lost the selected object's identity")
+			}
+			transport := s.client.Transport
+			if transport == nil {
+				transport = http.DefaultTransport
+			}
+			s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) {
+				if r.Method == http.MethodDelete {
+					if replace == "before confirmation" {
+						t.Error("issued a delete for an upload that was already replaced")
+					}
+					fixture.mu.Lock()
+					fixture.ids[key], fixture.etags[key] = "replacement", `"new-etag"`
+					fixture.mu.Unlock()
+				}
+				return transport.RoundTrip(r)
+			})
+			if replace == "before confirmation" {
+				fixture.mu.Lock()
+				fixture.ids[key] = "replacement" // Identical bytes have the same ETag.
+				fixture.mu.Unlock()
+			}
+			_, err = call(t, s, "delete_gallery_object", map[string]any{"profile": p, "key": key, "uploadId": selected.UploadID, "etag": selected.ETag})
+			if err == nil {
+				t.Fatal("delete accepted a stale selection")
+			}
+			fixture.mu.Lock()
+			defer fixture.mu.Unlock()
+			if fixture.ids[key] != "replacement" {
+				t.Fatal("deleted the replacement")
+			}
+		})
+	}
+}
+
+func TestGalleryDeleteRequiresAConditionalRequest(t *testing.T) {
+	for _, tc := range []struct {
+		name, uploadID, etag string
+		wantDeletes          int
+	}{
+		{"missing selection", "", `"v1"`, 0},
+		{"missing ETag", "selected", "", 0},
+		{"wildcard ETag", "selected", "*", 0},
+		{"unsupported condition", "selected", `"v1"`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := New(t.TempDir())
+			p := testProfile("https://s3.example.test")
+			if _, err := s.saveSecret(p.ID, "fake"); err != nil {
+				t.Fatal(err)
+			}
+			deletes := 0
+			s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) {
+				if r.Method == http.MethodHead {
+					resp := r2Response(http.StatusOK, "")
+					resp.Header.Set("X-Amz-Meta-Picpiper-Upload-Id", "selected")
+					resp.Header.Set("ETag", tc.etag)
+					return resp, nil
+				}
+				deletes++
+				if r.Method != http.MethodDelete || r.Header.Get("If-Match") != `"v1"` {
+					t.Fatalf("unexpected provider request: %s with If-Match %q", r.Method, r.Header.Get("If-Match"))
+				}
+				return r2Response(http.StatusNotImplemented, ""), nil
+			})
+			_, err := call(t, s, "delete_gallery_object", map[string]any{"profile": p, "key": "photo.png", "uploadId": tc.uploadID})
+			if err == nil || deletes != tc.wantDeletes {
+				t.Fatalf("delete returned %v and sent %d DELETE requests", err, deletes)
+			}
+		})
+	}
+}
+
 func TestGalleryDeletePreservesConcurrentUploadRecord(t *testing.T) {
 	for _, history := range []string{"recorded", "missing", "unreadable"} {
 		t.Run(history, func(t *testing.T) {
@@ -224,7 +313,7 @@ func TestGalleryDeletePreservesConcurrentUploadRecord(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			payload, err := json.Marshal(map[string]any{"profile": p, "key": key})
+			payload, err := json.Marshal(map[string]any{"profile": p, "key": key, "uploadId": original.UploadID, "etag": original.ETag})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -291,7 +380,7 @@ func TestConcurrentUploadsPreserveAllLocalRecords(t *testing.T) {
 		t.Fatalf("concurrent upload records lost: %d %v", len(records), err)
 	}
 	// App deletion removes the record as well as the remote object.
-	if _, err = call(t, s, "delete_gallery_object", map[string]any{"profile": p, "key": "images/0.png"}); err != nil {
+	if _, err = call(t, s, "delete_gallery_object", map[string]any{"profile": p, "key": "images/0.png", "uploadId": records["images/0.png"].UploadID}); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(s.uploadRecordsPath(p))

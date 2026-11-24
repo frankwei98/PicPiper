@@ -160,8 +160,16 @@ func TestThumbnailCacheEvictsLeastRecentlyUsedAndDeletionClearsVersions(t *testi
 	if _, err := s.saveSecret(p.ID, "fake-secret"); err != nil {
 		t.Fatal(err)
 	}
-	s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) { return r2Response(204, ""), nil })
-	if _, err := call(t, s, "delete_gallery_object", map[string]any{"profile": p, "key": "image.png"}); err != nil {
+	s.client.Transport = r2Transport(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodHead {
+			resp := r2Response(200, "")
+			resp.Header.Set("X-Amz-Meta-Picpiper-Upload-Id", "image-upload")
+			resp.Header.Set("ETag", `"v1"`)
+			return resp, nil
+		}
+		return r2Response(204, ""), nil
+	})
+	if _, err := call(t, s, "delete_gallery_object", map[string]any{"profile": p, "key": "image.png", "uploadId": "image-upload"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, subdir := range []string{"", indexedThumbnailDir} {

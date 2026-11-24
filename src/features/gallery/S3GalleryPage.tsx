@@ -39,10 +39,44 @@ interface S3GalleryPageProps {
   onNavigate?: (view: AppView) => void;
 }
 
-interface ScopedHighlights {
-  profileId: string;
+interface GalleryScope {
+  profile: S3Profile;
   prefix: string;
+}
+
+interface ScopedHighlights extends GalleryScope {
   keys: string[];
+}
+
+interface PendingGalleryLoad {
+  profile: S3Profile;
+  appendedUploads: Set<GalleryObject> | null;
+  deletedUploads: GalleryObject[];
+}
+
+type ObjectAction =
+  | { status: "pending"; kind: "delete" | "download"; key: string }
+  | { status: "failed"; message: string };
+
+function bucketIdentity(profile: S3Profile) {
+  return JSON.stringify([profile.endpoint.replace(/\/+$/, ""), profile.bucket]);
+}
+
+function isSameBucket(profile: S3Profile, other?: S3Profile) {
+  return other !== undefined && bucketIdentity(profile) === bucketIdentity(other);
+}
+
+function isSameScope(scope: GalleryScope | null, profile: S3Profile | undefined, prefix: string) {
+  return scope !== null && scope.profile.id === profile?.id &&
+    isSameBucket(scope.profile, profile) && scope.prefix === prefix;
+}
+
+function isSameUpload(object: GalleryObject, other: GalleryObject) {
+  return object.key === other.key && (
+    object.uploadId || other.uploadId
+      ? object.uploadId === other.uploadId
+      : object.uploadedAt === other.uploadedAt
+  );
 }
 
 export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, namingTemplate: namingTemplateProp, onNavigate }: S3GalleryPageProps) {
@@ -80,9 +114,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextContinuationToken, setNextContinuationToken] = useState<string | null>(null);
-  const [loadedScope, setLoadedScope] = useState<{ profileId: string; prefix: string } | null>(null);
+  const [loadedScope, setLoadedScope] = useState<GalleryScope | null>(null);
   const loadGenerationRef = useRef(0);
-  const pendingAppendUploadsRef = useRef<Set<GalleryObject> | null>(null);
+  const pendingLoadRef = useRef<PendingGalleryLoad | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paginationError, setPaginationError] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<GallerySort>("time-desc");
@@ -96,13 +130,14 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
   const namingTemplate = namingTemplateProp ?? "{yyyy}/{mm}/{slug}-{hash}.{ext}";
   const [uploadHasError, setUploadHasError] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
-  const [deletingKey, setDeletingKey] = useState<string | null>(null);
-  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const [objectActions, setObjectActions] = useState(() => new Map<string, ObjectAction>());
+  const currentAction = selectedProfile && objectActions.get(bucketIdentity(selectedProfile));
+  const actionPending = currentAction?.status === "pending";
   const [localHighlights, setLocalHighlights] = useState<ScopedHighlights | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GalleryObject | null>(null);
   const [uploading, setUploading] = useState(false);
   const statusTimersRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentScopeRef = useRef<{ profileId: string; prefix: string } | null>(null);
+  const currentScopeRef = useRef<GalleryScope | null>(null);
   const scopeEditedByUserRef = useRef(false);
   const focusDefaultPrefix = profiles.find((profile) => profile.id === galleryFocus.profileId)?.defaultPrefix || "";
   const previousFocusRef = useRef({ ...galleryFocus, defaultPrefix: focusDefaultPrefix });
@@ -110,13 +145,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
 
   useEffect(() => {
     currentScopeRef.current = selectedProfile
-      ? { profileId: selectedProfile.id, prefix }
+      ? { profile: selectedProfile, prefix }
       : null;
-  }, [selectedProfile?.id, prefix]);
-
-  const isCurrentScope = (scope: { profileId: string; prefix: string }) =>
-    currentScopeRef.current?.profileId === scope.profileId &&
-    currentScopeRef.current.prefix === scope.prefix;
+  }, [selectedProfile, prefix]);
 
   const resetGalleryScope = useCallback(() => {
     setLoadedScope(null);
@@ -197,8 +228,12 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     if (!selectedProfile) return;
     const generation = ++loadGenerationRef.current;
     const requestedPrefix = debouncedPrefix;
-    const uploadsDuringAppend = append ? new Set<GalleryObject>() : null;
-    pendingAppendUploadsRef.current = uploadsDuringAppend;
+    const pending: PendingGalleryLoad = {
+      profile: selectedProfile,
+      appendedUploads: append ? new Set() : null,
+      deletedUploads: [],
+    };
+    pendingLoadRef.current = pending;
     setLoading(!append);
     setLoadingMore(append);
     if (!append) {
@@ -220,15 +255,16 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         // The first page starts with an empty list. An appended page keeps
         // existing records, so give precedence only to uploads added while it was pending.
         const localUploads = current.filter((object) =>
-          uploadsDuringAppend ? uploadsDuringAppend.has(object) : object.key.startsWith(requestedPrefix),
+          pending.appendedUploads ? pending.appendedUploads.has(object) : object.key.startsWith(requestedPrefix),
         );
-        const merged = [...(append ? current : []), ...page.objects, ...localUploads];
+        const listed = page.objects.filter((object) => !pending.deletedUploads.some((deleted) => isSameUpload(object, deleted)));
+        const merged = [...(append ? current : []), ...listed, ...localUploads];
         return sortGalleryObjects([...new Map(merged.map((object) => [object.key, object])).values()], sortOrder);
       });
       setUnverifiedCount((current) => append ? current + (page.unverifiedCount ?? 0) : (page.unverifiedCount ?? 0));
       setNextContinuationToken(page.nextContinuationToken ?? null);
       if (!append) {
-        setLoadedScope({ profileId: selectedProfile.id, prefix: requestedPrefix });
+        setLoadedScope({ profile: selectedProfile, prefix: requestedPrefix });
       }
     } catch (err) {
       if (generation !== loadGenerationRef.current) return;
@@ -240,7 +276,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       }
     } finally {
       if (generation === loadGenerationRef.current) {
-        pendingAppendUploadsRef.current = null;
+        pendingLoadRef.current = null;
         setLoading(false);
         setLoadingMore(false);
       }
@@ -253,7 +289,7 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       // Invalidate the request associated with the previous profile/prefix
       // before the next effect starts or the component unmounts.
       loadGenerationRef.current += 1;
-      pendingAppendUploadsRef.current = null;
+      pendingLoadRef.current = null;
     };
   }, [focusRevision, loadObjects]);
 
@@ -262,15 +298,11 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     void loadObjects(true, nextContinuationToken);
   };
 
-  const scopeReady = Boolean(
-    selectedProfile &&
-      loadedScope?.profileId === selectedProfile.id &&
-      loadedScope.prefix === prefix,
-  );
+  const scopeReady = isSameScope(loadedScope, selectedProfile, prefix);
 
   const handleUploadLocal = async () => {
     if (!selectedProfile || uploading) return;
-    const uploadScope = { profileId: selectedProfile.id, prefix };
+    const uploadScope = { profile: selectedProfile, prefix };
     setUploadStatus(null);
     setUploadHasError(false);
     setUploading(true);
@@ -326,10 +358,10 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         }
       }
 
-      if (newKeys.length > 0 && isCurrentScope(uploadScope)) {
+      if (newKeys.length > 0 && isSameScope(currentScopeRef.current, selectedProfile, prefix)) {
         const visibleNewObjects = newObjects.filter((object) => object.key.startsWith(uploadScope.prefix));
         for (const object of visibleNewObjects) {
-          pendingAppendUploadsRef.current?.add(object);
+          pendingLoadRef.current?.appendedUploads?.add(object);
         }
         setLocalHighlights({ ...uploadScope, keys: visibleNewObjects.map((object) => object.key) });
         const newKeySet = new Set(newKeys);
@@ -365,11 +397,9 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
       selectedProfile.id === focusProfileId && prefix === focusPrefix
         ? galleryFocus.highlightedKeys
         : [];
-    const localKeys =
-      localHighlights?.profileId === selectedProfile.id &&
-      localHighlights.prefix === prefix
-        ? localHighlights.keys
-        : [];
+    const localKeys = localHighlights && isSameScope(localHighlights, selectedProfile, prefix)
+      ? localHighlights.keys
+      : [];
 
     return new Set([...externalKeys, ...localKeys]);
   }, [
@@ -407,18 +437,22 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     }
   };
 
-  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const setObjectAction = (profile: S3Profile, action: ObjectAction | null) => {
+    const bucket = bucketIdentity(profile);
+    setObjectActions((current) => {
+      const next = new Map(current);
+      if (action) next.set(bucket, action);
+      else next.delete(bucket);
+      return next;
+    });
+  };
 
   const handleDownload = async (obj: GalleryObject) => {
-    if (!selectedProfile || !scopeReady) return;
-    setDownloadingKey(obj.key);
-    setDownloadError(null);
+    if (!selectedProfile || !scopeReady || actionPending) return;
+    setObjectAction(selectedProfile, { status: "pending", kind: "download", key: obj.key });
+    let failure: ObjectAction | null = null;
     try {
       const dir = await open({ directory: true });
-      if (!dir) {
-        setDownloadingKey(null);
-        return;
-      }
       const outputDir = Array.isArray(dir) ? dir[0] : dir;
       if (!outputDir) return;
       const resultPath = await galleryApi.downloadObject({
@@ -426,11 +460,13 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
         key: obj.key,
         outputDir,
       });
-      setCopyMessage(t("Saved to {{value0}}", { value0: resultPath }));
+      if (isSameBucket(selectedProfile, currentScopeRef.current?.profile)) {
+        setCopyMessage(t("Saved to {{value0}}", { value0: resultPath }));
+      }
     } catch (err) {
-      setDownloadError(errorMessage(err, t("Download failed")));
+      failure = { status: "failed", message: errorMessage(err, t("Download failed")) };
     } finally {
-      setDownloadingKey(null);
+      setObjectAction(selectedProfile, failure);
     }
   };
 
@@ -438,31 +474,33 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
     setDeleteTarget(obj);
   };
 
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
   const handleDeleteConfirm = async () => {
-    if (!selectedProfile || !deleteTarget || !scopeReady) return;
-    const deleteScope = { profileId: selectedProfile.id, prefix };
-    const targetKey = deleteTarget.key;
-    setDeletingKey(targetKey);
+    if (!selectedProfile || !deleteTarget || !scopeReady || actionPending) return;
+    const { key, uploadId, etag } = deleteTarget;
+    setObjectAction(selectedProfile, { status: "pending", kind: "delete", key });
     setDeleteTarget(null);
-    setDeleteError(null);
+    let failure: ObjectAction | null = null;
     try {
-      await galleryApi.deleteObject({ profile: selectedProfile, key: targetKey });
-      if (isCurrentScope(deleteScope)) {
-        setObjects((current) => current.filter((object) => object.key !== targetKey));
-        setLocalHighlights((current) =>
-          current &&
-          current.profileId === deleteScope.profileId &&
-          current.prefix === deleteScope.prefix
-            ? { ...current, keys: current.keys.filter((key) => key !== targetKey) }
-            : current,
-        );
+      await galleryApi.deleteObject({ profile: selectedProfile, key, uploadId, etag });
+      const pending = pendingLoadRef.current;
+      if (pending && isSameBucket(selectedProfile, pending.profile)) {
+        pending.deletedUploads.push(deleteTarget);
       }
+      if (isSameBucket(selectedProfile, currentScopeRef.current?.profile)) {
+        setObjects((current) => current.filter((object) => !isSameUpload(object, deleteTarget)));
+      }
+      setLocalHighlights((current) =>
+        current && isSameScope(current, selectedProfile, prefix)
+          ? { ...current, keys: current.keys.filter((highlighted) => highlighted !== key) }
+          : current,
+      );
     } catch (err) {
-      setDeleteError(t("Failed to delete {{value0}}: {{value1}}", { value0: targetKey, value1: errorMessage(err, t("Delete failed")) }));
+      failure = {
+        status: "failed",
+        message: t("Failed to delete {{value0}}: {{value1}}", { value0: key, value1: errorMessage(err, t("Delete failed")) }),
+      };
     } finally {
-      setDeletingKey(null);
+      setObjectAction(selectedProfile, failure);
     }
   };
 
@@ -622,20 +660,14 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
           ))}
         </section>
       )}
-      {(deletingKey || downloadingKey) && (
+      {actionPending && (
         <div className="gallery-actions">
-          {deletingKey && <p className="gallery-status" role="status">{t("Deleting")} {deletingKey}...</p>}
-          {downloadingKey && <p className="gallery-status" role="status">{t("Downloading")} {downloadingKey}...</p>}
+          <p className="gallery-status" role="status">{t(currentAction.kind === "delete" ? "Deleting" : "Downloading")} {currentAction.key}...</p>
         </div>
       )}
-      {deleteError && (
+      {currentAction?.status === "failed" && (
         <Alert variant="destructive">
-          <AlertDescription>{deleteError}</AlertDescription>
-        </Alert>
-      )}
-      {downloadError && (
-        <Alert variant="destructive">
-          <AlertDescription>{downloadError}</AlertDescription>
+          <AlertDescription>{currentAction.message}</AlertDescription>
         </Alert>
       )}
       {error && (
@@ -685,10 +717,10 @@ export function S3GalleryPage({ galleryFocus, profiles, defaultProfileId, naming
                 <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleView(obj)} disabled={!obj.publicUrl} aria-describedby={!obj.publicUrl ? publicUrlReasonId : undefined}>
                   {t("View")}
                 </Button>
-                <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleDownload(obj)} disabled={downloadingKey !== null || deletingKey !== null}>
+                <Button variant="link" size="xs" className="proof-action" type="button" onClick={() => handleDownload(obj)} disabled={actionPending}>
                   {t("Download")}
                 </Button>
-                <Button variant="link" size="xs" className="proof-action danger" type="button" onClick={() => handleDeleteRequest(obj)} disabled={deletingKey !== null || downloadingKey !== null}>
+                <Button variant="link" size="xs" className="proof-action danger" type="button" onClick={() => handleDeleteRequest(obj)} disabled={actionPending}>
                   {t("Delete")}
                 </Button>
               </div>

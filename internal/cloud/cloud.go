@@ -80,6 +80,7 @@ type settings struct {
 	DefaultProfileID      *string       `json:"defaultProfileId"`
 }
 type galleryObject struct {
+	UploadID            string  `json:"uploadId,omitempty"`
 	FileName            string  `json:"fileName,omitempty"`
 	UploadedAt          string  `json:"uploadedAt,omitempty"`
 	UploadRecordWarning bool    `json:"uploadRecordWarning,omitempty"`
@@ -207,36 +208,11 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		}
 		return s.listUploads(ctx, p, secret)
 	case "delete_gallery_object":
-		var p struct {
-			Profile profile `json:"profile"`
-			Key     string  `json:"key"`
-		}
+		var p deleteGalleryRequest
 		if err := decode("profile", &p); err != nil {
 			return nil, err
 		}
-		if err := validateKey(p.Key); err != nil {
-			return nil, err
-		}
-		secret, err := s.getSecret(p.Profile, nil)
-		if err != nil {
-			return nil, err
-		}
-		s.mu.Lock()
-		records, historyErr := s.loadUploadRecordsLocked(p.Profile)
-		observed, recorded := records[p.Key]
-		s.mu.Unlock()
-		resp, err := s.doS3(ctx, p.Profile, secret, http.MethodDelete, p.Key, nil, "", nil)
-		if err != nil {
-			return nil, s3error("s3DeleteFailed", err)
-		}
-		resp.Body.Close()
-		s.removeGalleryThumbnails(ctx, p.Profile, p.Key)
-		// Remote deletion already succeeded; a stale local record is also
-		// hidden by the next HEAD check if its cleanup cannot be persisted.
-		if historyErr == nil && recorded {
-			_ = s.forgetInvalidUploads(p.Profile, []uploadedImage{observed})
-		}
-		return nil, nil
+		return nil, s.deleteGalleryObject(ctx, p)
 	case "download_gallery_object":
 		var p struct {
 			Profile   profile `json:"profile"`
@@ -328,6 +304,7 @@ func (s *Service) Call(ctx context.Context, operation string, raw json.RawMessag
 		}
 		resp.Body.Close()
 		obj := makeObject(p.Profile, p.ObjectKey, size, nil)
+		obj.UploadID = uploadID
 		obj.ETag = resp.Header.Get("ETag")
 		obj.FileName = p.FileName
 		if obj.FileName == "" {
@@ -724,7 +701,7 @@ func sign(req *http.Request, region, access, secret, payload string, t time.Time
 	canonHeaders := map[string]string{"host": req.URL.Host, "x-amz-content-sha256": payload, "x-amz-date": stamp}
 	for k, v := range req.Header {
 		lk := strings.ToLower(k)
-		if lk == "content-type" || lk == "if-none-match" || lk == "range" || strings.HasPrefix(lk, "x-amz-") {
+		if lk == "content-type" || lk == "if-match" || lk == "if-none-match" || lk == "range" || strings.HasPrefix(lk, "x-amz-") {
 			canonHeaders[lk] = strings.Join(strings.Fields(strings.Join(v, ",")), " ")
 		}
 	}
