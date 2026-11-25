@@ -174,7 +174,9 @@ func TestQueueCopiesDecodedImageWithAlphaAndPreservesSource(t *testing.T) {
 	if err != nil || !bytes.Equal(got, source.Bytes()) {
 		t.Fatal("source changed")
 	}
-	if len(service.Snapshot().Items) != 1 {
+	// The clipboard callback can deliver pixels before the worker finishes the batch.
+	state := miniIdle(t, service)
+	if len(state.Items) != 1 {
 		t.Fatal("missing result")
 	}
 	if _, err := service.Export(context.Background(), nil, t.TempDir()); err == nil {
@@ -184,7 +186,7 @@ func TestQueueCopiesDecodedImageWithAlphaAndPreservesSource(t *testing.T) {
 		t.Fatal("unknown result accepted for export")
 	}
 	target := t.TempDir()
-	saved, err := service.Export(context.Background(), []string{service.Snapshot().Items[0].ID}, target)
+	saved, err := service.Export(context.Background(), []string{state.Items[0].ID}, target)
 	if err != nil {
 		t.Fatal(err)
 	}
