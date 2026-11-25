@@ -1,5 +1,58 @@
 # Changelog
 
+## [1.3.2](https://github.com/frankwei98/PicPiper/compare/v1.3.1...v1.3.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **cloud:** block uploads of private file aliases ([8d0b5bc](https://github.com/frankwei98/PicPiper/commit/8d0b5bccb41db168829da391e8a8691b6e65dab2))
+* **cloud:** keep custom upload names usable in the gallery ([8d66e74](https://github.com/frankwei98/PicPiper/commit/8d66e74bc46df95cf548990ca2c0c4db9096ba6f))
+* **gallery:** avoid rebuilding the cache index on shared hits ([74aadeb](https://github.com/frankwei98/PicPiper/commit/74aadebd822e923ec7d3f505930814cc1a08586b))
+* **gallery:** count legacy writes in thumbnail eviction ([64e2998](https://github.com/frankwei98/PicPiper/commit/64e2998e33f874c03fe4632c66e15ced638c63ca))
+* **gallery:** enforce thumbnail budget across instances ([6f9dcb2](https://github.com/frankwei98/PicPiper/commit/6f9dcb2861e4a6fcb9661e9d50896da8b5c29fd4))
+* **gallery:** verify selected uploads and isolate pending bucket actions ([8f74bb6](https://github.com/frankwei98/PicPiper/commit/8f74bb6170f5bc01e9f3d71680842d2b60fc4e4d))
+* harden BMFF preflight, decode bounds, S3 paths, and worker stdout ([f8320bc](https://github.com/frankwei98/PicPiper/commit/f8320bc72f93747cacb6118413e5e02973f5e19c))
+* **imaging:** account for 16-bit color conversion memory ([0154729](https://github.com/frankwei98/PicPiper/commit/0154729e8fae73929ee75ec5cbad18d1f243baa3))
+* **imaging:** admit small modern images without large slots ([524f8a2](https://github.com/frankwei98/PicPiper/commit/524f8a28ea578e4ac571297b9dc105b677cfe190))
+* **imaging:** bound resize allocations and filter fine detail ([19e7b93](https://github.com/frankwei98/PicPiper/commit/19e7b93478127a6505a3a968cdf51218e0c68125))
+* **imaging:** budget encoded WebP buffers ([8304c34](https://github.com/frankwei98/PicPiper/commit/8304c34285818ef8de2ea622f9c75ef278078666))
+* **imaging:** budget HDR and animated PNG buffers ([88146da](https://github.com/frankwei98/PicPiper/commit/88146dad35bca8392fbedde81f6f1281a64485ef))
+* **imaging:** consume worker response delimiters before PNG frames ([3b9dbf3](https://github.com/frankwei98/PicPiper/commit/3b9dbf379576edd9d632cb86d01a8ad55bde2864))
+* **imaging:** handle oversized Windows output names ([d3a98d1](https://github.com/frankwei98/PicPiper/commit/d3a98d1c115ee5999fdc01c0f2c2fd1c9bc2dfb8))
+* **imaging:** limit all-frame WebP compression ([2721355](https://github.com/frankwei98/PicPiper/commit/2721355d68571b5e9b6c4553667450610302159a))
+* **imaging:** preserve long output names across compression and export ([105c47d](https://github.com/frankwei98/PicPiper/commit/105c47d9f2f61643d25ad483990206e80d3d8f56))
+* **imaging:** preserve resize filtering with bounded scratch space ([4b281a1](https://github.com/frankwei98/PicPiper/commit/4b281a1bb355423921ecf58122efc483dfcaf1c8))
+* **imaging:** reclaim abandoned comparison previews ([3b96e4d](https://github.com/frankwei98/PicPiper/commit/3b96e4d02bf95c82e8c2281e3679247b4dc57a62))
+* **imaging:** require ownership for comparison previews ([4edd778](https://github.com/frankwei98/PicPiper/commit/4edd77841bc3c50e79e38789c85902e6e5c70066))
+* **imaging:** stream clipboard PNGs without temporary files ([95d42ff](https://github.com/frankwei98/PicPiper/commit/95d42ff07acecc865569af1ee5dd9b2d720a36d2))
+* **mini:** preload thumbnails inside the results scroller ([5854fbe](https://github.com/frankwei98/PicPiper/commit/5854fbe89e3f9eff6016880c8944c3f41af503e0))
+* **optimize:** compare both zoom modes from stable snapshots ([31a4d14](https://github.com/frankwei98/PicPiper/commit/31a4d14993493958c84af2a1927f6980e187aa0f))
+* **optimize:** end loading state for failed result thumbnails ([03278fd](https://github.com/frankwei98/PicPiper/commit/03278fd5ed3028cb44315b33e9bd869621937da2))
+* **optimize:** label the dimensions of the displayed preview ([73ca9f9](https://github.com/frankwei98/PicPiper/commit/73ca9f9442187ce5d28e6042dc9720e8858db7f9))
+* **optimize:** retain originals on disk for the batch ([99024c8](https://github.com/frankwei98/PicPiper/commit/99024c85ca3b7495b73e76973aa09e3f87bb0412))
+* **optimize:** retain the selected original across tabs ([efd48f1](https://github.com/frankwei98/PicPiper/commit/efd48f1642db80371608f76ea38639b2d78e04fc))
+* **optimize:** retain the selected original preview ([01e2fa5](https://github.com/frankwei98/PicPiper/commit/01e2fa59b378e0bb9c0479ca315dbef5e9882ad4))
+* **optimize:** retry failed original previews ([7e9d5ab](https://github.com/frankwei98/PicPiper/commit/7e9d5abd6e51af6e06644900dc66c15f22d2de4e))
+* **optimize:** reuse both comparison preview sizes ([f9970f0](https://github.com/frankwei98/PicPiper/commit/f9970f05ae596dd24b8ea7a5234c0c9f2e749b84))
+* **optimize:** share the selected output preview ([145c27b](https://github.com/frankwei98/PicPiper/commit/145c27b2f8680d792ae1cb7ce11cd41ac3a506c4))
+* **optimize:** skip abandoned full-resolution comparisons ([895af4e](https://github.com/frankwei98/PicPiper/commit/895af4e259bcb29c0300c2c2764f119f805f5a12))
+* **release:** check every page for unresolved releases ([7b256a8](https://github.com/frankwei98/PicPiper/commit/7b256a8fc8e1d4f3963522e6e793542bfe37a3ad))
+* **settings:** keep update checks and preferences in sync ([f3f6b4b](https://github.com/frankwei98/PicPiper/commit/f3f6b4bafa3b9e601a5ad737948669232c98f59e))
+* **settings:** validate naming edits and guard credential rollback ([2caa98b](https://github.com/frankwei98/PicPiper/commit/2caa98b9208da5e746bab9fdc3a6dc8862e8b3b4))
+
+
+### Performance Improvements
+
+* **gallery:** index thumbnail cache size and recency ([9504339](https://github.com/frankwei98/PicPiper/commit/95043390cd40c0f9b4972cf3d09440fad851e957))
+* **gallery:** update the thumbnail index incrementally ([13db0e6](https://github.com/frankwei98/PicPiper/commit/13db0e6689244888ecb18ef6a68a98dbe6c8364b))
+* **imaging:** avoid redundant canvases for high-depth images ([3f3aa36](https://github.com/frankwei98/PicPiper/commit/3f3aa361333b3ebabdf00add6ecac0da4f779824))
+* **imaging:** bound large resize memory ([322d644](https://github.com/frankwei98/PicPiper/commit/322d6441bce05c12ef50015f55a0490673c16f40))
+* **imaging:** limit concurrent large image operations ([611e0e7](https://github.com/frankwei98/PicPiper/commit/611e0e7543dd650ea363795356e6f3883c81d849))
+* **imaging:** stream comparison and clipboard PNG files ([a9315e1](https://github.com/frankwei98/PicPiper/commit/a9315e18c56c8d949afb4ebf5bb10d4a619c70e9))
+* **mini:** reuse thumbnails across panel sessions ([0cf476e](https://github.com/frankwei98/PicPiper/commit/0cf476ebad80ad83d5163551db2f03db1b36cd55))
+* **mini:** skip unchanged snapshots and lazy-load thumbnails ([07bd7b2](https://github.com/frankwei98/PicPiper/commit/07bd7b2d3ae74756fdf2456a24e5a0d3508cb200))
+* **optimize:** load previews on demand ([3486035](https://github.com/frankwei98/PicPiper/commit/3486035e63d1c793a35aea2834546226c179d76e))
+
 ## [1.3.1](https://github.com/frankwei98/PicPiper/compare/v1.3.0...v1.3.1) (2026-11-18)
 
 
