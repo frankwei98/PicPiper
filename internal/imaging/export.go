@@ -125,7 +125,7 @@ func reserveOutputName(name string, create func(string) error) (string, error) {
 			if os.IsExist(err) {
 				break
 			}
-			if !outputNameTooLong(err) || stem == "" {
+			if !outputNameTooLong(candidate, err) || stem == "" {
 				return "", err
 			}
 			// Let the filesystem accept the full name first. Bound retries
